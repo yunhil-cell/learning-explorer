@@ -696,7 +696,7 @@ function processDrawMercenary() {
     const jobName = jobMap[String(pickedMerc.job).toUpperCase()] || pickedMerc.job || '용병';
 
     const iconHtml = pickedMerc.icon_url
-        ? '<img src="' + pickedMerc.icon_url + '" style="width:100px; height:100px; object-fit:contain; border-radius:50%; border:3px solid ' + tierColor + '; box-shadow:' + tierGlow + '; margin-bottom:15px; background:#111;">'
+        ? '<img src="' + pickedMerc.icon_url + '" style="width:110px; height:110px; object-fit:contain; border-radius:50%; border:3px solid ' + tierColor + '; box-shadow:' + tierGlow + '; margin-bottom:15px; background:#FFFFFF; padding:4px;">'
         : '<div style="font-size:70px; margin-bottom:15px;">🛡️</div>';
 
     const optTypeMap = {
