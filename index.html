@@ -1,57 +1,199 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html>
+
 <head>
-  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>⚔️ 배움 원정대 (파이어베이스 초고속 테스트)</title>
-  <style>
-    /* 기본 로딩 오버레이 스타일 */
-    body { font-family: sans-serif; background: #0F172A; color: white; text-align: center; margin: 0; padding: 20px; }
-    .test-banner { background: #3B82F6; color: white; padding: 10px; font-weight: bold; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4); }
-    #fastLoading { font-size: 1.2em; color: #F59E0B; margin-top: 50px; }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-
-  <div class="test-banner">🚀 파이어베이스 0.05초 초고속 데이터베이스 연동 테스트중</div>
-  <div id="fastLoading">⚡ 파이어베이스 데이터베이스에서 0.05초 만에 초고속 로딩 중...</div>
-
-  <div id="appRoot" style="display:none;">
-    <h1 style="color:#F59E0B;">⚔️ 배움 원정대</h1>
-    <p>파이어베이스 연동 성공! 아래는 실시간 구글 시트 백업 데이터입니다.</p>
-    <div id="studentButtons" style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:30px;"></div>
+  <div class="header">
+    <h1 style="margin:0;">⚔️ 배움 원정대</h1>
+    <p style="font-size: 0.9em; color: #F1F5F9; margin-top: 5px;">지혜를 찾아 떠나는 여정</p>
+    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+      <button class="hof-btn" style="background: linear-gradient(135deg, #42B3A4, #2c7a70); margin-top: 0;" onclick="window.open('https://sites.google.com/view/learningexplorerguide/%ED%99%88', '_blank')">📜 가이드</button>
+      <button class="hof-btn" style="margin-top: 0;" onclick="openHallOfFame()">👑 명예의 전당</button>
+      <button class="hof-btn" style="background: linear-gradient(135deg, #FECACA, #F87171); color: var(--TextMain); margin-top: 0; position: relative;" onclick="openNoticeBoard()">
+        📢 길드 게시판
+        <span id="noticeBadge" class="n-badge" style="display:none; border: 1px solid #F87171;">N</span>
+      </button>
+      <button class="hof-btn" style="background: linear-gradient(135deg, #A78BFA, #8B5CF6); color: white; margin-top: 0;" onclick="manualRefresh()">🔄 갱신</button>
+    </div>
   </div>
 
-  <script>
-    const FIREBASE_DB_URL = "https://learning-explorer-default-rtdb.firebaseio.com/gameData.json";
+  <div
+    style="max-width: 1200px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: flex-end; margin-bottom: -10px; gap: 10px;">
+    <button id="noticeAdminBtn" onclick="openNoticeAdmin()" style="display:none; background:#3B82F6; color:white; border:none; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; box-shadow:0 2px 5px rgba(0,0,0,0.5); font-size: 1em; transition: 0.3s; z-index: 10;">
+      📢 공지 관리
+    </button>
+    <button id="questAdminBtn" onclick="openQuestAdmin()" style="display:none; background:#8B5CF6; color:white; border:none; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; box-shadow:0 2px 5px rgba(0,0,0,0.5); font-size: 1em; transition: 0.3s; z-index: 10;">
+      📜 퀘스트 관리
+    </button>
+    <button id="exchangeAdminBtn" onclick="openExchangeAdmin()" style="display:none; background:#10B981; color:white; border:none; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; box-shadow:0 2px 5px rgba(0,0,0,0.5); font-size: 1em; transition: 0.3s; z-index: 10;">
+      💱 환전소
+    </button>
+    <button id="mainTeacherBtn" onclick="toggleTeacherMode()" style="background:#444; color:white; border:none; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; box-shadow:0 2px 5px rgba(0,0,0,0.5); font-size: 1em; transition: 0.3s; z-index: 10;">
+      🔒 교사 모드 OFF
+    </button>
+  </div>
 
-    // 파이어베이스 0.05초 초고속 데이터 로드
-    async function loadFastData() {
-      try {
-        const start = performance.now();
-        const response = await fetch(FIREBASE_DB_URL);
-        const data = await response.json();
-        const end = performance.now();
+  <div id="hofModal" class="modal" style="z-index: 2500;">
+    <div class="modal-content"
+      style="max-width: 700px; background: linear-gradient(180deg, #1a1a2e 0%, var(--Bg) 100%); border: 2px solid #FFD700;">
+      <span class="close-btn" onclick="document.getElementById('hofModal').style.display='none'">&times;</span>
+      <h2 style="color:#FFD700; margin-top:0; font-size:2em; text-shadow: 0 0 15px rgba(255,215,0,0.5);">👑 명예의 전당</h2>
+      <p style="color:#aaa;">가장 많은 지혜를 탐구한 위대한 모험가들입니다.<br>※ 순위 기준: 1. 독서록 편수📖 / 2. 강화 레벨⚔️ / 3. 이름순</p>
+      <div id="hofPodium" class="podium-container">
+      </div>
+      <button class="btn-main" style="background:#444; margin-top:40px;" onclick="document.getElementById('hofModal').style.display='none'">닫기</button>
+    </div>
+  </div>
 
-        if (data && data.students) {
-          document.getElementById('fastLoading').style.display = 'none';
-          document.getElementById('appRoot').style.display = 'block';
-          
-          let btnHtml = '';
-          data.students.forEach(s => {
-            if(!s.name) return;
-            btnHtml += `<button style="padding:15px 20px; font-size:1.1em; background:#1E293B; color:white; border:2px solid #3B82F6; border-radius:12px; cursor:pointer;" onclick="alert('${s.name} 모험가 접속 성공! (로딩속도: ${(end-start).toFixed(1)}ms)')">🧑‍🎤 ${s.name} (독서: ${s.reading_count || 0}편)</button>`;
-          });
-          document.getElementById('studentButtons').innerHTML = btnHtml;
-        } else {
-          document.getElementById('fastLoading').innerHTML = "⚠️ 구글 시트에서 [syncToFirebase] 실행을 먼저 눌러주세요!";
-        }
-      } catch (e) {
-        document.getElementById('fastLoading').innerHTML = "❌ 파이어베이스 접속 실패: 규칙(Rules) 설정을 확인해주세요.";
-      }
-    }
+  <div id="loading">모험가들의 데이터를 불러오는 중...</div>
+  <div class="grid-container" id="studentGrid"></div>
 
-    window.onload = loadFastData;
-  </script>
+  <div id="detailModal" class="modal">
+    <div class="modal-content">
+      <span class="close-btn" onclick="closeModal()">&times;</span>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <div id="subModal" class="modal" style="display:none; z-index: 2000;">
+    <div class="modal-content sub-modal-content" style="max-width: 850px;">
+      <span class="close-btn" onclick="closeSubModal()">&times;</span>
+      <div id="subModalBody"></div>
+    </div>
+  </div>
+
+  <div id="battleModal" class="modal" style="display:none; z-index: 3000;">
+    <div class="modal-content"
+      style="max-width: 850px; padding: 25px; background: #0F172A; border: 2px solid var(--Red); box-shadow: 0 0 20px rgba(225, 29, 72, 0.3);">
+
+      <h2 id="battleTitle" style="color: var(--Red); margin-top: 0;">전투 돌입!</h2>
+      <div id="raidStageInfo"
+        style="display:none; color: var(--Yellow); font-weight: bold; margin-bottom: 15px; font-size: 1.2em;"></div>
+
+      <div class="battle-arena">
+
+        <div class="battle-side">
+          <h3 id="battlePlayerName" style="color: var(--Highlight); margin-bottom: 10px; font-size:1.5em;">플레이어</h3>
+
+          <div id="singlePlayerContainer" style="width: 100%;">
+            <div
+              style="min-height: 250px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 15px; position: relative; gap: 10px;">
+              
+              <!-- 💡 동료 1 미니 아바타 -->
+              <div id="merc1BattleBox" style="display:none; flex-direction:column; align-items:center; position:relative; margin-bottom:10px;">
+                <img id="merc1BattleImg" src="" style="width: 65px; height: 65px; object-fit: contain; transform: scaleX(-1); filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.5)); transition: 0.3s;">
+                <img id="merc1EffectImg" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
+              </div>
+
+              <!-- 대표 모험가 본인 아바타 -->
+              <div style="position:relative;">
+                <img id="battlePlayerImg"
+                              src="https://drive.google.com/thumbnail?id=1uoFPxFfpUaxE3eZCbrVU8oEvQLyQTg9b&sz=w200"
+                              style="width: 140px; height: 140px; object-fit: contain; filter: drop-shadow(0 0 10px rgba(0, 243, 255, 0.4)); transform: scaleX(-1);">
+
+                <img id="playerEffectImg" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 250px; height: 250px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
+              </div>
+
+              <!-- 💡 동료 2 미니 아바타 -->
+              <div id="merc2BattleBox" style="display:none; flex-direction:column; align-items:center; position:relative; margin-bottom:10px;">
+                <img id="merc2BattleImg" src="" style="width: 65px; height: 65px; object-fit: contain; transform: scaleX(-1); filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.5)); transition: 0.3s;">
+                <img id="merc2EffectImg" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
+              </div>
+
+            </div>
+
+            <div id="playerStatusIcons"
+              style="display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; min-height: 24px; flex-wrap: wrap;">
+            </div>
+
+            <div
+              style="width: 100%; background: #222; height: 15px; border-radius: 10px; border: 1px solid #444; overflow: hidden; margin-bottom: 5px;">
+              <div id="playerHpBar" style="width: 100%; background: #4dff88; height: 100%; transition: width 0.3s;">
+              </div>
+            </div>
+            <div id="playerHpText" style="font-size: 0.9em; color: #ccc; margin-bottom: 10px;">HP: ? / ?</div>
+
+            <div id="playerBattleSkills" style="display: flex; gap: 10px; justify-content: center; min-height: 54px;">
+            </div>
+          </div>
+          <div id="partyPlayerContainer" class="party-card-container" style="display: none; min-height: 350px;"></div>
+        </div>
+
+        <div class="battle-vs">VS</div>
+
+        <div class="battle-side">
+          <h3 id="battleMonsterName" style="color: #ffdb4d; margin-bottom: 10px;">몬스터</h3>
+
+          <div
+            style="min-height: 250px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 15px; position: relative;">
+            <img id="battleMonsterImg" src=""
+                            style="max-width: 100%; object-fit: contain; filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5)); transition: width 0.3s, height 0.3s;">
+
+            <img id="monsterEffectImg" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 250px; height: 250px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
+          </div>
+
+          <div id="monsterStatusIcons"
+            style="display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; min-height: 24px; flex-wrap: wrap;">
+          </div>
+
+          <div
+            style="width: 100%; background: #222; height: 15px; border-radius: 10px; border: 1px solid #444; overflow: hidden; margin-bottom: 5px;">
+            <div id="monsterHpBar"
+              style="width: 100%; background: #ff4d4d; height: 100%; transition: width 0.3s; float: right;">
+            </div>
+          </div>
+          <div id="monsterHpText" style="font-size: 0.9em; color: #ccc; margin-bottom: 10px;">HP: ? / ?</div>
+
+          <div id="monsterBattleSkills"
+            style="display: flex; gap: 10px; justify-content: center; min-height: 54px; opacity: 0.5;">
+            <div
+              style="width:50px; height:50px; border-radius:8px; border:2px dashed #555; display:flex; align-items:center; justify-content:center; font-size:0.8em; color:#555;">
+              스킬(예정)</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div id="battleLog"
+        style="height: 180px; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 15px; overflow-y: auto; text-align: left; font-size: 1.15em; color: #ccc; margin-bottom: 20px;">
+      </div>
+
+      <div style="display: flex; justify-content: center;">
+        <button class="btn-main" style="width: 50%; background: #555;" onclick="fleeBattle()">전투 중단
+                    (도망치기)</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="uiPopup"
+    style="display:none; position:fixed; z-index:9999; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+    <div
+      style="background:var(--Panel); border:2px solid var(--Highlight); border-radius:15px; padding:30px; width:85%; max-width:350px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.8); animation:cardPop 0.3s ease-out forwards;">
+      <h3 id="uiPopupTitle" style="margin-top:0; color:var(--Highlight); font-size:1.4em;">알림</h3>
+      <p id="uiPopupMessage" style="font-size:1.1em; margin:25px 0; color:var(--TextMain); line-height:1.5;"></p>
+      <div id="uiPopupButtons" style="display:flex; gap:10px; justify-content:center;"></div>
+    </div>
+  </div>
+
+  <!-- 💡 [신규] 전역 로딩 및 클릭 차단 오버레이 -->
+  <div id="globalLoadingOverlay" class="global-loading-overlay" style="display:none;">
+    <div class="global-loading-box">
+      <div class="global-loading-spinner"></div>
+      <div id="globalLoadingText" class="global-loading-text">⏳ 서버와 통신 중입니다...</div>
+      <div style="font-size:0.85em; color:#94A3B8; margin-top:8px;">잠시만 기다려주세요 (창을 닫지 마세요)</div>
+    </div>
+  </div>
+
+  <script src="js_core.js"></script>
+  <script src="js_expedition.js"></script>
+  <script src="js_shop.js"></script>
+  <script src="js_battle.js"></script>
+  <script src="js_admin.js"></script>
 </body>
+
 </html>

@@ -1,0 +1,1256 @@
+/* 넥슨 워헤이븐 폰트 로드 */
+@font-face {
+font-family: 'NexonWarhaven';
+src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2312-1@1.1/WarhavenR.woff2') format('woff2');
+font-weight: 400;
+font-display: swap;
+}
+
+@font-face {
+font-family: 'NexonWarhaven';
+src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2312-1@1.1/WarhavenB.woff2') format('woff2');
+font-weight: 700;
+font-display: swap;
+}
+
+:root {
+/* 가호 및 공통 버튼 색상 */
+--Red: #EF4444;
+--Blue: #3B82F6;
+--Green: #10B981;
+--Yellow: #F59E0B;
+--Purple: #8B5CF6;
+
+/* 테마 1: 학생 대시보드 (빈티지 화이트) */
+--BgDashboard: #FDFBF7;
+--PanelDashboard: #FFFFFF;
+
+/* 테마 2: 시스템 팝업/모달 (빈티지 화이트) */
+--Bg: #FDFBF7;
+--Panel: #F7F5F0;
+
+--Highlight: #3B82F6;
+--NeonGlow: 0 10px 25px rgba(0, 0, 0, 0.08);
+
+/* 텍스트 색상 (가독성 최적화) */
+--TextMain: #1E293B; /* 진하고 따뜻한 흑회색 */
+--TextSub: #334155; /* 더 진해진 웜그레이 (가독성 보완) */
+--TextPoint: #DC2626;
+--TextGold: #D97706;
+--TextLock: #64748B;
+
+/* 테두리 및 비활성 */
+--BorderColor: #E2E8F0;
+--BgLock: #E5E5E5;
+--BgEmpty: #EAE8E3;
+
+--BtnShop: #475569;
+--BtnBattle: #E64A19;
+}
+
+body {
+font-family: 'NexonWarhaven', sans-serif;
+background: var(--BgDashboard);
+color: var(--TextSub);
+text-align: center;
+margin: 0;
+padding-bottom: 50px;
+word-break: keep-all;
+overflow-wrap: break-word;
+}
+
+.header {
+padding: 30px 10px;
+background: #3B82F6;
+color: white;
+margin-bottom: 20px;
+border-bottom: 4px solid #2563EB;
+box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+}
+
+.grid-container {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+gap: 12px;
+padding: 20px;
+max-width: 1200px;
+margin: 0 auto;
+}
+
+.student-btn {
+padding: 15px;
+background: var(--PanelDashboard);
+border: 2px solid var(--BorderColor);
+border-radius: 15px;
+cursor: pointer;
+color: var(--TextMain);
+font-weight: bold;
+font-size: 1.5em;
+height: 125px; /* 💡 min-height를 height로 변경하여 박스 크기 완전 고정 */
+box-sizing: border-box; /* 💡 패딩이 높이에 영향을 주지 않도록 설정 */
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+transition: 0.3s;
+box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+overflow: hidden; /* 💡 글자가 튀어나가는 현상 방지 */
+}
+
+/* 가호별 틴트: 배경/테두리 구분, 글씨는 진한 흑회색(TextMain) 고정 */
+.btn-Red { background: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.6); color: var(--TextMain) !important;
+}
+.btn-Blue { background: rgba(59, 130, 246, 0.05); border-color: rgba(59, 130, 246, 0.6); color: var(--TextMain)
+!important; }
+.btn-Green { background: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.6); color: var(--TextMain)
+!important; }
+.btn-Yellow { background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.6); color: var(--TextMain)
+!important; }
+.btn-Purple { background: rgba(139, 92, 246, 0.05); border-color: rgba(139, 92, 246, 0.6); color: var(--TextMain)
+!important; }
+
+.student-btn:hover {
+transform: translateY(-5px);
+box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+filter: brightness(0.95);
+}
+
+.student-btn.selected-for-raid {
+border-color: #F59E0B;
+background: #FEF3C7;
+color: #B45309 !important;
+box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
+transform: scale(1.05);
+}
+
+.raid-hp-bar-bg {
+width: 100%;
+background: #E2E8F0;
+height: 10px;
+border-radius: 5px;
+border: 1px solid #CBD5E1;
+overflow: hidden;
+margin-top: 5px;
+}
+
+.raid-hp-bar-fill {
+background: #34D399;
+height: 100%;
+transition: width 0.3s;
+}
+
+.modal {
+display: none;
+position: fixed;
+z-index: 100;
+left: 0;
+top: 0;
+width: 100%;
+height: 100%;
+background: rgba(15, 23, 42, 0.6);
+align-items: center;
+justify-content: center;
+backdrop-filter: blur(5px);
+}
+
+.modal-content {
+background: var(--BgDashboard);
+margin: 0;
+padding: 25px;
+width: 90%;
+max-width: 900px;
+max-height: 85vh;
+overflow-y: auto;
+border-radius: 25px;
+border: none;
+box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+position: relative;
+}
+
+.sub-modal-content {
+background: var(--Bg); /* 시스템 팝업은 빈티지 화이트 유지 */
+}
+
+.close-btn {
+position: absolute;
+right: 15px;
+top: 15px;
+width: 36px;
+height: 36px;
+background: var(--BgLock);
+border-radius: 50%;
+display: flex;
+align-items: center;
+justify-content: center;
+font-size: 24px;
+cursor: pointer;
+color: var(--TextLock);
+transition: 0.2s;
+z-index: 20;
+}
+
+.close-btn:hover {
+color: var(--Red);
+}
+
+.db-grid {
+display: grid;
+grid-template-columns: repeat(3, 1fr);
+gap: 15px;
+margin-top: 40px;
+text-align: left;
+}
+
+@media (max-width: 768px) {
+html { font-size: 15px; }
+.modal-content { padding: 15px; width: 95%; max-height: 90vh; }
+.db-grid { grid-template-columns: 1fr; gap: 12px; }
+.stat-row { white-space: normal; word-break: keep-all; line-height: 1.4; }
+#battlePlayerImg { width: 100px !important; height: 100px !important; }
+#battleMonsterImg { max-width: 120px !important; max-height: 120px !important; }
+.equip-tab { padding: 10px 5px; font-size: 1em; }
+.student-btn { min-height: 80px; font-size: 1.3em; padding: 15px 10px; }
+}
+
+@media (max-width: 480px) {
+html { font-size: 14px; }
+.skill-card { width: 45%; padding: 10px; box-sizing: border-box; }
+.skill-cards-container { gap: 5%; }
+.btn-main { white-space: normal; line-height: 1.3; font-size: 1.1em; }
+#battleTitle { font-size: 1.3em; }
+}
+
+.db-section {
+background: var(--PanelDashboard);
+padding: 15px;
+border-radius: 15px;
+border: 1px solid var(--BorderColor);
+display: flex;
+flex-direction: column;
+height: 100%;
+box-sizing: border-box;
+transition: 0.3s;
+}
+
+.db-section:hover {
+box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+border-color: var(--Highlight);
+}
+
+.stat-row {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 8px;
+font-size: 0.95em;
+white-space: nowrap;
+border-bottom: 1px dashed var(--BorderColor);
+padding-bottom: 6px;
+color: var(--TextSub);
+}
+
+.blessing-select-btn {
+width: 100%;
+margin: 10px 0;
+padding: 18px;
+font-size: 1.1em;
+border-radius: 12px;
+border: none;
+cursor: pointer;
+font-weight: bold;
+}
+
+.small-btn {
+background: var(--BtnShop);
+color: white;
+border: none;
+border-radius: 5px;
+padding: 4px 8px;
+font-size: 0.8em;
+cursor: pointer;
+font-weight: bold;
+}
+
+.small-btn:hover {
+filter: brightness(0.8);
+}
+
+.slot-row {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 10px;
+font-size: 0.95em;
+background: var(--BgDashboard);
+padding: 10px;
+border-radius: 8px;
+border: 1px solid var(--BorderColor);
+box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.icon-box {
+width: 24px;
+height: 24px;
+background: var(--BgEmpty);
+border: 1px solid var(--BorderColor);
+border-radius: 4px;
+display: inline-block;
+vertical-align: middle;
+margin-right: 8px;
+}
+
+.stat-adjust-btn {
+width: 30px;
+height: 30px;
+background: var(--BtnShop);
+color: white;
+border: none;
+border-radius: 5px;
+font-size: 1.2em;
+font-weight: bold;
+cursor: pointer;
+}
+
+.equip-tab {
+flex: 1;
+padding: 10px;
+background: var(--BgLock);
+color: var(--TextSub);
+border: 1px solid var(--BorderColor);
+cursor: pointer;
+font-weight: bold;
+transition: 0.2s;
+}
+
+.equip-tab.active {
+background: var(--Highlight);
+color: #FFFFFF;
+border-color: var(--Highlight);
+}
+
+.equip-tab:first-child {
+border-radius: 10px 0 0 10px;
+}
+
+.equip-tab:last-child {
+border-radius: 0 10px 10px 0;
+}
+
+/* 애니메이션 및 대장간 UI */
+.forge-area {
+position: relative;
+width: 150px;
+height: 150px;
+margin: 20px auto;
+display: flex;
+align-items: flex-end;
+justify-content: center;
+}
+
+.anvil-icon {
+font-size: 80px;
+z-index: 1;
+}
+
+.hammer-icon {
+font-size: 60px;
+position: absolute;
+top: -10px;
+right: 0px;
+transform-origin: bottom right;
+z-index: 2;
+}
+
+@keyframes hammering {
+0% {
+transform: rotate(0deg) translateY(0);
+}
+
+30% {
+transform: rotate(-45deg) translateY(-20px);
+}
+
+100% {
+transform: rotate(15deg) translateY(10px);
+}
+}
+
+.anim-hit {
+animation: hammering 0.25s ease-in-out 3;
+}
+
+@keyframes successGlow {
+0% {
+text-shadow: 0 0 10px rgba(217, 119, 6, 0.4);
+transform: scale(1);
+}
+
+50% {
+text-shadow: 0 0 20px rgba(217, 119, 6, 0.6);
+transform: scale(1.2);
+}
+
+100% {
+text-shadow: 0 0 10px rgba(217, 119, 6, 0.4);
+transform: scale(1);
+}
+}
+
+.anim-success {
+animation: successGlow 1s forwards;
+color: #D97706;
+/* 💡 흰 배경에 잘 보이는 어두운 황금/주황색 */
+}
+
+@keyframes failShake {
+
+0%,
+100% {
+transform: translateX(0);
+}
+
+20%,
+60% {
+transform: translateX(-10px);
+}
+
+40%,
+80% {
+transform: translateX(10px);
+}
+}
+
+.anim-fail {
+animation: failShake 0.4s forwards;
+color: #ff4d4d;
+filter: grayscale(100%);
+}
+
+/* 💡 신규 추가: 대장간 배경 깜빡임 및 파티클 효과 */
+@keyframes forgeFlashSuccess {
+0% {
+background-color: #FFFFFF;
+}
+
+15% {
+background-color: #FEF08A;
+}
+
+/* 황금빛 플래시 */
+100% {
+background-color: #FFFFFF;
+}
+}
+
+@keyframes forgeFlashFail {
+0% {
+background-color: #FFFFFF;
+}
+
+15% {
+background-color: #FECACA;
+}
+
+/* 핏빛 플래시 */
+100% {
+background-color: #FFFFFF;
+}
+}
+
+.forge-flash-success {
+animation: forgeFlashSuccess 0.8s ease-out;
+}
+
+.forge-flash-fail {
+animation: forgeFlashFail 0.8s ease-out;
+}
+
+.forge-particle {
+position: absolute;
+border-radius: 50%;
+pointer-events: none;
+z-index: 5;
+}
+
+/* 팝업 UI 공통 */
+#loading {
+margin-top: 100px;
+font-size: 1.2em;
+color: #aaa;
+}
+
+.num-input {
+width: 120px;
+padding: 10px;
+font-size: 1.5em;
+text-align: center;
+border-radius: 10px;
+border: none;
+outline: none;
+background: #111;
+color: white;
+font-weight: bold;
+}
+
+/* 스킬 UI 특화 */
+.skill-cards-container {
+display: flex;
+justify-content: center;
+gap: 10px;
+margin: 20px 0;
+flex-wrap: wrap;
+}
+
+.skill-card {
+background: #333;
+border: 2px solid #555;
+border-radius: 10px;
+padding: 15px;
+width: 120px;
+cursor: pointer;
+transition: 0.2s;
+}
+
+.skill-card:hover {
+border-color: var(--Highlight);
+transform: scale(1.05);
+}
+
+.skill-icon {
+font-size: 40px;
+margin-bottom: 10px;
+}
+
+.skill-name {
+font-weight: bold;
+font-size: 1em;
+margin-bottom: 5px;
+color: var(--Highlight);
+}
+
+.skill-desc {
+font-size: 0.75em;
+color: #ccc;
+}
+
+.skill-list-item {
+display: flex;
+align-items: center;
+background: #222;
+border: 1px solid #444;
+padding: 10px;
+margin-bottom: 10px;
+border-radius: 10px;
+cursor: pointer;
+text-align: left;
+}
+
+.skill-list-item:hover {
+border-color: var(--Highlight);
+background: #333;
+}
+
+.btn-main {
+padding: 15px;
+border-radius: 10px;
+border: none;
+background: #4d94ff;
+color: white;
+font-weight: bold;
+font-size: 1.1em;
+cursor: pointer;
+width: 100%;
+margin-top: 10px;
+}
+
+.btn-reroll {
+background: #ff9900;
+}
+
+/* --- 신규 스킬 뽑기 애니메이션 --- */
+@keyframes bookShake {
+0% {
+transform: rotate(0deg) scale(1);
+filter: drop-shadow(0 0 10px gold);
+}
+
+25% {
+transform: rotate(-5deg) scale(1.1);
+filter: drop-shadow(0 0 20px gold);
+}
+
+50% {
+transform: rotate(5deg) scale(1.1);
+filter: drop-shadow(0 0 40px white);
+}
+
+75% {
+transform: rotate(-5deg) scale(1.1);
+filter: drop-shadow(0 0 20px gold);
+}
+
+100% {
+transform: rotate(0deg) scale(1);
+filter: drop-shadow(0 0 10px gold);
+}
+}
+
+.anim-book {
+animation: bookShake 0.3s infinite;
+}
+
+@keyframes cardPop {
+0% {
+opacity: 0;
+transform: scale(0.5) translateY(20px);
+}
+
+100% {
+opacity: 1;
+transform: scale(1) translateY(0);
+}
+}
+
+.anim-card {
+opacity: 0;
+animation: cardPop 0.5s forwards ease-out;
+}
+
+.skill-icon-img {
+width: 45px;
+height: 45px;
+object-fit: contain;
+margin-bottom: 10px;
+border-radius: 8px;
+}
+
+/* --- 유물 시스템 전용 스타일 --- */
+@keyframes potShake {
+0% {
+transform: translate(0, 0) rotate(0);
+}
+
+20% {
+transform: translate(-5px, 0) rotate(-5deg);
+}
+
+40% {
+transform: translate(5px, 0) rotate(5deg);
+}
+
+60% {
+transform: translate(-5px, 0) rotate(-5deg);
+}
+
+80% {
+transform: translate(5px, 0) rotate(5deg);
+}
+
+100% {
+transform: translate(0, 0) rotate(0);
+}
+}
+
+.anim-pot {
+font-size: 80px;
+display: inline-block;
+animation: potShake 0.4s infinite;
+}
+
+@keyframes relicPop {
+0% {
+transform: scale(0) translateY(50px);
+opacity: 0;
+}
+
+60% {
+transform: scale(1.2) translateY(-10px);
+opacity: 1;
+}
+
+100% {
+transform: scale(1) translateY(0);
+}
+}
+
+.relic-pop {
+width: 100px;
+height: 100px;
+image-rendering: pixelated;
+/* 도트 아이콘을 선명하게 확대 */
+animation: relicPop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.relic-card {
+background: #FEF3C7;
+border: 2px solid var(--Yellow);
+border-radius: 15px;
+padding: 20px;
+margin-top: 15px;
+box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+color: var(--TextMain);
+}
+
+/* --- 수집 도감 전용 스타일 --- */
+.encyc-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+gap: 10px;
+margin-top: 10px;
+}
+
+.encyc-item {
+background: #FFFFFF;
+border: 1px solid var(--BorderColor);
+border-radius: 10px;
+padding: 10px 5px;
+text-align: center;
+transition: 0.2s;
+box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.encyc-item:hover {
+transform: scale(1.05);
+border-color: var(--Highlight);
+}
+
+.encyc-icon {
+width: 45px;
+height: 45px;
+object-fit: contain;
+margin-bottom: 5px;
+}
+
+.encyc-name {
+font-size: 0.75em;
+font-weight: bold;
+word-break: keep-all;
+color: var(--TextMain);
+}
+
+/* 사냥터 스테이지 컨테이너 (너비 확장 및 스크롤 고정) */
+.stage-container {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+gap: 15px;
+margin-top: 15px;
+max-height: 60vh;
+overflow-y: scroll;
+padding-right: 10px;
+}
+
+/* 🎮 온라인 게임 스타일 커스텀 스크롤바 */
+.stage-container::-webkit-scrollbar {
+width: 14px;
+}
+
+.stage-container::-webkit-scrollbar-track {
+background: #F1F5F9;
+border-radius: 8px;
+border: 1px solid var(--BorderColor);
+}
+
+.stage-container::-webkit-scrollbar-thumb {
+background: linear-gradient(180deg, var(--Red), #BE123C);
+border-radius: 8px;
+border: 2px solid #F1F5F9;
+}
+
+.stage-container::-webkit-scrollbar-thumb:hover {
+background: #BE123C;
+}
+
+/* 개별 몬스터 카드 (다크 테마) */
+.monster-card {
+background: #1E293B;
+border: 2px solid #334155;
+border-radius: 10px;
+padding: 10px;
+text-align: center;
+transition: transform 0.2s, border-color 0.2s;
+box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+color: white;
+}
+
+.monster-card:hover {
+transform: translateY(-5px);
+border-color: var(--Red);
+box-shadow: 0 10px 15px rgba(225, 29, 72, 0.4);
+}
+
+.stars {
+color: #ffd700;
+font-size: 0.9em;
+margin-bottom: 5px;
+letter-spacing: 2px;
+}
+
+/* --- 여기서부터 신규 추가: 전투 애니메이션 --- */
+
+/* 💡 플레이어가 오른쪽으로 돌진 (거울 모드 반전 유지 - 완벽 수정!) */
+/* CSS 애니메이션의 시작(0%)과 끝(100%)을 기본 상태인 scaleX(-1)로 단단히 고정 */
+@keyframes attackP2M {
+0% {
+transform: translateX(0) scaleX(-1);
+}
+
+50% {
+transform: translateX(50px) scale(-1.1, 1.1);
+}
+
+100% {
+transform: translateX(0) scaleX(-1);
+}
+}
+
+/* 몬스터가 왼쪽(플레이어)으로 돌진 */
+@keyframes attackM2P {
+0% {
+transform: translateX(0);
+}
+
+50% {
+transform: translateX(-50px) scale(1.1);
+}
+
+100% {
+transform: translateX(0);
+}
+}
+
+/* 피격 시 흔들림 (몬스터용) */
+@keyframes damageShake {
+0% {
+transform: translateX(0);
+filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5));
+}
+
+20% {
+transform: translateX(-15px);
+filter: brightness(2) drop-shadow(0 0 20px red);
+}
+
+40% {
+transform: translateX(15px);
+}
+
+60% {
+transform: translateX(-15px);
+}
+
+80% {
+transform: translateX(15px);
+}
+
+100% {
+transform: translateX(0);
+filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5));
+}
+}
+
+/* 💡 피격 시 흔들림 (플레이어용 - 거울 모드 반전 유지) */
+@keyframes damageShakeP {
+0% {
+transform: translateX(0) scaleX(-1);
+filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5));
+}
+
+20% {
+transform: translateX(-15px) scaleX(-1);
+filter: brightness(2) drop-shadow(0 0 20px red);
+}
+
+40% {
+transform: translateX(15px) scaleX(-1);
+}
+
+60% {
+transform: translateX(-15px) scaleX(-1);
+}
+
+80% {
+transform: translateX(15px) scaleX(-1);
+}
+
+100% {
+transform: translateX(0) scaleX(-1);
+filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5));
+}
+}
+
+.anim-attack-p {
+animation: attackP2M 0.3s ease-in-out;
+}
+
+.anim-attack-m {
+animation: attackM2P 0.3s ease-in-out;
+}
+
+.anim-damage {
+animation: damageShake 0.4s ease-in-out;
+}
+
+/* 💡 신규 추가: 피격 시 흔들림 (플레이어용 - 거울 모드 반전 유지) */
+@keyframes damageShakeP {
+0% {
+transform: translateX(0) scaleX(-1);
+filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5));
+}
+
+20% {
+transform: translateX(-15px) scaleX(-1);
+filter: brightness(2) drop-shadow(0 0 20px red);
+}
+
+40% {
+transform: translateX(15px) scaleX(-1);
+}
+
+60% {
+transform: translateX(-15px) scaleX(-1);
+}
+
+80% {
+transform: translateX(15px) scaleX(-1);
+}
+
+100% {
+transform: translateX(0) scaleX(-1);
+filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5));
+}
+}
+
+.anim-damage-p {
+animation: damageShakeP 0.4s ease-in-out;
+}
+
+/* 💡 레이드 파티원 UI 전체 애니메이션 (좌우 반전 없음) */
+@keyframes raidPartyAttack {
+0% {
+transform: translateX(0);
+}
+
+50% {
+transform: translateX(30px) scale(1.02);
+}
+
+100% {
+transform: translateX(0);
+}
+}
+
+.anim-raid-attack {
+animation: raidPartyAttack 0.3s ease-in-out;
+}
+
+/* 몬스터 스킬 전용 아이콘 스타일 (핏빛 점멸 필터) */
+.monster-skill-icon {
+width: 100%;
+height: 100%;
+border-radius: 8px;
+border: 2px solid #ff4d4d;
+/* 붉은색 테두리 */
+box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+/* 붉은빛 그림자 */
+object-fit: contain;
+background: #111;
+padding: 2px;
+box-sizing: border-box;
+
+/* 💡 흑백 전환(grayscale) 후, 세피아 톤 적용(sepia), 붉은색 영역으로 색상 회전(hue-rotate), 채도 극대화(saturate) */
+filter: grayscale(100%) sepia(100%) hue-rotate(320deg) saturate(500%) contrast(1.2);
+}
+
+/* 💡 실사 이미지를 도트풍으로 강제 변환하는 클래스 */
+/* 몬스터 픽셀화 */
+.pixelated-monster {
+image-rendering: pixelated;
+filter: contrast(1.1) saturate(1.2);
+}
+
+/* 👑 명예의 전당 전용 스타일 */
+.hof-btn {
+background: linear-gradient(135deg, #FFD700, #F5A623);
+color: #000;
+border: none;
+padding: 8px 20px;
+border-radius: 20px;
+font-size: 1.1em;
+font-weight: bold;
+cursor: pointer;
+box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
+transition: 0.3s;
+margin-top: 15px;
+}
+
+.hof-btn:hover {
+transform: translateY(-3px);
+filter: brightness(1.1);
+box-shadow: 0 6px 20px rgba(255, 215, 0, 0.6);
+}
+
+.podium-container {
+display: flex;
+justify-content: center;
+align-items: flex-end;
+gap: 15px;
+margin-top: 100px;
+/* 아바타가 위로 튀어나오므로 상단 여백 크게 확보 */
+min-height: 220px;
+}
+
+.podium-rank {
+background: rgba(0, 0, 0, 0.6);
+border-radius: 15px 15px 0 0;
+display: flex;
+flex-direction: column;
+align-items: center;
+padding: 10px;
+position: relative;
+border-top: 4px solid;
+width: 30%;
+max-width: 140px;
+}
+
+.podium-1 {
+height: 180px;
+border-color: #FFD700;
+z-index: 3;
+box-shadow: 0 -10px 30px rgba(255, 215, 0, 0.3);
+background: linear-gradient(180deg, rgba(255, 215, 0, 0.2) 0%, rgba(0, 0, 0, 0.6) 100%);
+}
+
+.podium-2 {
+height: 130px;
+border-color: #C0C0C0;
+z-index: 2;
+box-shadow: 0 -10px 20px rgba(192, 192, 192, 0.2);
+}
+
+.podium-3 {
+height: 100px;
+border-color: #CD7F32;
+z-index: 1;
+box-shadow: 0 -10px 20px rgba(205, 127, 50, 0.2);
+}
+
+.podium-avatar {
+position: absolute;
+top: -95px;
+width: 100px;
+height: 100px;
+object-fit: contain;
+filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
+transform: scaleX(-1);
+}
+
+.podium-1 .podium-avatar {
+top: -115px;
+width: 120px;
+height: 120px;
+filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
+}
+
+.battle-arena {
+display: flex;
+justify-content: space-between;
+align-items: flex-end;
+margin-bottom: 20px;
+padding: 20px;
+background: rgba(0, 0, 0, 0.5);
+border-radius: 15px;
+border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.battle-side {
+width: 45%;
+text-align: center;
+display: flex;
+flex-direction: column;
+align-items: center;
+}
+
+.battle-vs {
+font-size: 35px;
+font-weight: bold;
+color: #ff4d4d;
+align-self: center;
+text-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+}
+
+.party-card-container {
+display: flex;
+flex-wrap: wrap;
+justify-content: center;
+gap: 15px;
+width: 100%;
+}
+
+.party-member-card {
+background: #111;
+border: 2px solid #333;
+border-radius: 10px;
+padding: 15px 10px;
+transition: 0.3s;
+display: flex;
+flex-direction: column;
+align-items: center;
+box-sizing: border-box;
+width: 46%;
+max-width: 160px;
+}
+
+@media (max-width: 768px) {
+.battle-arena {
+flex-direction: column-reverse;
+align-items: center;
+gap: 30px;
+}
+
+.battle-side {
+width: 100%;
+}
+
+.party-member-card {
+width: 100%;
+max-width: none;
+}
+}
+
+/* 💡 신규: 공지사항 알림 N 뱃지 스타일 */
+.n-badge {
+position: absolute;
+top: -8px;
+right: -8px;
+background-color: #EF4444;
+color: white;
+font-size: 0.75em;
+font-weight: bold;
+padding: 3px 7px;
+border-radius: 50%;
+box-shadow: 0 2px 5px rgba(239, 68, 68, 0.5);
+z-index: 10;
+animation: cardPop 0.3s ease-out;
+}
+
+/* 💡 신규: 대시보드 탭 UI 스타일 */
+.dash-tab {
+flex: 1;
+padding: 12px 5px;
+background: var(--BgDashboard);
+color: var(--TextSub);
+text-align: center;
+cursor: pointer;
+font-weight: bold;
+font-size: 0.95em;
+border-bottom: 3px solid transparent;
+transition: 0.2s;
+white-space: nowrap;
+position: relative;
+}
+.dash-tab.active {
+color: var(--Highlight);
+border-bottom: 3px solid var(--Highlight);
+background: #FFFFFF;
+}
+.dash-tab:hover {
+background: #FFFFFF;
+color: var(--Highlight);
+}
+.dash-layout {
+display: flex;
+gap: 15px;
+text-align: left;
+}
+@media (max-width: 768px) {
+.dash-layout { flex-direction: column; }
+.dash-tab { font-size: 0.85em; padding: 10px 2px; }
+}
+
+/* 💡 신규 추가: 스킬 픽셀화 및 가호별 테두리 */
+.skill-icon-pixel {
+width: 24px;
+height: 24px;
+image-rendering: pixelated;
+border-radius: 4px;
+object-fit: contain;
+background-color: #222;
+padding: 2px;
+vertical-align: middle;
+}
+
+.blessing-Red { border: 2px solid var(--Red); box-shadow: 0 0 8px rgba(239, 68, 68, 0.6); }
+.blessing-Blue { border: 2px solid var(--Blue); box-shadow: 0 0 8px rgba(59, 130, 246, 0.6); }
+.blessing-Green { border: 2px solid var(--Green); box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); }
+.blessing-Yellow { border: 2px solid var(--Yellow); box-shadow: 0 0 8px rgba(245, 158, 11, 0.6); }
+.blessing-Purple { border: 2px solid var(--Purple); box-shadow: 0 0 8px rgba(139, 92, 246, 0.6); }
+.blessing-None { border: 2px solid #555; }
+
+/* 👑 명예의 전당 탭 스타일 */
+.hof-tab {
+flex: 1;
+padding: 12px 5px;
+background: rgba(0, 0, 0, 0.4);
+color: #aaa;
+text-align: center;
+cursor: pointer;
+font-weight: bold;
+font-size: 1.1em;
+border-bottom: 3px solid transparent;
+transition: 0.2s;
+}
+.hof-tab.active {
+color: #FFD700;
+border-bottom: 3px solid #FFD700;
+background: rgba(255, 215, 0, 0.1);
+}
+
+/* 💡 [신규] 전역 로딩 오버레이 스타일 (모든 팝업/모달보다 위에 고정) */
+.global-loading-overlay {
+position: fixed;
+top: 0;
+left: 0;
+width: 100vw;
+height: 100vh;
+background: rgba(15, 23, 42, 0.75); /* 회색 반투명 다크 배경 */
+backdrop-filter: blur(4px); /* 배경 흐림 처리 */
+z-index: 99999; /* 모든 모달과 팝업보다 최상단 배치 */
+display: flex;
+align-items: center;
+justify-content: center;
+pointer-events: all; /* 모든 하위 클릭 이벤트 차단 */
+}
+
+.global-loading-box {
+background: #0F172A;
+border: 2px solid #3B82F6;
+border-radius: 20px;
+padding: 30px 40px;
+text-align: center;
+box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+display: flex;
+flex-direction: column;
+align-items: center;
+animation: cardPop 0.3s ease-out forwards;
+}
+
+.global-loading-spinner {
+width: 45px;
+height: 45px;
+border: 4px solid rgba(59, 130, 246, 0.2);
+border-top: 4px solid #3B82F6;
+border-radius: 50%;
+animation: globalSpin 1s linear infinite;
+margin-bottom: 15px;
+}
+
+.global-loading-text {
+color: #F8FAFC;
+font-size: 1.25em;
+font-weight: bold;
+}
+
+@keyframes globalSpin {
+0% { transform: rotate(0deg); }
+100% { transform: rotate(360deg); }
+}
