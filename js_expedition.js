@@ -646,7 +646,7 @@ function openExpeditionModal() {
     renderExpeditionUI();
 }
 
-// 2. 원정대 화면 렌더링 (반응형 유동 레이아웃 + 흰색 배경 일러스트 + 세로 공간 확보)
+// 2. 원정대 화면 렌더링 (세로형 직사각형 모달 + 대형 일러스트 비율 유지 + 2개 버튼 구성)
 function renderExpeditionUI() {
     const s = currentStudent;
     const modal = document.getElementById('detailModal');
@@ -655,63 +655,74 @@ function renderExpeditionUI() {
 
     modal.style.display = 'flex';
 
+    // 💡 [1. 빨간색 박스] 모달 가로 폭을 줄여 세로가 긴 세로형 직사각형 형태 완성
+    const modalContent = modal.querySelector('.modal-content');
+    if (modalContent) {
+        modalContent.style.maxWidth = '580px';
+    }
+
     const m1Obj = (mercenariesData || []).find(m => String(m.merc_id) === String(tempExpedition.m1));
     const m1Name = m1Obj ? m1Obj.name : '미배치';
     const m1Tier = m1Obj ? String(m1Obj.tier || 'C').toUpperCase() : '';
     let m1TierBadge = m1Tier ? `<span style="font-size:0.85em; font-weight:bold; color:var(--TextGold); margin-left:4px;">[${m1Tier}급]</span>` : '';
+    
+    // 💡 [3. 일러스트 비율 보존] max-height/width 고유 비율(contain) 유지 + 배경 흰색
     const m1IconHtml = m1Obj
-        ? (m1Obj.icon_url ? `<img src="${m1Obj.icon_url}" style="width:110px; height:110px; object-fit:contain; border-radius:12px; background:#FFFFFF; border:2px solid var(--BorderColor); padding:4px; box-shadow:0 4px 8px rgba(0,0,0,0.08);">` : '🛡️')
-        : '<div style="font-size:60px; line-height:110px;">👤</div>';
+        ? (m1Obj.icon_url ? `<img src="${m1Obj.icon_url}" style="max-width:130px; max-height:140px; width:auto; height:auto; object-fit:contain; border-radius:12px; background:#FFFFFF; border:2px solid var(--BorderColor); padding:4px; box-shadow:0 4px 8px rgba(0,0,0,0.08);">` : '🛡️')
+        : '<div style="font-size:60px; line-height:130px;">👤</div>';
     const m1SkillObj = (skillsData || []).find(sk => String(sk.skill_id) === String(tempExpedition.m1_skill));
-    const m1SkillName = m1SkillObj ? '📜 ' + m1SkillObj.name : '➕ 스킬 지정하기';
+    const m1SkillName = m1SkillObj ? '📜 ' + m1SkillObj.name : '📜 스킬 선택';
 
     const isM2Unlocked = (s.merc_slot2_unlocked === true || String(s.merc_slot2_unlocked).toUpperCase() === 'TRUE');
     const m2Obj = (mercenariesData || []).find(m => String(m.merc_id) === String(tempExpedition.m2));
     const m2Name = m2Obj ? m2Obj.name : '미배치';
     const m2Tier = m2Obj ? String(m2Obj.tier || 'C').toUpperCase() : '';
     let m2TierBadge = m2Tier ? `<span style="font-size:0.85em; font-weight:bold; color:var(--TextGold); margin-left:4px;">[${m2Tier}급]</span>` : '';
+    
     const m2IconHtml = m2Obj
-        ? (m2Obj.icon_url ? `<img src="${m2Obj.icon_url}" style="width:110px; height:110px; object-fit:contain; border-radius:12px; background:#FFFFFF; border:2px solid var(--BorderColor); padding:4px; box-shadow:0 4px 8px rgba(0,0,0,0.08);">` : '🛡️')
-        : '<div style="font-size:60px; line-height:110px;">👤</div>';
+        ? (m2Obj.icon_url ? `<img src="${m2Obj.icon_url}" style="max-width:130px; max-height:140px; width:auto; height:auto; object-fit:contain; border-radius:12px; background:#FFFFFF; border:2px solid var(--BorderColor); padding:4px; box-shadow:0 4px 8px rgba(0,0,0,0.08);">` : '🛡️')
+        : '<div style="font-size:60px; line-height:130px;">👤</div>';
     const m2SkillObj = (skillsData || []).find(sk => String(sk.skill_id) === String(tempExpedition.m2_skill));
-    const m2SkillName = m2SkillObj ? '📜 ' + m2SkillObj.name : '➕ 스킬 지정하기';
+    const m2SkillName = m2SkillObj ? '📜 ' + m2SkillObj.name : '📜 스킬 선택';
 
-    let html = '<h2 style="color:var(--Highlight); text-align:center; margin-top:0; font-size:1.5em;">⚔️ 원정대 관리</h2>';
-    html += '<p style="text-align:center; color:var(--TextSub); font-size:0.9rem; margin-bottom:20px;">원정대에 동료를 배치하고 스킬을 지정하세요!<br><span style="color:var(--TextGold); font-size:0.85em;">(대표 스킬 및 동일 스킬 중복 장착 불가)</span></p>';
+    let html = '<h2 style="color:var(--Highlight); text-align:center; margin-top:0; font-size:1.6em;">⚔️ 원정대 관리</h2>';
+    html += '<p style="text-align:center; color:var(--TextSub); font-size:0.85rem; margin-bottom:20px;">원정대에 동료를 배치하고 스킬을 지정하세요!<br><span style="color:var(--TextGold); font-size:0.8em;">(대표 스킬 및 동일 스킬 중복 장착 불가)</span></p>';
 
-    // 💡 PC, 태블릿, 모바일 유동 반응형 그리드 (minmax 240px)
-    html += '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:16px; margin-bottom:25px;">';
+    // 💡 [초록색 박스] 2개 동료 슬롯 그리드
+    html += '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:20px;">';
 
     // [슬롯 1: 동료 1]
-    html += '<div style="border:2px solid var(--Blue); background:#F8FAFC; border-radius:16px; padding:18px 12px; text-align:center; display:flex; flex-direction:column; align-items:center; min-height:280px; box-shadow:0 4px 10px rgba(59, 130, 246, 0.1);">';
+    html += '<div style="border:2px solid var(--Blue); background:#F8FAFC; border-radius:16px; padding:18px 10px; text-align:center; display:flex; flex-direction:column; align-items:center; min-height:300px; box-shadow:0 4px 10px rgba(59, 130, 246, 0.1);">';
     html += '  <div style="font-size:0.9rem; font-weight:bold; color:var(--Blue); margin-bottom:10px;">[동료 1 슬롯]</div>';
-    html += '  <div style="height:115px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;">' + m1IconHtml + '</div>';
+    html += '  <div style="height:145px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;">' + m1IconHtml + '</div>';
     html += '  <div style="font-weight:bold; font-size:1.05rem; color:var(--TextMain); margin-bottom:12px;">' + m1Name + m1TierBadge + '</div>';
-    html += '  <button class="small-btn" style="padding:8px 16px; font-size:0.9rem; background:var(--Highlight); color:white; border:none; border-radius:8px; cursor:pointer; width:85%; margin-bottom:8px; font-weight:bold; box-shadow:0 2px 5px rgba(0,0,0,0.1);" onclick="openMercSelectModal(1)">🔄 동료 교체</button>';
-    html += '  <button class="btn-main" style="padding:10px; font-size:0.85rem; width:85%; margin-top:auto;"' + (!m1Obj ? ' disabled style="opacity:0.5;"' : '') + ' onclick="openExpSkillSelectModal(\'m1\')">' + m1SkillName + '</button>';
+    
+    // 💡 [4. 버튼 명칭] "동료 교체" -> "🔄 교체", "스킬 지정" -> "📜 스킬 선택"
+    html += '  <button class="small-btn" style="padding:9px 16px; font-size:0.9rem; background:var(--Highlight); color:white; border:none; border-radius:8px; cursor:pointer; width:88%; margin-bottom:8px; font-weight:bold; box-shadow:0 2px 5px rgba(0,0,0,0.1);" onclick="openMercSelectModal(1)">🔄 교체</button>';
+    html += '  <button class="btn-main" style="padding:10px; font-size:0.85rem; width:88%; margin-top:auto;"' + (!m1Obj ? ' disabled style="opacity:0.5;"' : '') + ' onclick="openExpSkillSelectModal(\'m1\')">' + m1SkillName + '</button>';
     html += '</div>';
 
     // [슬롯 2: 동료 2]
-    html += '<div style="border:2px solid var(--Purple); background:#FBF7FF; border-radius:16px; padding:18px 12px; text-align:center; display:flex; flex-direction:column; align-items:center; min-height:280px; box-shadow:0 4px 10px rgba(139, 92, 246, 0.1);">';
+    html += '<div style="border:2px solid var(--Purple); background:#FBF7FF; border-radius:16px; padding:18px 10px; text-align:center; display:flex; flex-direction:column; align-items:center; min-height:300px; box-shadow:0 4px 10px rgba(139, 92, 246, 0.1);">';
     html += '  <div style="font-size:0.9rem; font-weight:bold; color:var(--Purple); margin-bottom:10px;">[동료 2 슬롯]</div>';
     if (!isM2Unlocked) {
-        html += '  <div style="font-size:3rem; margin:25px 0;">🔒</div>';
+        html += '  <div style="font-size:3.2rem; margin:25px 0;">🔒</div>';
         html += '  <div style="font-size:0.85rem; color:var(--TextSub); margin-bottom:15px; font-weight:bold;">슬롯 잠김 (상점 해금 필요)</div>';
-        html += '  <button class="btn-main" style="padding:10px; font-size:0.9rem; background:var(--Yellow); color:black; width:85%; margin-top:auto;" onclick="openShopModal()">🛒 상점 해금하러 가기</button>';
+        html += '  <button class="btn-main" style="padding:10px; font-size:0.85rem; background:var(--Yellow); color:black; width:88%; margin-top:auto; font-weight:bold;" onclick="openShopModal()">🛒 상점 해금하러 가기</button>';
     } else {
-        html += '  <div style="height:115px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;">' + m2IconHtml + '</div>';
+        html += '  <div style="height:145px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;">' + m2IconHtml + '</div>';
         html += '  <div style="font-weight:bold; font-size:1.05rem; color:var(--TextMain); margin-bottom:12px;">' + m2Name + m2TierBadge + '</div>';
-        html += '  <button class="small-btn" style="padding:8px 16px; font-size:0.9rem; background:var(--Purple); color:white; border:none; border-radius:8px; cursor:pointer; width:85%; margin-bottom:8px; font-weight:bold; box-shadow:0 2px 5px rgba(0,0,0,0.1);" onclick="openMercSelectModal(2)">🔄 동료 교체</button>';
-        html += '  <button class="btn-main" style="padding:10px; font-size:0.85rem; width:85%; margin-top:auto;"' + (!m2Obj ? ' disabled style="opacity:0.5;"' : '') + ' onclick="openExpSkillSelectModal(\'m2\')">' + m2SkillName + '</button>';
+        html += '  <button class="small-btn" style="padding:9px 16px; font-size:0.9rem; background:var(--Purple); color:white; border:none; border-radius:8px; cursor:pointer; width:88%; margin-bottom:8px; font-weight:bold; box-shadow:0 2px 5px rgba(0,0,0,0.1);" onclick="openMercSelectModal(2)">🔄 교체</button>';
+        html += '  <button class="btn-main" style="padding:10px; font-size:0.85rem; width:88%; margin-top:auto;"' + (!m2Obj ? ' disabled style="opacity:0.5;"' : '') + ' onclick="openExpSkillSelectModal(\'m2\')">' + m2SkillName + '</button>';
     }
     html += '</div>';
 
     html += '</div>';
 
-    html += '<div style="display:flex; gap:10px; justify-content:center; margin-top:10px;">';
-    html += '  <button class="btn-main" style="background:var(--Blue); margin-top:0;" onclick="openMercenaryShop()">🛒 동료 뽑기</button>';
-    html += '  <button class="btn-main" style="background:var(--Green); margin-top:0;" onclick="saveExpeditionSetup()">💾 배치 저장</button>';
-    html += '  <button class="btn-main" style="background:var(--TextSub); margin-top:0;" onclick="renderDashboard()">닫기</button>';
+    // 💡 [2. 핑크색 박스] 하단 닫기 버튼 삭제, 동료 뽑기 및 배치 저장 2개만 균등 배치
+    html += '<div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">';
+    html += '  <button class="btn-main" style="flex:1; background:var(--Blue); margin-top:0; padding:14px; font-size:1em;" onclick="openMercenaryShop()">🛒 동료 뽑기</button>';
+    html += '  <button class="btn-main" style="flex:1; background:var(--Green); margin-top:0; padding:14px; font-size:1em;" onclick="saveExpeditionSetup()">💾 배치 저장</button>';
     html += '</div>';
 
     body.innerHTML = html;
