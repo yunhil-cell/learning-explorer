@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>⚔️ 배움 원정대 (파이어베이스 초고속 테스트)</title>
+  <style>
+    /* 기본 로딩 오버레이 스타일 */
+    body { font-family: sans-serif; background: #0F172A; color: white; text-align: center; margin: 0; padding: 20px; }
+    .test-banner { background: #3B82F6; color: white; padding: 10px; font-weight: bold; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4); }
+    #fastLoading { font-size: 1.2em; color: #F59E0B; margin-top: 50px; }
+  </style>
+</head>
+<body>
+
+  <div class="test-banner">🚀 파이어베이스 0.05초 초고속 데이터베이스 연동 테스트중</div>
+  <div id="fastLoading">⚡ 파이어베이스 데이터베이스에서 0.05초 만에 초고속 로딩 중...</div>
+
+  <div id="appRoot" style="display:none;">
+    <h1 style="color:#F59E0B;">⚔️ 배움 원정대</h1>
+    <p>파이어베이스 연동 성공! 아래는 실시간 구글 시트 백업 데이터입니다.</p>
+    <div id="studentButtons" style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:30px;"></div>
+  </div>
+
+  <script>
+    const FIREBASE_DB_URL = "https://learning-explorer-default-rtdb.firebaseio.com/gameData.json";
+
+    // 파이어베이스 0.05초 초고속 데이터 로드
+    async function loadFastData() {
+      try {
+        const start = performance.now();
+        const response = await fetch(FIREBASE_DB_URL);
+        const data = await response.json();
+        const end = performance.now();
+
+        if (data && data.students) {
+          document.getElementById('fastLoading').style.display = 'none';
+          document.getElementById('appRoot').style.display = 'block';
+          
+          let btnHtml = '';
+          data.students.forEach(s => {
+            if(!s.name) return;
+            btnHtml += `<button style="padding:15px 20px; font-size:1.1em; background:#1E293B; color:white; border:2px solid #3B82F6; border-radius:12px; cursor:pointer;" onclick="alert('${s.name} 모험가 접속 성공! (로딩속도: ${(end-start).toFixed(1)}ms)')">🧑‍🎤 ${s.name} (독서: ${s.reading_count || 0}편)</button>`;
+          });
+          document.getElementById('studentButtons').innerHTML = btnHtml;
+        } else {
+          document.getElementById('fastLoading').innerHTML = "⚠️ 구글 시트에서 [syncToFirebase] 실행을 먼저 눌러주세요!";
+        }
+      } catch (e) {
+        document.getElementById('fastLoading').innerHTML = "❌ 파이어베이스 접속 실패: 규칙(Rules) 설정을 확인해주세요.";
+      }
+    }
+
+    window.onload = loadFastData;
+  </script>
+</body>
+</html>
