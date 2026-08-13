@@ -343,6 +343,10 @@ function renderDashboard() {
     const s = currentStudent;
     const body = document.getElementById('modalBody');
 
+    // 💡 대시보드 원래 너비(900px)로 안전 원복
+    const modalContent = document.querySelector('#detailModal .modal-content');
+    if (modalContent) modalContent.style.maxWidth = '900px';
+
     const currentWeek = Number(sysConfig.current_week) || 1;
     const maxPerWeek = Number(sysConfig.max_weekly_books) || 3;
     const maxReadingLimit = currentWeek * maxPerWeek;

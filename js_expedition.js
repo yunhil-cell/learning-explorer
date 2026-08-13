@@ -709,7 +709,7 @@ function renderExpeditionUI() {
         html += '  <div style="font-size:3.2rem; margin:25px 0;">🔒</div>';
         html += '  <div style="font-size:0.85rem; color:var(--TextSub); margin-bottom:15px; font-weight:bold;">슬롯 잠김 (상점 해금 필요)</div>';
         // 💡 [에러 수정] 존재하지 않는 openShopModal() 대신 상점 탭으로 렌더링되게 변경
-        html += '  <button class="btn-main" style="padding:10px; font-size:0.85rem; background:var(--Yellow); color:black; width:88%; margin-top:auto; font-weight:bold;" onclick="window.currentDashTab=\'shop\'; renderDashboard();">🛒 상점 해금하러 가기</button>';
+        html += '  <button class="btn-main" style="padding:10px; font-size:0.85rem; background:var(--Yellow); color:black; width:88%; margin-top:auto; font-weight:bold;" onclick="showUiAlert(\'🛒 상점 안내\', \'동료 2번 슬롯은 <b>[🛒 상점]</b> 탭에서 <b>[동료 슬롯 확장권]</b>을 구매하면 즉시 해금됩니다!\', \'\');">🛒 해금 방법 안내</button>';
     } else {
         html += '  <div style="height:145px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;">' + m2IconHtml + '</div>';
         html += '  <div style="font-weight:bold; font-size:1.05rem; color:var(--TextMain); margin-bottom:12px;">' + m2Name + m2TierBadge + '</div>';
