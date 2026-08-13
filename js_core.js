@@ -25,7 +25,7 @@ async function updateFastFirebaseStudent(student) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(student)
         });
-    } catch(e) {
+    } catch (e) {
         console.error("파이어베이스 학생 데이터 저장 실패:", e);
     }
 }
@@ -77,39 +77,9 @@ let currentRaidDungeon = null;
 let currentRaidStage = 0;
 let totalRaidReward = 0;
 
-// 페이지(웹앱)가 로드될 때 서버(Code.gs)에서 몬스터 관련 데이터를 모두 불러옵니다.
+// 💡 파이어베이스 연동 시 initGameData에서 모든 데이터가 자동 세팅되므로 로드 로그로 대체합니다.
 window.addEventListener('DOMContentLoaded', () => {
-    // 1. 몬스터 기본 스탯 로드
-    google.script.run
-        .withSuccessHandler((data) => {
-            monsterList = data;
-            console.log("몬스터 데이터 로드 완료:", monsterList);
-        })
-        .getMonsterData();
-
-    // 2. 💡 몬스터 스킬 데이터 로드
-    google.script.run
-        .withSuccessHandler((data) => {
-            monsterSkillsData = data;
-            console.log("몬스터 스킬 로드 완료:", monsterSkillsData);
-        })
-        .getMonsterSkillData();
-
-    // 3. 던전 데이터 로드
-    google.script.run
-        .withSuccessHandler((data) => {
-            dungeonsData = data;
-            console.log("던전 데이터 로드 완료:", dungeonsData);
-        })
-        .getDungeonData();
-
-    // 💡 4. [신규] 보스 데이터 로드 추가
-    google.script.run
-        .withSuccessHandler((data) => {
-            bossList = data;
-            console.log("보스 데이터 로드 완료:", bossList);
-        })
-        .getBossData();
+    console.log("파이어베이스 초고속 데이터베이스 준비 완료");
 });
 
 const FIREBASE_DB_URL = "https://learning-explorer-default-rtdb.firebaseio.com/gameData.json";
@@ -123,7 +93,7 @@ async function fetchFastGameData() {
         const res = await fetch(FIREBASE_DB_URL);
         const data = await res.json();
         if (data) initGameData(data);
-    } catch(e) {
+    } catch (e) {
         console.error("파이어베이스 데이터 로딩 실패:", e);
     }
 }
@@ -1231,7 +1201,7 @@ function openNoticeBoard() {
         if (String(currentStudent.last_read_notice) !== String(latestNoticeId)) {
             document.getElementById('noticeBadge').style.display = 'none';
             currentStudent.last_read_notice = latestNoticeId;
-            google.script.run.updateLastReadNotice(currentStudent.name, latestNoticeId);
+            updateFastFirebaseStudent(currentStudent);
         }
     }
 
