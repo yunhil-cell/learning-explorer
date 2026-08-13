@@ -281,14 +281,12 @@ function fleeBattle() {
     document.getElementById('battleModal').style.display = 'none';
 
     if (battleState.isRaid) {
+        const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
+        let curRaid = (currentStudent.weekly_raid !== undefined && currentStudent.weekly_raid !== "") ? Number(currentStudent.weekly_raid) : maxRaid;
+        currentStudent.weekly_raid = Math.max(0, curRaid - 1);
+        updateFastFirebaseStudent(currentStudent);
+
         showUiAlert("🏃 레이드 포기", "파티 레이드에서 후퇴했습니다.<br><span style='color:#ff4d4d; font-size:0.9em;'>(파티원 전원의 탐험 기회가 1 차감됩니다.)</span>", "renderDashboard()");
-
-        const partyNames = battleState.party.map(p => p.name).join(',');
-        google.script.run.processRaidResult(partyNames, false, 0, "");
-
-        if (currentStudent.weekly_raid > 0) {
-            currentStudent.weekly_raid--;
-        }
         return;
     }
 
@@ -2218,10 +2216,9 @@ function handleRaidMonsterDefeat() {
         if (mId) {
             const rawMonsters = String(currentStudent.monster_data || "").replace(/!/g, '');
             let myMonsters = rawMonsters ? rawMonsters.split(',').map(x => x.trim()).filter(Boolean) : [];
-            // 조건문 제거: 중복을 허용하여 계속 누적시킵니다!
             myMonsters.push(mId);
             currentStudent.monster_data = "!" + myMonsters.join(',');
-            google.script.run.updateUnlockedMonsters(currentStudent.name, currentStudent.monster_data);
+            updateFastFirebaseStudent(currentStudent);
         }
     }
 

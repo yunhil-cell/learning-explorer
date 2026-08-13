@@ -171,13 +171,9 @@ function attemptEnhance(currentLv, finalProb, cost, currentFailCount, currency) 
         return;
     }
 
-    // 로컬 데이터 즉시 차감
     currentStudent.game_money = currentMoney - cost;
+    updateFastFirebaseStudent(currentStudent);
 
-    // 서버에 재화 차감 요청
-    google.script.run.updateGameMoney(currentStudent.name, -cost);
-
-    // 강화 로직 실행 (교사 승인 없이 바로 실행)
     processEnhance(currentLv, finalProb, currentFailCount);
 }
 
@@ -243,43 +239,34 @@ function processEnhance(currentLv, finalProb, currentFailCount) {
 
             resultText.style.color = "#D97706";
             resultText.innerText = "✨ 강화 성공! ✨";
-            google.script.run.updateEnhanceResult(currentStudent.name, currentEquipType, currentLv + 1, 0);
+            currentStudent[currentEquipType + '_lv'] = currentLv + 1;
+            currentStudent[currentEquipType + '_fail'] = 0;
+            updateFastFirebaseStudent(currentStudent);
 
             setTimeout(() => {
                 anvil.classList.remove('anim-success');
                 if (forgeContainer) forgeContainer.classList.remove('forge-flash-success');
-                currentStudent[currentEquipType + '_lv'] = currentLv + 1;
-                currentStudent[currentEquipType + '_fail'] = 0;
                 drawForgeUI();
-            }, 1000); // 파티클 이펙트를 충분히 감상하도록 1초 대기
+            }, 1000);
         } else {
             anvil.classList.add('anim-fail');
             if (forgeContainer) forgeContainer.classList.add('forge-flash-fail');
-            createForgeParticles(false); // 💡 핏빛 파티클 폭발!
+            createForgeParticles(false);
 
-            // 💡 실패 시 돌이 부서지는 시각적 연출 추가
             anvil.innerText = "💥";
-
             resultText.style.color = "#ff4d4d";
             resultText.innerText = "💥 실패...";
 
-            // 💡 [추가] 영구 실패 카운터 누적 (로컬 반영)
+            currentStudent[currentEquipType + '_fail'] = currentFailCount + 1;
             currentStudent.total_forge_fail = (Number(currentStudent.total_forge_fail) || 0) + 1;
-
-            google.script.run.updateEnhanceResult(currentStudent.name, currentEquipType, currentLv, currentFailCount + 1);
-
-            // 💡 영구 카운터를 서버에 따로 저장
-            if (google.script.run.updateTotalForgeFail) {
-                google.script.run.updateTotalForgeFail(currentStudent.name, currentStudent.total_forge_fail);
-            }
+            updateFastFirebaseStudent(currentStudent);
 
             setTimeout(() => {
                 anvil.classList.remove('anim-fail');
-                anvil.innerText = "🪨"; // 이모지 복구
+                anvil.innerText = "🪨";
                 if (forgeContainer) forgeContainer.classList.remove('forge-flash-fail');
-                currentStudent[currentEquipType + '_fail'] = currentFailCount + 1;
                 drawForgeUI();
-            }, 1000); // 1초 대기
+            }, 1000);
         }
     }, 750);
 }
