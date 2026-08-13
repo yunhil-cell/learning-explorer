@@ -115,19 +115,21 @@ function manualRefresh() {
 
 function initGameData(data) {
     if (typeof data === 'string' && data.startsWith("Error")) { alert(data); return; }
-    sysConfig = data.system.config;
-    enhanceData = data.system.enhance;
+    sysConfig = data.system.config || {};
+    enhanceData = data.system.enhance || [];
     skillsData = data.skills || [];
     relicsData = data.relics || [];
     skinsData = data.skins || [];
-    noticesData = data.notices || []; // 💡 공지 데이터 로드
-    lootBoxesData = data.lootBoxes || []; // 💡 전리품 상자 데이터 로드
-    shopData = data.shopItems || []; // 💡 상점 데이터 로드
-    mercenariesData = data.mercenaries || []; // 💡 [신규] 동료 데이터 로드
-    renderButtons(data.students);
+    noticesData = data.notices || [];
+    lootBoxesData = data.lootBoxes || [];
+    shopData = data.shopItems || [];
+    mercenariesData = data.mercenaries || [];
+    if (data.monsters) monsterList = data.monsters;
+    if (data.monsterSkills) monsterSkillsData = data.monsterSkills;
+    if (data.dungeons) dungeonsData = data.dungeons;
+    if (data.bosses) bossList = data.bosses;
 
-    // 💡 대시보드가 열리면 백그라운드에서 이미지를 미리 다운로드합니다.
-    preloadGameImages();
+    renderButtons(data.students);
 }
 
 // 💡 백그라운드 이미지 캐싱 함수 (화면에는 보이지 않음)
