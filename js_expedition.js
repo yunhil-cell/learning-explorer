@@ -427,7 +427,7 @@ function openRelicEquipUI(slotNum) {
             : '<div style="font-size:32px;">🏺</div>';
 
         const effName = translator[r.effect_type] || r.effect_type;
-        let valStr = (r.effect_type.includes('mult') || (r.effect_type.includes('up') && !r.effect_type.match(/^(hp|atk|def|luk|gold)_up$/))) ? (Number(r.value) * 100) + '%' : r.value;
+        let valStr = (r.effect_type.includes('mult') || (r.effect_type.includes('up') && !r.effect_type.match(/^(hp|atk|def|luk|gold)_up$/))) ? Math.round(Number(r.value) * 100) + '%' : r.value;
 
         let btnText = '장착';
         let btnBg = 'var(--Highlight)';
@@ -785,7 +785,7 @@ function openMercSelectModal(slotNum) {
 
         const optName = optTypeMap[String(m.option_type).toUpperCase()] || m.option_type;
         const isPct = String(m.option_calc_type).toUpperCase() === 'PERCENT';
-        const optValStr = isPct ? (Number(m.option_value) * 100) + '%' : m.option_value;
+        const optValStr = isPct ? Math.round(Number(m.option_value) * 100) + '%' : m.option_value;
 
         const iconSrc = m.icon_url || '';
         const iconHtml = iconSrc

@@ -707,7 +707,7 @@ function processDrawMercenary() {
     };
     const optName = optTypeMap[String(pickedMerc.option_type).toUpperCase()] || pickedMerc.option_type;
     const isPct = String(pickedMerc.option_calc_type).toUpperCase() === 'PERCENT';
-    const optValStr = isPct ? (Number(pickedMerc.option_value) * 100) + '%' : pickedMerc.option_value;
+    const optValStr = isPct ? Math.round(Number(pickedMerc.option_value) * 100) + '%' : pickedMerc.option_value;
 
     setTimeout(() => {
         hideGlobalLoading();
