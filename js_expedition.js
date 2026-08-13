@@ -666,10 +666,10 @@ function renderExpeditionUI() {
     const m1Tier = m1Obj ? String(m1Obj.tier || 'C').toUpperCase() : '';
     let m1TierBadge = m1Tier ? `<span style="font-size:0.85em; font-weight:bold; color:var(--TextGold); margin-left:4px;">[${m1Tier}급]</span>` : '';
     
-    // 💡 [3. 일러스트 비율 보존] max-height/width 고유 비율(contain) 유지 + 배경 흰색
+    // 💡 [3. 일러스트 비율 보존] width/height를 110px로 고정 + image-rendering:pixelated 추가로 흐려짐 방지
     const m1IconHtml = m1Obj
-        ? (m1Obj.icon_url ? `<img src="${m1Obj.icon_url}" style="max-width:130px; max-height:140px; width:auto; height:auto; object-fit:contain; border-radius:12px; background:#FFFFFF; border:2px solid var(--BorderColor); padding:4px; box-shadow:0 4px 8px rgba(0,0,0,0.08);">` : '🛡️')
-        : '<div style="font-size:60px; line-height:130px;">👤</div>';
+        ? (m1Obj.icon_url ? `<img src="${m1Obj.icon_url}" style="width:110px; height:110px; object-fit:contain; image-rendering:pixelated; border-radius:12px; background:#FFFFFF; border:2px solid var(--BorderColor); padding:4px; box-shadow:0 4px 8px rgba(0,0,0,0.08);">` : '🛡️')
+        : '<div style="font-size:60px; line-height:110px;">👤</div>';
     const m1SkillObj = (skillsData || []).find(sk => String(sk.skill_id) === String(tempExpedition.m1_skill));
     const m1SkillName = m1SkillObj ? '📜 ' + m1SkillObj.name : '📜 스킬 선택';
 
@@ -680,8 +680,8 @@ function renderExpeditionUI() {
     let m2TierBadge = m2Tier ? `<span style="font-size:0.85em; font-weight:bold; color:var(--TextGold); margin-left:4px;">[${m2Tier}급]</span>` : '';
     
     const m2IconHtml = m2Obj
-        ? (m2Obj.icon_url ? `<img src="${m2Obj.icon_url}" style="max-width:130px; max-height:140px; width:auto; height:auto; object-fit:contain; border-radius:12px; background:#FFFFFF; border:2px solid var(--BorderColor); padding:4px; box-shadow:0 4px 8px rgba(0,0,0,0.08);">` : '🛡️')
-        : '<div style="font-size:60px; line-height:130px;">👤</div>';
+        ? (m2Obj.icon_url ? `<img src="${m2Obj.icon_url}" style="width:110px; height:110px; object-fit:contain; image-rendering:pixelated; border-radius:12px; background:#FFFFFF; border:2px solid var(--BorderColor); padding:4px; box-shadow:0 4px 8px rgba(0,0,0,0.08);">` : '🛡️')
+        : '<div style="font-size:60px; line-height:110px;">👤</div>';
     const m2SkillObj = (skillsData || []).find(sk => String(sk.skill_id) === String(tempExpedition.m2_skill));
     const m2SkillName = m2SkillObj ? '📜 ' + m2SkillObj.name : '📜 스킬 선택';
 
@@ -694,7 +694,7 @@ function renderExpeditionUI() {
     // [슬롯 1: 동료 1]
     html += '<div style="border:2px solid var(--Blue); background:#F8FAFC; border-radius:16px; padding:18px 10px; text-align:center; display:flex; flex-direction:column; align-items:center; min-height:300px; box-shadow:0 4px 10px rgba(59, 130, 246, 0.1);">';
     html += '  <div style="font-size:0.9rem; font-weight:bold; color:var(--Blue); margin-bottom:10px;">[동료 1 슬롯]</div>';
-    html += '  <div style="height:145px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;">' + m1IconHtml + '</div>';
+    html += '  <div style="height:120px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;">' + m1IconHtml + '</div>';
     html += '  <div style="font-weight:bold; font-size:1.05rem; color:var(--TextMain); margin-bottom:12px;">' + m1Name + m1TierBadge + '</div>';
     
     // 💡 [4. 버튼 명칭] "동료 교체" -> "🔄 교체", "스킬 지정" -> "📜 스킬 선택"
@@ -708,7 +708,8 @@ function renderExpeditionUI() {
     if (!isM2Unlocked) {
         html += '  <div style="font-size:3.2rem; margin:25px 0;">🔒</div>';
         html += '  <div style="font-size:0.85rem; color:var(--TextSub); margin-bottom:15px; font-weight:bold;">슬롯 잠김 (상점 해금 필요)</div>';
-        html += '  <button class="btn-main" style="padding:10px; font-size:0.85rem; background:var(--Yellow); color:black; width:88%; margin-top:auto; font-weight:bold;" onclick="openShopModal()">🛒 상점 해금하러 가기</button>';
+        // 💡 [에러 수정] 존재하지 않는 openShopModal() 대신 상점 탭으로 렌더링되게 변경
+        html += '  <button class="btn-main" style="padding:10px; font-size:0.85rem; background:var(--Yellow); color:black; width:88%; margin-top:auto; font-weight:bold;" onclick="window.currentDashTab=\'shop\'; renderDashboard();">🛒 상점 해금하러 가기</button>';
     } else {
         html += '  <div style="height:145px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;">' + m2IconHtml + '</div>';
         html += '  <div style="font-weight:bold; font-size:1.05rem; color:var(--TextMain); margin-bottom:12px;">' + m2Name + m2TierBadge + '</div>';
