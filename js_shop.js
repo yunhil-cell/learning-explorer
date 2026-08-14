@@ -661,7 +661,7 @@ function processDrawMercenary() {
     let unowned = (mercenariesData || []).filter(m => m.merc_id && !unlockedIds.includes(String(m.merc_id)));
     if (unowned.length === 0) {
         hideGlobalLoading();
-        showUiAlert("🏆 도감 올클리어", "이미 모든 동료(148명)를 영입하셨습니다!", "renderDashboard()");
+        showUiAlert("🏆 도감 올클리어", "이미 모든 동료를 영입하셨습니다!", "renderDashboard()");
         return;
     }
 
