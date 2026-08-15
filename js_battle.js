@@ -2751,7 +2751,7 @@ function startWorldBossRaid(wbId) {
     }
 
     // 보스 세팅
-    document.getElementById('battleTitle').innerText = `🐲 [월드 보스 레이드] ${activeBoss.name}`;
+    document.getElementById('battleTitle').innerText = `[월드 보스 레이드] ${activeBoss.name}`;
     document.getElementById('raidStageInfo').innerText = `[ 1 / ${battleState.wbMaxTurns} 턴 ] 누적 딜량: 0`;
     document.getElementById('battlePlayerName').innerHTML = getTitleHtml(currentStudent);
     document.getElementById('battleMonsterName').innerText = activeBoss.name;
@@ -2764,7 +2764,7 @@ function startWorldBossRaid(wbId) {
     setupPlayerSkills();
     updateHpBars();
     document.getElementById('battleLog').innerHTML = '';
-    logBattle(`🐲 월드 보스 <b>[${activeBoss.name}]</b>와의 결전이 시작되었습니다!`);
+    logBattle(`월드 보스 <b>[${activeBoss.name}]</b>와의 결전이 시작되었습니다!`);
     logBattle(`(목표: ${battleState.wbMaxTurns}턴 동안 살아남으며 최대 피해를 입히세요!)`);
 
     document.getElementById('battleModal').style.display = 'flex';

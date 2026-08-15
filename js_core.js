@@ -1327,9 +1327,9 @@ function updateWorldBossBanner(activeBoss) {
     const maxHp = Number(activeBoss.max_hp) || 150000;
     const hpPct = Math.min(100, ((curHp / maxHp) * 100)).toFixed(1);
 
-    document.getElementById('wbBannerTitle').innerText = `🐲 [월드 보스] ${activeBoss.name}`;
+    document.getElementById('wbBannerTitle').innerText = `[월드 보스] ${activeBoss.name}`;
     document.getElementById('wbBannerHpText').innerText = worldBossState.is_cleared 
-        ? "🎉 학급 전체 토벌 성공!" 
+        ? "학급 전체 토벌 성공!" 
         : `HP: ${curHp.toLocaleString()} / ${maxHp.toLocaleString()}`;
     document.getElementById('wbBannerHpPct').innerText = `${hpPct}%`;
     document.getElementById('wbBannerHpFill').style.width = `${hpPct}%`;
@@ -1377,17 +1377,17 @@ function openWorldBossModal() {
     if (!currentStudent) {
         battleBtnHtml = '<button class="btn-main" style="background:#444;" disabled>먼저 학생 계정으로 로그인해주세요</button>';
     } else if (worldBossState.is_cleared) {
-        battleBtnHtml = '<button class="btn-main" style="background:#10B981; color:white; font-weight:bold;" disabled>🎉 토벌 완료! 보상이 지급되었습니다</button>';
+        battleBtnHtml = '<button class="btn-main" style="background:#10B981; color:white; font-weight:bold;" disabled>토벌 완료 (보상 지급 완료)</button>';
     } else if (isFoughtToday && !isTeacherMode) {
-        battleBtnHtml = '<button class="btn-main" style="background:#444; color:#94A3B8;" disabled>✅ 오늘 도전 완료 (내일 다시 도전 가능)</button>';
+        battleBtnHtml = '<button class="btn-main" style="background:#334155; color:#94A3B8;" disabled>오늘 도전 완료 (내일 다시 도전 가능)</button>';
     } else {
-        battleBtnHtml = `<button class="btn-main" style="background:linear-gradient(135deg, #EF4444, #B91C1C); color:white; font-weight:bold; font-size:1.2em; padding:15px; box-shadow:0 0 20px rgba(239,68,68,0.4);" onclick="startWorldBossRaid('${activeBoss.wb_id}')">⚔️ 월드 보스 출전 (10턴 서바이벌)</button>`;
+        battleBtnHtml = `<button class="btn-main" style="background:linear-gradient(135deg, #EF4444, #B91C1C); color:white; font-weight:bold; font-size:1.2em; padding:15px; box-shadow:0 0 20px rgba(239,68,68,0.4);" onclick="startWorldBossRaid('${activeBoss.wb_id}')">월드 보스 출전 (10턴 서바이벌)</button>`;
     }
 
     const bossImgSrc = activeBoss.icon_url || 'https://via.placeholder.com/150/444444/FFFFFF?text=WorldBoss';
 
     subBody.innerHTML = `
-        <h2 style="color:#EF4444; margin-bottom: 5px;">🐲 [월드 보스] ${activeBoss.name}</h2>
+        <h2 style="color:#EF4444; margin-bottom: 5px;">[월드 보스] ${activeBoss.name}</h2>
         <p style="color:#CBD5E1; font-size:0.9em; margin-bottom:15px;">학급 전체가 힘을 합쳐 10턴 동안 마왕에게 강력한 타격을 입히세요! (하루 1회 무료)</p>
         
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px; text-align:left;">
