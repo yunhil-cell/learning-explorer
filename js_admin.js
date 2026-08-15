@@ -10,6 +10,7 @@ function updateTeacherBtnUI() {
     const questBtn = document.getElementById('questAdminBtn');
     const noticeBtn = document.getElementById('noticeAdminBtn');
     const exchangeBtn = document.getElementById('exchangeAdminBtn');
+    const statBtn = document.getElementById('statAdminBtn');
     if (!btn) return;
     if (isTeacherMode) {
         btn.style.background = '#ff4d4d';
@@ -17,12 +18,14 @@ function updateTeacherBtnUI() {
         if (questBtn) questBtn.style.display = 'block';
         if (noticeBtn) noticeBtn.style.display = 'block';
         if (exchangeBtn) exchangeBtn.style.display = 'block';
+        if (statBtn) statBtn.style.display = 'block';
     } else {
         btn.style.background = '#444';
         btn.innerHTML = '🔒 교사 모드 OFF';
         if (questBtn) questBtn.style.display = 'none';
         if (noticeBtn) noticeBtn.style.display = 'none';
         if (exchangeBtn) exchangeBtn.style.display = 'none';
+        if (statBtn) statBtn.style.display = 'none';
     }
 }
 
@@ -32,9 +35,311 @@ function disableTeacherMode() {
     updateTeacherBtnUI();
 
     const subModal = document.getElementById('subModal');
-    if (subModal.style.display === 'flex' && (document.getElementById('subModalBody').innerHTML.includes('길드 관리소') || document.getElementById('subModalBody').innerHTML.includes('환전소'))) {
+    if (subModal.style.display === 'flex' && (document.getElementById('subModalBody').innerHTML.includes('길드 관리소') || document.getElementById('subModalBody').innerHTML.includes('환전소') || document.getElementById('subModalBody').innerHTML.includes('학급 통계'))) {
         subModal.style.display = 'none';
     }
+}
+
+// ==========================================
+// 📊 학급 통계 대시보드 시스템 (교사 전용)
+// ==========================================
+function openClassroomDashboard(tab = 'overview') {
+    if (!checkTeacherAuth()) return;
+    const subModal = document.getElementById('subModal');
+    const subBody = document.getElementById('subModalBody');
+
+    subModal.querySelector('.modal-content').style.background = '#0F172A';
+    subModal.querySelector('.modal-content').style.borderColor = '#0D9488';
+    subModal.style.display = 'flex';
+
+    renderClassroomDashboard(tab);
+}
+
+function renderClassroomDashboard(tab = 'overview') {
+    const subBody = document.getElementById('subModalBody');
+    const students = window.allStudentsData || [];
+    const subs = window.submissionsData || [];
+    const sys = sysConfig || {};
+    const gameCurrency = sys.game_money_currency || '골드';
+    const realCurrency = sys.currency_name || '티';
+
+    // 💡 1. 핵심 요약 지표 계산
+    const totalStudents = students.filter(s => s && s.name).length;
+    const totalBooks = students.reduce((sum, s) => sum + (Number(s.reading_count) || 0), 0);
+    const avgBooks = totalStudents > 0 ? (totalBooks / totalStudents).toFixed(1) : 0;
+    const currentWeek = Number(sys.current_week) || 1;
+    const maxWeeklyBooks = Number(sys.max_weekly_books) || 3;
+    const targetBooksTotal = currentWeek * maxWeeklyBooks * totalStudents;
+    const bookProgressPct = targetBooksTotal > 0 ? Math.min(100, Math.round((totalBooks / targetBooksTotal) * 100)) : 0;
+
+    const levels = students.map(s => Number(s.level) || 1);
+    const maxLevel = levels.length > 0 ? Math.max(...levels) : 1;
+    const minLevel = levels.length > 0 ? Math.min(...levels) : 1;
+    const avgLevel = levels.length > 0 ? (levels.reduce((a, b) => a + b, 0) / levels.length).toFixed(1) : 1;
+
+    const totalGold = students.reduce((sum, s) => sum + (Number(s.game_money) || 0), 0);
+    const unapprovedSubs = subs.filter(s => s.status === '제출완료');
+    const unapprovedCount = unapprovedSubs.length;
+
+    // 미환전 현실 재화(RM) 교환권 수량 집계
+    let totalPendingRM = 0;
+    const studentRMMap = [];
+    students.forEach(s => {
+        if (!s.name) return;
+        const inv = String(s.inventory || '');
+        const matches = inv.matchAll(/\[현실 재화\]\s*(\d+).*?교환권/g);
+        let sRM = 0;
+        for (const m of matches) {
+            sRM += Number(m[1]) || 0;
+        }
+        if (sRM > 0) {
+            studentRMMap.push({ name: s.name, rm: sRM });
+            totalPendingRM += sRM;
+        }
+    });
+
+    // 💡 2. 상단 4종 요약 카드 HTML
+    const summaryCardsHtml =
+        '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:15px;">' +
+        '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:12px; text-align:center;">' +
+        '    <div style="font-size:0.8em; color:#94A3B8;">📚 누적 독서 편수</div>' +
+        '    <div style="font-size:1.4em; font-weight:bold; color:#38BDF8; margin:4px 0;">' + totalBooks + '<span style="font-size:0.6em; color:#94A3B8;">편</span></div>' +
+        '    <div style="font-size:0.75em; color:#CBD5E1;">평균 ' + avgBooks + '편 (목표 ' + bookProgressPct + '%)</div>' +
+        '    <div style="width:100%; background:#334155; height:5px; border-radius:3px; margin-top:6px; overflow:hidden;"><div style="width:' + bookProgressPct + '%; background:#38BDF8; height:100%;"></div></div>' +
+        '  </div>' +
+        '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:12px; text-align:center;">' +
+        '    <div style="font-size:0.8em; color:#94A3B8;">⚔️ 학급 평균 레벨</div>' +
+        '    <div style="font-size:1.4em; font-weight:bold; color:#FBBF24; margin:4px 0;">Lv.' + avgLevel + '</div>' +
+        '    <div style="font-size:0.75em; color:#CBD5E1;">최고 Lv.' + maxLevel + ' / 최저 Lv.' + minLevel + '</div>' +
+        '  </div>' +
+        '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:12px; text-align:center;">' +
+        '    <div style="font-size:0.8em; color:#94A3B8;">💰 총 유통 골드</div>' +
+        '    <div style="font-size:1.4em; font-weight:bold; color:#34D399; margin:4px 0;">' + totalGold.toLocaleString() + '</div>' +
+        '    <div style="font-size:0.75em; color:#CBD5E1;">대기 RM: <b style="color:#10B981;">' + totalPendingRM + realCurrency + '</b></div>' +
+        '  </div>' +
+        '  <div style="background:#1E293B; border:1px solid ' + (unapprovedCount > 0 ? '#EF4444' : '#334155') + '; border-radius:10px; padding:12px; text-align:center; cursor:pointer;" onclick="openQuestAdmin(\'list\')">' +
+        '    <div style="font-size:0.8em; color:#94A3B8;">📝 미채점 성찰일지</div>' +
+        '    <div style="font-size:1.4em; font-weight:bold; color:' + (unapprovedCount > 0 ? '#EF4444' : '#94A3B8') + '; margin:4px 0;">' + unapprovedCount + '<span style="font-size:0.6em;">건</span></div>' +
+        '    <div style="font-size:0.75em; color:#A78BFA;">[클릭 시 채점 이동 ➔]</div>' +
+        '  </div>' +
+        '</div>';
+
+    // 💡 3. 탭 네비게이션
+    const tabsHtml =
+        '<div style="display:flex; margin-bottom:15px; border-bottom:1px solid #334155; font-size:0.9em;">' +
+        '  <div style="flex:1; padding:10px; cursor:pointer; font-weight:bold; color:' + (tab === 'overview' ? '#2DD4BF' : '#9CA3AF') + '; border-bottom:' + (tab === 'overview' ? '3px solid #2DD4BF' : 'none') + ';" onclick="renderClassroomDashboard(\'overview\')">🚨 맞춤 케어 알림</div>' +
+        '  <div style="flex:1; padding:10px; cursor:pointer; font-weight:bold; color:' + (tab === 'growth' ? '#2DD4BF' : '#9CA3AF') + '; border-bottom:' + (tab === 'growth' ? '3px solid #2DD4BF' : 'none') + ';" onclick="renderClassroomDashboard(\'growth\')">📚 독서 & 성장 분석</div>' +
+        '  <div style="flex:1; padding:10px; cursor:pointer; font-weight:bold; color:' + (tab === 'economy' ? '#2DD4BF' : '#9CA3AF') + '; border-bottom:' + (tab === 'economy' ? '3px solid #2DD4BF' : 'none') + ';" onclick="renderClassroomDashboard(\'economy\')">💰 경제 & 아이템 현황</div>' +
+        '</div>';
+
+    let contentHtml = '';
+
+    // ─────────────────────────────────────────
+    // [탭 1] 🚨 맞춤 케어 알림 (Teacher Actionable Alert)
+    // ─────────────────────────────────────────
+    if (tab === 'overview') {
+        const now = new Date().getTime();
+        const injuredStudents = students.filter(s => s && s.name && s.penalty_end_time && Number(s.penalty_end_time) > now);
+        const zeroBookStudents = students.filter(s => s && s.name && (!s.reading_count || Number(s.reading_count) === 0));
+
+        let alertsHtml = '';
+
+        // 1. 미채점 알림
+        if (unapprovedCount > 0) {
+            const studentNames = [...new Set(unapprovedSubs.map(sub => sub.student_name))].slice(0, 5).join(', ');
+            alertsHtml +=
+                '<div style="background:#1E293B; border-left:4px solid #EF4444; border-radius:6px; padding:12px 15px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">' +
+                '  <div>' +
+                '    <div style="color:#EF4444; font-weight:bold; font-size:1em; margin-bottom:3px;">📝 승인 대기 중인 성찰일지가 있습니다! (' + unapprovedCount + '건)</div>' +
+                '    <div style="color:#CBD5E1; font-size:0.85em;">제출 학생: ' + studentNames + (unapprovedSubs.length > 5 ? ' 외' : '') + '</div>' +
+                '  </div>' +
+                '  <button class="small-btn" style="background:#EF4444; color:white; border:none; padding:8px 12px;" onclick="openQuestAdmin(\'list\')">채점하기</button>' +
+                '</div>';
+        }
+
+        // 2. 미환전 RM 교환권 보유 알림
+        if (totalPendingRM > 0) {
+            alertsHtml +=
+                '<div style="background:#1E293B; border-left:4px solid #10B981; border-radius:6px; padding:12px 15px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">' +
+                '  <div>' +
+                '    <div style="color:#10B981; font-weight:bold; font-size:1em; margin-bottom:3px;">💱 미환전 현실 재화 교환권 누적: 총 ' + totalPendingRM + realCurrency + '</div>' +
+                '    <div style="color:#CBD5E1; font-size:0.85em;">보유 학생 ' + studentRMMap.length + '명이 오프라인 보상 지급을 대기 중입니다.</div>' +
+                '  </div>' +
+                '  <button class="small-btn" style="background:#10B981; color:white; border:none; padding:8px 12px;" onclick="openExchangeAdmin()">환전소 열기</button>' +
+                '</div>';
+        }
+
+        // 3. 부상 / 패널티 학생 알림
+        if (injuredStudents.length > 0) {
+            const injuredNames = injuredStudents.map(s => {
+                const remainMs = Number(s.penalty_end_time) - now;
+                const remainH = Math.floor(remainMs / (1000 * 60 * 60));
+                const remainM = Math.floor((remainMs % (1000 * 60 * 60)) / (1000 * 60));
+                return s.name + ' (' + remainH + '시간 ' + remainM + '분)';
+            }).join(', ');
+
+            alertsHtml +=
+                '<div style="background:#1E293B; border-left:4px solid #3B82F6; border-radius:6px; padding:12px 15px; margin-bottom:10px;">' +
+                '  <div style="color:#60A5FA; font-weight:bold; font-size:1em; margin-bottom:3px;">🩹 부상 / 패널티 회복 중인 모험가 (' + injuredStudents.length + '명)</div>' +
+                '  <div style="color:#CBD5E1; font-size:0.85em;">' + injuredNames + '</div>' +
+                '</div>';
+        }
+
+        // 4. 독서 0권 학생 알림
+        if (zeroBookStudents.length > 0) {
+            const zeroNames = zeroBookStudents.map(s => s.name).join(', ');
+            alertsHtml +=
+                '<div style="background:#1E293B; border-left:4px solid #F59E0B; border-radius:6px; padding:12px 15px; margin-bottom:10px;">' +
+                '  <div style="color:#FBBF24; font-weight:bold; font-size:1em; margin-bottom:3px;">⚠️ 독서록 작성이 필요한 학생 (' + zeroBookStudents.length + '명)</div>' +
+                '  <div style="color:#CBD5E1; font-size:0.85em;">' + zeroNames + '</div>' +
+                '</div>';
+        }
+
+        if (!alertsHtml) {
+            alertsHtml = '<div style="color:#94A3B8; padding:30px 10px; text-align:center; background:#1E293B; border-radius:10px;">🎉 현재 즉시 조치가 필요한 특이사항이 없습니다. 학급이 매우 원활히 운영되고 있습니다!</div>';
+        }
+
+        contentHtml =
+            '<div style="text-align:left;">' +
+            '  <h4 style="color:#2DD4BF; margin:0 0 10px 0;">🔔 교사 맞춤 실시간 알림</h4>' +
+            '  <div style="max-height:360px; overflow-y:auto; padding-right:5px;">' + alertsHtml + '</div>' +
+            '</div>';
+    }
+
+    // ─────────────────────────────────────────
+    // [탭 2] 📚 독서 & 성장 분석
+    // ─────────────────────────────────────────
+    else if (tab === 'growth') {
+        // 독서 순위 TOP 5
+        const sortedByBooks = [...students].filter(s => s && s.name).sort((a, b) => (Number(b.reading_count) || 0) - (Number(a.reading_count) || 0));
+        const top5Books = sortedByBooks.slice(0, 5);
+
+        // 가호 분포 계산
+        const blessingCount = { Red: 0, Blue: 0, Green: 0, Yellow: 0, Purple: 0, None: 0 };
+        students.forEach(s => {
+            if (!s.name) return;
+            const b = s.blessing || 'None';
+            if (blessingCount[b] !== undefined) blessingCount[b]++;
+            else blessingCount.None++;
+        });
+
+        // 탑 층수 TOP 5
+        const sortedByTower = [...students].filter(s => s && s.name).sort((a, b) => (Number(b.max_tower_floor) || 0) - (Number(a.max_tower_floor) || 0));
+        const top5Tower = sortedByTower.slice(0, 5);
+
+        let top5BooksHtml = top5Books.map((s, idx) => {
+            const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+            const count = Number(s.reading_count) || 0;
+            return '<div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #334155; font-size:0.9em;">' +
+                '  <span style="color:white;">' + (medals[idx] || '') + ' ' + s.name + '</span>' +
+                '  <b style="color:#38BDF8;">' + count + '편 (Lv.' + (s.level || 1) + ')</b>' +
+                '</div>';
+        }).join('');
+
+        let top5TowerHtml = top5Tower.map((s, idx) => {
+            const floor = Number(s.max_tower_floor) || 0;
+            return '<div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #334155; font-size:0.9em;">' +
+                '  <span style="color:white;">' + (idx + 1) + '. ' + s.name + '</span>' +
+                '  <b style="color:#FBBF24;">' + floor + '층 정복</b>' +
+                '</div>';
+        }).join('');
+
+        // 가호 바 그래프 계산
+        const totalBlessingChosen = totalStudents - blessingCount.None;
+        const getBlessingPct = (k) => totalBlessingChosen > 0 ? Math.round((blessingCount[k] / totalBlessingChosen) * 100) : 0;
+
+        contentHtml =
+            '<div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; text-align:left;">' +
+            // 좌측: 독서 & 탑 랭킹
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px;">' +
+            '    <div style="color:#38BDF8; font-weight:bold; margin-bottom:10px;">📖 독서 우수 모험가 TOP 5</div>' +
+            '    ' + (top5BooksHtml || '<div style="color:#64748B;">기록 없음</div>') +
+            '    <div style="color:#FBBF24; font-weight:bold; margin:15px 0 10px 0;">🗼 도전의 탑 랭킹 TOP 5</div>' +
+            '    ' + (top5TowerHtml || '<div style="color:#64748B;">기록 없음</div>') +
+            '  </div>' +
+            // 우측: 가호 분포 & 스탯 성향
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px;">' +
+            '    <div style="color:#2DD4BF; font-weight:bold; margin-bottom:12px;">✨ 가호(속성) 선택 분포</div>' +
+            '    <div style="display:flex; height:18px; border-radius:6px; overflow:hidden; margin-bottom:10px; background:#334155;">' +
+            '      <div style="width:' + getBlessingPct('Red') + '%; background:#EF4444;" title="용기(Red) ' + blessingCount.Red + '명"></div>' +
+            '      <div style="width:' + getBlessingPct('Blue') + '%; background:#3B82F6;" title="지혜(Blue) ' + blessingCount.Blue + '명"></div>' +
+            '      <div style="width:' + getBlessingPct('Green') + '%; background:#10B981;" title="끈기(Green) ' + blessingCount.Green + '명"></div>' +
+            '      <div style="width:' + getBlessingPct('Yellow') + '%; background:#F59E0B;" title="행운(Yellow) ' + blessingCount.Yellow + '명"></div>' +
+            '      <div style="width:' + getBlessingPct('Purple') + '%; background:#8B5CF6;" title="희망(Purple) ' + blessingCount.Purple + '명"></div>' +
+            '    </div>' +
+            '    <div style="font-size:0.8em; color:#CBD5E1; display:grid; grid-template-columns:1fr 1fr; gap:6px; line-height:1.4;">' +
+            '      <div>🔴 용기(공격): ' + blessingCount.Red + '명 (' + getBlessingPct('Red') + '%)</div>' +
+            '      <div>🔵 지혜(방어): ' + blessingCount.Blue + '명 (' + getBlessingPct('Blue') + '%)</div>' +
+            '      <div>🟢 끈기(체력): ' + blessingCount.Green + '명 (' + getBlessingPct('Green') + '%)</div>' +
+            '      <div>🟡 행운(행운): ' + blessingCount.Yellow + '명 (' + getBlessingPct('Yellow') + '%)</div>' +
+            '      <div>🟣 희망(장막): ' + blessingCount.Purple + '명 (' + getBlessingPct('Purple') + '%)</div>' +
+            '      <div>⚪ 미각성: ' + blessingCount.None + '명</div>' +
+            '    </div>' +
+            '  </div>' +
+            '</div>';
+    }
+
+    // ─────────────────────────────────────────
+    // [탭 3] 💰 경제 & 아이템 현황
+    // ─────────────────────────────────────────
+    else if (tab === 'economy') {
+        // 골드 부자 순위
+        const sortedByMoney = [...students].filter(s => s && s.name).sort((a, b) => (Number(b.game_money) || 0) - (Number(a.game_money) || 0));
+        const top5Money = sortedByMoney.slice(0, 5);
+
+        // 강화 실패 잔혹사 순위
+        const sortedByForgeFail = [...students].filter(s => s && s.name).sort((a, b) => (Number(b.total_forge_fail) || 0) - (Number(a.total_forge_fail) || 0));
+        const top5ForgeFail = sortedByForgeFail.filter(s => (Number(s.total_forge_fail) || 0) > 0).slice(0, 5);
+
+        let top5MoneyHtml = top5Money.map((s, idx) => {
+            const money = Number(s.game_money) || 0;
+            return '<div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #334155; font-size:0.9em;">' +
+                '  <span style="color:white;">' + (idx + 1) + '. ' + s.name + '</span>' +
+                '  <b style="color:#34D399;">' + money.toLocaleString() + ' ' + gameCurrency + '</b>' +
+                '</div>';
+        }).join('');
+
+        let top5FailHtml = top5ForgeFail.map((s, idx) => {
+            const fail = Number(s.total_forge_fail) || 0;
+            return '<div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #334155; font-size:0.9em;">' +
+                '  <span style="color:white;">' + (idx + 1) + '. ' + s.name + '</span>' +
+                '  <b style="color:#EF4444;">누적 ' + fail + '회 실패 💔</b>' +
+                '</div>';
+        }).join('');
+
+        let rmListHtml = studentRMMap.slice(0, 6).map(item => {
+            return '<div style="display:inline-block; background:#0F172A; border:1px solid #10B981; border-radius:6px; padding:4px 10px; margin:3px; font-size:0.85em; color:white;">' +
+                item.name + ': <b style="color:#10B981;">' + item.rm + realCurrency + '</b>' +
+                '</div>';
+        }).join('');
+
+        contentHtml =
+            '<div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; text-align:left;">' +
+            // 좌측: 골드 및 RM 보유 현황
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px;">' +
+            '    <div style="color:#34D399; font-weight:bold; margin-bottom:10px;">💰 ' + gameCurrency + ' 보유 순위 TOP 5</div>' +
+            '    ' + (top5MoneyHtml || '<div style="color:#64748B;">기록 없음</div>') +
+            '    <div style="color:#10B981; font-weight:bold; margin:15px 0 8px 0;">💱 미환전 ' + realCurrency + ' 교환권 보유 명단</div>' +
+            '    <div>' + (rmListHtml || '<span style="color:#64748B; font-size:0.85em;">현재 보유 학생 없음</span>') + '</div>' +
+            '  </div>' +
+            // 우측: 대장간 잔혹사
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px;">' +
+            '    <div style="color:#EF4444; font-weight:bold; margin-bottom:10px;">🔨 대장간 강화 잔혹사 TOP 5</div>' +
+            '    ' + (top5FailHtml || '<div style="color:#64748B; padding:10px 0;">아직 누적 실패 기록이 없습니다.</div>') +
+            '    <div style="margin-top:15px; font-size:0.8em; color:#94A3B8; line-height:1.5; background:#0F172A; padding:10px; border-radius:6px;">' +
+            '      💡 <b>인플레이션 관리 팁</b><br>총 유통 ' + gameCurrency + '가 과도하게 많을 경우, 상점의 소비 아이템 가격이나 대장간 비용을 조정하세요.' +
+            '    </div>' +
+            '  </div>' +
+            '</div>';
+    }
+
+    subBody.innerHTML =
+        '<h2 style="color:#2DD4BF; margin-bottom: 5px;">📊 학급 통계 대시보드</h2>' +
+        '<p style="color:#CBD5E1; font-size:0.9em; margin-bottom:15px;">학급 전체의 독서, 레벨, 경제, 케어 필요 학생을 한눈에 파악합니다.</p>' +
+        summaryCardsHtml +
+        tabsHtml +
+        contentHtml +
+        '<button style="margin-top:20px; width:100%; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1.1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>';
 }
 
 // ==========================================
