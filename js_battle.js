@@ -1391,6 +1391,7 @@ function renderStatusEffectsUI() {
 
 // 💡 [신규] 학생 자율 파티 레이드 결성 UI (진입 시 실시간 데이터 백엔드 동기화 패치)
 function openStudentRaidSetup() {
+    if (!checkFeatureLock('raid', '3인 파티 던전', 2)) return;
     const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
     const weeklyRaid = (currentStudent.weekly_raid !== undefined && currentStudent.weekly_raid !== "") ? Number(currentStudent.weekly_raid) : maxRaid;
     if (weeklyRaid <= 0) {
@@ -2320,6 +2321,7 @@ if (typeof window.bossList === 'undefined') {
 }
 
 function openBossSelection() {
+    if (!checkFeatureLock('boss', '1:1 보스 도전', 2)) return;
     const subModal = document.getElementById('subModal');
     const subBody = document.getElementById('subModalBody');
 
@@ -2426,6 +2428,7 @@ function startBossBattle(bossId, type) {
 }
 
 function checkAndStartTower() {
+    if (!checkFeatureLock('tower', '도전의 탑', 2)) return;
     const maxTower = Number(sysConfig.max_weekly_tower) || 1;
     const weeklyTower = (currentStudent.weekly_tower !== undefined && currentStudent.weekly_tower !== "") ? Number(currentStudent.weekly_tower) : maxTower;
     if (weeklyTower <= 0) {

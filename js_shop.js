@@ -608,6 +608,7 @@ function processUseItem(itemName) {
 // 🏰 동료(용병) 뽑기 시스템 (용병 길드)
 // ==========================================
 function openMercenaryShop() {
+    if (!checkFeatureLock('merc_shop', '동료(용병) 뽑기', 3)) return;
     const body = document.getElementById('modalBody');
     const cost = Number(sysConfig.merc_price) || 100;
     const gameCurrency = sysConfig.game_money_currency || '골드';

@@ -635,6 +635,7 @@ if (typeof tempExpedition === 'undefined') {
 
 // 1. 원정대 메인 모달 열기
 function openExpeditionModal() {
+    if (!checkFeatureLock('expedition', '원정대 관리', 3)) return;
     const s = currentStudent;
     if (!s) return;
 

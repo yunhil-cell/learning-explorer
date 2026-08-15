@@ -586,6 +586,8 @@ function renderDashboard() {
         } else {
             shopData.forEach(item => {
                 if (!item.item_id) return;
+                // 💡 [신규] is_active가 FALSE인 아이템은 상점에서 자동 숨김 처리 (교사 모드는 표시)
+                if (!isTeacherMode && item.is_active !== undefined && String(item.is_active).toUpperCase() === 'FALSE') return;
 
                 // 이모지가 없으면 기본 상자 아이콘
                 const icon = item.icon || '📦';
@@ -1314,6 +1316,12 @@ function updateWorldBossBanner(activeBoss) {
     const banner = document.getElementById('worldBossBanner');
     if (!banner || !activeBoss) return;
 
+    // 4분기(월드보스) 잠금 체크: 4분기 전에는 배너 숨김 (교사 모드는 예외)
+    if (!isFeatureUnlocked('world_boss')) {
+        banner.style.display = 'none';
+        return;
+    }
+
     banner.style.display = 'block';
     const curHp = Math.max(0, Number(worldBossState.current_hp) || 0);
     const maxHp = Number(activeBoss.max_hp) || 150000;
@@ -1328,6 +1336,7 @@ function updateWorldBossBanner(activeBoss) {
 }
 
 function openWorldBossModal() {
+    if (!checkFeatureLock('world_boss', '월드 보스 레이드', 4)) return;
     const activeBoss = (worldBossesData || []).find(b => String(b.is_active).toUpperCase() === 'TRUE');
     if (!activeBoss) {
         showUiAlert("🐲 월드 보스", "현재 진행 중인 월드 보스 레이드가 없습니다.", "");
@@ -1409,4 +1418,40 @@ function openWorldBossModal() {
     `;
 
     subModal.style.display = 'flex';
+}
+
+// ==========================================
+// 🔒 분기별 콘텐츠 잠금/해금(시즌 페이즈) 엔진
+// ==========================================
+function isFeatureUnlocked(featureKey) {
+    if (isTeacherMode) return true; // 교사 모드는 모든 잠금 프리패스!
+
+    const currentPhase = Number(sysConfig.season_phase) || 3; // 기본값 3분기
+    
+    // 💡 분기별 콘텐츠 매핑 (1~4분기)
+    const featurePhaseMap = {
+        // [1분기: 3월~5월중순]
+        'hunting': 1, 'forge': 1, 'shop': 1, 'skill_draw': 1, 'relic_draw': 1,
+        'hof': 1, 'quests': 1, 'notices': 1, 'stats': 1, 'wardrobe': 1,
+        // [2분기: 5월중순~7월말]
+        'boss': 2, 'raid': 2, 'tower': 2,
+        // [3분기: 8월중순~10월초 - 현재!]
+        'expedition': 3, 'merc_shop': 3,
+        // [4분기: 10월중순~12월말]
+        'world_boss': 4
+    };
+
+    const requiredPhase = featurePhaseMap[featureKey] || 1;
+    return currentPhase >= requiredPhase;
+}
+
+function checkFeatureLock(featureKey, featureName, requiredPhase) {
+    if (isFeatureUnlocked(featureKey)) return true;
+
+    showUiAlert(
+        "🔒 콘텐츠 잠김",
+        `<b>[${featureName}]</b>은(는) 아직 개방되지 않은 콘텐츠입니다.<br><span style="color:var(--TextSub); font-size:0.85em;">(추후 개방 예정)</span>`,
+        ""
+    );
+    return false;
 }
