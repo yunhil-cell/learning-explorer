@@ -625,25 +625,25 @@ function renderDashboard() {
                 else if (item.effect_type === 'reset_stat') btnColor = 'var(--Purple)';
 
                 shopItemsHtml +=
-                    '<div style="background:#fff; border:1px solid var(--BorderColor); padding:10px 15px; border-radius:10px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 4px rgba(0,0,0,0.05);">' +
-                    '  <div style="display:flex; align-items:center; gap:10px;">' +
-                    '    <div style="font-size:1.5em;">' + icon + '</div>' +
-                    '    <div><div style="font-weight:bold; font-size:1.05em; color:var(--TextMain);">' + item.item_name + '</div><div style="font-size:0.8em; color:var(--TextSub);">' + (item.description || '') + '</div></div>' +
+                    '<div style="background:#fff; border:1px solid var(--BorderColor); padding:7px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 3px rgba(0,0,0,0.03);">' +
+                    '  <div style="display:flex; align-items:center; gap:8px;">' +
+                    '    <div style="font-size:1.3em;">' + icon + '</div>' +
+                    '    <div><div style="font-weight:bold; font-size:0.95em; color:var(--TextMain); line-height:1.2;">' + item.item_name + '</div><div style="font-size:0.75em; color:var(--TextSub); margin-top:2px;">' + (item.description || '') + '</div></div>' +
                     '  </div>' +
-                    '  <button class="small-btn" style="background:' + btnColor + '; padding:6px 10px; min-width:70px;" onclick="buyShopItem(\'' + item.item_id + '\')">' + price + ' ' + gameCurrency + '</button>' +
+                    '  <button class="small-btn" style="background:' + btnColor + '; padding:6px 10px; min-width:65px; font-size:0.8em;" onclick="buyShopItem(\'' + item.item_id + '\')">' + price + ' ' + gameCurrency + '</button>' +
                     '</div>';
             });
         }
 
         tabContent =
             '<div style="text-align:left;">' +
-            '  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom:12px;">' +
-            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Highlight);" onclick="openSkillShop()">스킬 뽑기</button>' +
-            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Red);" onclick="openRelicShop()">유물 뽑기</button>' +
-            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Blue);" onclick="openMercenaryShop()">동료 뽑기</button>' +
-            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Yellow); color:black;" onclick="openForge()">대장간 진입</button>' +
+            '  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom:8px;">' +
+            '    <button class="btn-main" style="margin-top:0; padding:9px; background:var(--Highlight);" onclick="openSkillShop()">스킬 뽑기</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:9px; background:var(--Red);" onclick="openRelicShop()">유물 뽑기</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:9px; background:var(--Blue);" onclick="openMercenaryShop()">동료 뽑기</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:9px; background:var(--Yellow); color:black;" onclick="openForge()">대장간 진입</button>' +
             '  </div>' +
-            '  <div style="display:grid; grid-template-columns: 1fr; gap: 6px; max-height:175px; overflow-y:auto; overflow-x:hidden; padding-right:4px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;">' +
+            '  <div style="display:grid; grid-template-columns: 1fr; gap: 5px; max-height:200px; overflow-y:auto; overflow-x:hidden; padding-right:4px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;">' +
             shopItemsHtml +
             '  </div>' +
             '</div>';
@@ -714,14 +714,13 @@ function renderDashboard() {
         '  </div>' +
         '</div>' +
 
-        '<div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:20px;">' +
-        '  <button style="padding:15px; border-radius:10px; border:none; background:var(--BtnBattle); color:white; font-weight:bold; font-size:1.1em; cursor:pointer; box-shadow:0 4px 6px rgba(230, 74, 25, 0.2);" onclick="openStageSelection()">⚔️ 일반 사냥</button>' +
-        '  <button style="padding:15px; border-radius:10px; border:none; background:var(--Purple); color:white; font-weight:bold; font-size:1.1em; cursor:pointer; box-shadow:0 4px 6px rgba(167, 139, 250, 0.3);" onclick="openBossSelection()">💀 보스 도전</button>' +
-        '  <button style="padding:15px; border-radius:10px; border:none; background:#ff9900; color:white; font-weight:bold; font-size:1.1em; cursor:pointer; box-shadow:0 4px 6px rgba(245, 158, 11, 0.3);" onclick="openStudentRaidSetup()">🏰 파티 던전</button>' +
-        '  <button style="padding:15px; border-radius:10px; border:none; background:#10B981; color:white; font-weight:bold; font-size:1.1em; cursor:pointer; box-shadow:0 4px 6px rgba(16, 185, 129, 0.3);" onclick="checkAndStartTower()">🗼 도전의 탑</button>' +
-        '</div>' +
-        '<button style="width:100%; margin-top:10px; padding:15px; border-radius:10px; border:none; background:linear-gradient(135deg, #EF4444, #991B1B); color:white; font-weight:bold; font-size:1.15em; cursor:pointer; box-shadow:0 4px 15px rgba(239, 68, 68, 0.3);" onclick="openWorldBossModal()">월드 보스 레이드</button>' +
-        '<button style="margin-top:10px; width:100%; padding:12px; border-radius:10px; border:none; background:var(--TextSub); color:white; font-size:1.1em; cursor:pointer;" onclick="closeModal()">닫기</button>';
+        '<div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:8px; margin-top:15px;">' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:var(--BtnBattle); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(230, 74, 25, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openStageSelection()">일반 사냥</button>' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:var(--Purple); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(167, 139, 250, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openBossSelection()">보스 도전</button>' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:#ff9900; color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(245, 158, 11, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openStudentRaidSetup()">파티 던전</button>' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:#10B981; color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(16, 185, 129, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="checkAndStartTower()">도전의 탑</button>' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:linear-gradient(135deg, #EF4444, #991B1B); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(239, 68, 68, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openWorldBossModal()">월드 보스</button>' +
+        '</div>';
 }
 
 // ==========================================
@@ -755,9 +754,17 @@ function saveReadingCount() {
     updateFastFirebaseStudent(currentStudent);
 }
 
+// 💡 [개선] 스마트 뒤로가기 / 닫기 통제 함수
 function closeModal() {
-    document.getElementById('detailModal').style.display = 'none';
-    // 💡 창을 닫아도 타이머가 끝날 때까지 교사 모드가 유지되도록 disable 삭제
+    const body = document.getElementById('modalBody');
+    // 만약 대시보드 메인 화면이 아닌 하위 메뉴(대장간, 옷장, 도감, 원정대, 스킬선택 등)에 있다면 대시보드로 복귀!
+    const isSubScreen = body && !body.querySelector('.dash-layout');
+
+    if (isSubScreen && currentStudent && currentStudent.blessing) {
+        renderDashboard();
+    } else {
+        document.getElementById('detailModal').style.display = 'none';
+    }
 }
 
 // ==========================================
