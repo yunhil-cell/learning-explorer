@@ -695,6 +695,7 @@ function renderDashboard() {
         '  <button style="padding:15px; border-radius:10px; border:none; background:#ff9900; color:white; font-weight:bold; font-size:1.1em; cursor:pointer; box-shadow:0 4px 6px rgba(245, 158, 11, 0.3);" onclick="openStudentRaidSetup()">🏰 파티 던전</button>' +
         '  <button style="padding:15px; border-radius:10px; border:none; background:#10B981; color:white; font-weight:bold; font-size:1.1em; cursor:pointer; box-shadow:0 4px 6px rgba(16, 185, 129, 0.3);" onclick="checkAndStartTower()">🗼 도전의 탑</button>' +
         '</div>' +
+        '<button style="width:100%; margin-top:10px; padding:15px; border-radius:10px; border:none; background:linear-gradient(135deg, #EF4444, #991B1B); color:white; font-weight:bold; font-size:1.15em; cursor:pointer; box-shadow:0 4px 15px rgba(239, 68, 68, 0.3);" onclick="openWorldBossModal()">월드 보스 레이드</button>' +
         '<button style="margin-top:10px; width:100%; padding:12px; border-radius:10px; border:none; background:var(--TextSub); color:white; font-size:1.1em; cursor:pointer;" onclick="closeModal()">닫기</button>';
 }
 
