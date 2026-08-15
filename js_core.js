@@ -336,40 +336,43 @@ function showBlessingSelection() {
 function saveBlessing(bId) {
     document.getElementById('modalBody').innerHTML = '<h3 style="margin-top: 50px; color:var(--Highlight);">각성 진행 중...</h3>';
 
-    // 💡 전학생/신규 계정 최초 가호 선택 시 모든 기본값 일괄 완성 및 저장
     currentStudent.blessing = bId;
+    currentStudent.password = currentStudent.password || '!1234';
     currentStudent.hp_points = 5;
     currentStudent.atk_points = 5;
     currentStudent.def_points = 5;
     currentStudent.luk_points = 5;
-    currentStudent.level = currentStudent.level || 1;
-    currentStudent.exp = currentStudent.exp || 0;
-    currentStudent.level_points = currentStudent.level_points || 0;
-    currentStudent.reading_count = currentStudent.reading_count || 0;
-    currentStudent.bonus_points = currentStudent.bonus_points || 0;
-    currentStudent.game_money = currentStudent.game_money || 0;
+    currentStudent.level = 1;
+    currentStudent.exp = 0;
+    currentStudent.level_points = 0;
+    currentStudent.reading_count = 0;
+    currentStudent.bonus_points = 0;
+    currentStudent.game_money = 0;
 
-    currentStudent.weapon_lv = currentStudent.weapon_lv || 0;
-    currentStudent.head_lv = currentStudent.head_lv || 0;
-    currentStudent.body_lv = currentStudent.body_lv || 0;
-    currentStudent.accessory_lv = currentStudent.accessory_lv || 0;
+    currentStudent.weapon_lv = 0;
+    currentStudent.head_lv = 0;
+    currentStudent.body_lv = 0;
+    currentStudent.accessory_lv = 0;
+    currentStudent.weapon_fail = 0;
+    currentStudent.head_fail = 0;
+    currentStudent.body_fail = 0;
+    currentStudent.accessory_fail = 0;
 
-    currentStudent.weekly_battles = currentStudent.weekly_battles !== undefined ? currentStudent.weekly_battles : (Number(sysConfig.max_weekly_battles) || 2);
-    currentStudent.weekly_boss = currentStudent.weekly_boss !== undefined ? currentStudent.weekly_boss : (Number(sysConfig.max_weekly_boss) || 3);
-    currentStudent.weekly_raid = currentStudent.weekly_raid !== undefined ? currentStudent.weekly_raid : (Number(sysConfig.max_weekly_raid) || 1);
-    currentStudent.weekly_tower = currentStudent.weekly_tower !== undefined ? currentStudent.weekly_tower : (Number(sysConfig.max_weekly_tower) || 1);
+    currentStudent.weekly_battles = Number(sysConfig.max_weekly_battles) || 2;
+    currentStudent.weekly_boss = Number(sysConfig.max_weekly_boss) || 3;
+    currentStudent.weekly_raid = Number(sysConfig.max_weekly_raid) || 1;
+    currentStudent.weekly_tower = Number(sysConfig.max_weekly_tower) || 1;
+    currentStudent.max_tower_floor = 0;
 
-    if (!currentStudent.unlocked_skins || currentStudent.unlocked_skins === "") {
-        currentStudent.unlocked_skins = "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008";
-        currentStudent.equipped_skin = "HD001";
-    }
+    currentStudent.unlocked_skins = "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008";
+    currentStudent.equipped_skin = "HD001";
 
     renderDashboard();
     updateFastFirebaseStudent(currentStudent);
 
-    // 💡 [신규] 구글 스프레드시트에도 가호, 스탯(5/5/5/5), 레벨 1, 주간횟수 등 즉시 일괄 저장
+    // 💡 [핵심] 스프레드시트의 54개 컬럼 전체에 일괄 덮어쓰기 호출!
     if (typeof google !== 'undefined' && google.script && google.script.run) {
-        google.script.run.updateStudentBlessing(currentStudent.name, bId);
+        google.script.run.initNewStudentOnSheet(currentStudent.name, currentStudent.password, bId);
     }
 }
 
