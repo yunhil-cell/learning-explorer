@@ -14,14 +14,24 @@ function getTitleHtml(s) {
 let currentStudent = null;
 let tempStats = { hp: 0, atk: 0, def: 0, luk: 0, remain: 0 };
 
-// 💡 파이어베이스 학생 데이터 실시간 동기화 헬퍼 함수
+// 💡 파이어베이스 학생 데이터 실시간 동기화 헬퍼 함수 (신규 학생 자동 생성 지원)
 async function updateFastFirebaseStudent(student) {
-    if (!window.allStudentsData || !student || !student.name) return;
-    const idx = window.allStudentsData.findIndex(s => s.name === student.name);
-    if (idx === -1) return;
+    if (!student || !student.name) return;
+    if (!window.allStudentsData) window.allStudentsData = [];
+
+    let idx = window.allStudentsData.findIndex(s => s && s.name === student.name);
+    
+    // 신규 학생이면 배열 맨 끝에 추가
+    if (idx === -1) {
+        idx = window.allStudentsData.length;
+        window.allStudentsData.push(student);
+    } else {
+        window.allStudentsData[idx] = student;
+    }
+
     try {
         await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${idx}.json`, {
-            method: 'PATCH',
+            method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(student)
         });
@@ -369,11 +379,6 @@ function saveBlessing(bId) {
 
     renderDashboard();
     updateFastFirebaseStudent(currentStudent);
-
-    // 💡 [핵심] 스프레드시트의 54개 컬럼 전체에 일괄 덮어쓰기 호출!
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-        google.script.run.initNewStudentOnSheet(currentStudent.name, currentStudent.password, bId);
-    }
 }
 
 // ==========================================
