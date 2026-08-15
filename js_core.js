@@ -168,6 +168,18 @@ function renderButtons(students) {
 
     students.forEach(s => {
         if (!s.name) return;
+
+        // 💡 [신규] 전학생/신규 계정 자동 기본값 보정 (이름만 있어도 오류 없이 자동 세팅)
+        if (s.level === undefined || s.level === "" || Number(s.level) === 0) s.level = 1;
+        if (s.hp_points === undefined || s.hp_points === "") s.hp_points = 5;
+        if (s.atk_points === undefined || s.atk_points === "") s.atk_points = 5;
+        if (s.def_points === undefined || s.def_points === "") s.def_points = 5;
+        if (s.luk_points === undefined || s.luk_points === "") s.luk_points = 5;
+        if (s.weekly_battles === undefined || s.weekly_battles === "") s.weekly_battles = Number(sysConfig.max_weekly_battles) || 2;
+        if (s.weekly_boss === undefined || s.weekly_boss === "") s.weekly_boss = Number(sysConfig.max_weekly_boss) || 3;
+        if (s.weekly_raid === undefined || s.weekly_raid === "") s.weekly_raid = Number(sysConfig.max_weekly_raid) || 1;
+        if (s.weekly_tower === undefined || s.weekly_tower === "") s.weekly_tower = Number(sysConfig.max_weekly_tower) || 1;
+
         const btn = document.createElement('button');
         btn.className = 'student-btn ' + (s.blessing ? 'btn-' + s.blessing : '');
         if (!s.blessing) btn.style.backgroundColor = '#E2E8F0';
@@ -321,15 +333,29 @@ function showBlessingSelection() {
 function saveBlessing(bId) {
     document.getElementById('modalBody').innerHTML = '<h3 style="margin-top: 50px; color:var(--Highlight);">각성 진행 중...</h3>';
 
-    // 💡 1. 로컬 데이터에 즉시 임시 반영 (빠른 화면 전환을 위함)
+    // 💡 전학생/신규 계정 최초 가호 선택 시 모든 기본값 일괄 완성 및 저장
     currentStudent.blessing = bId;
     currentStudent.hp_points = 5;
     currentStudent.atk_points = 5;
     currentStudent.def_points = 5;
     currentStudent.luk_points = 5;
+    currentStudent.level = currentStudent.level || 1;
+    currentStudent.exp = currentStudent.exp || 0;
+    currentStudent.level_points = currentStudent.level_points || 0;
+    currentStudent.reading_count = currentStudent.reading_count || 0;
+    currentStudent.bonus_points = currentStudent.bonus_points || 0;
+    currentStudent.game_money = currentStudent.game_money || 0;
 
-    // 💡 [수정] 기존에 보유한 스킨이 없을 때만(최초 시작 시에만) 기본 스킨을 지급합니다.
-    // (2분기 소프트 리셋 시, 학생들이 1분기에 획득한 스킨이 날아가는 것을 방지)
+    currentStudent.weapon_lv = currentStudent.weapon_lv || 0;
+    currentStudent.head_lv = currentStudent.head_lv || 0;
+    currentStudent.body_lv = currentStudent.body_lv || 0;
+    currentStudent.accessory_lv = currentStudent.accessory_lv || 0;
+
+    currentStudent.weekly_battles = currentStudent.weekly_battles !== undefined ? currentStudent.weekly_battles : (Number(sysConfig.max_weekly_battles) || 2);
+    currentStudent.weekly_boss = currentStudent.weekly_boss !== undefined ? currentStudent.weekly_boss : (Number(sysConfig.max_weekly_boss) || 3);
+    currentStudent.weekly_raid = currentStudent.weekly_raid !== undefined ? currentStudent.weekly_raid : (Number(sysConfig.max_weekly_raid) || 1);
+    currentStudent.weekly_tower = currentStudent.weekly_tower !== undefined ? currentStudent.weekly_tower : (Number(sysConfig.max_weekly_tower) || 1);
+
     if (!currentStudent.unlocked_skins || currentStudent.unlocked_skins === "") {
         currentStudent.unlocked_skins = "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008";
         currentStudent.equipped_skin = "HD001";
@@ -523,11 +549,11 @@ function renderDashboard() {
 
     const tabsHtml =
         '<div style="display:flex; margin-bottom:15px; border-bottom: 2px solid var(--BorderColor); overflow-x: auto;">' +
-        '  <div class="' + getTabClass('info') + '" ' + getOnclick('info') + '>👤 정보</div>' +
-        '  <div class="' + getTabClass('stats') + '" ' + getOnclick('stats') + ' style="position:relative;">📊 능력치' + nBadge + '</div>' +
-        '  <div class="' + getTabClass('equip') + '" ' + getOnclick('equip') + '>🎒 장비</div>' +
-        '  <div class="' + getTabClass('shop') + '" ' + getOnclick('shop') + '>🛒 상점</div>' +
-        '  <div class="' + getTabClass('bag') + '" ' + getOnclick('bag') + '>🎒 가방</div>' +
+        '  <div class="' + getTabClass('info') + '" ' + getOnclick('info') + '>정보</div>' +
+        '  <div class="' + getTabClass('stats') + '" ' + getOnclick('stats') + ' style="position:relative;">능력치' + nBadge + '</div>' +
+        '  <div class="' + getTabClass('equip') + '" ' + getOnclick('equip') + '>장비</div>' +
+        '  <div class="' + getTabClass('shop') + '" ' + getOnclick('shop') + '>상점</div>' +
+        '  <div class="' + getTabClass('bag') + '" ' + getOnclick('bag') + '>가방</div>' +
         '</div>';
 
     let tabContent = '';
@@ -611,13 +637,13 @@ function renderDashboard() {
 
         tabContent =
             '<div style="text-align:left;">' +
-            '  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom:15px;">' +
-            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Highlight);" onclick="openSkillShop()">🔮 스킬 뽑기</button>' +
-            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Red);" onclick="openRelicShop()">🏺 유물 뽑기</button>' +
-            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Blue);" onclick="openMercenaryShop()">🛡️ 동료 뽑기</button>' +
-            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Yellow); color:black;" onclick="openForge()">🔨 대장간 진입</button>' +
+            '  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom:12px;">' +
+            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Highlight);" onclick="openSkillShop()">스킬 뽑기</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Red);" onclick="openRelicShop()">유물 뽑기</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Blue);" onclick="openMercenaryShop()">동료 뽑기</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:10px; background:var(--Yellow); color:black;" onclick="openForge()">대장간 진입</button>' +
             '  </div>' +
-            '  <div style="display:grid; grid-template-columns: 1fr; gap: 8px; max-height:300px; overflow-y:auto; overflow-x:hidden; padding-right:6px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;">' +
+            '  <div style="display:grid; grid-template-columns: 1fr; gap: 6px; max-height:175px; overflow-y:auto; overflow-x:hidden; padding-right:4px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;">' +
             shopItemsHtml +
             '  </div>' +
             '</div>';
@@ -661,13 +687,12 @@ function renderDashboard() {
 
     body.innerHTML =
         '<div class="dash-layout">' +
-        '  <div class="db-section" style="flex: 1; min-width: 250px; align-items: center; text-align: center; position: relative;">' +
-        '    <div style="position: absolute; top: 15px; right: 15px; display: flex; flex-direction: column; gap: 5px; z-index: 5;">' +
-        '      <button class="small-btn" style="padding: 6px 12px; font-size: 0.85em; background:var(--BtnShop); border:none;" onclick="openWardrobe()">옷장 열기</button>' +
-        '      <button class="small-btn" style="padding: 6px 12px; font-size: 0.85em; background:var(--Yellow); color:black; border:none;" onclick="openTitleUI()">🏷️ 칭호 장착</button>' +
-        '      <button class="small-btn" style="padding: 6px 12px; font-size: 0.85em; background:var(--Purple); color:white; border:none;" onclick="openExpeditionModal()">⚔️ 원정대</button>' +
+        '  <div class="db-section" style="flex: 1; min-width: 240px; align-items: center; text-align: center;">' +
+        '    <div style="display: flex; gap: 6px; width: 100%; margin-bottom: 12px;">' +
+        '      <button class="small-btn" style="flex:1; padding: 7px 0; font-size: 0.85em; background:var(--BtnShop); border:none; border-radius:6px;" onclick="openWardrobe()">옷장</button>' +
+        '      <button class="small-btn" style="flex:1; padding: 7px 0; font-size: 0.85em; background:var(--Yellow); color:black; border:none; border-radius:6px; font-weight:bold;" onclick="openTitleUI()">칭호</button>' +
+        '      <button class="small-btn" style="flex:1; padding: 7px 0; font-size: 0.85em; background:var(--Purple); color:white; border:none; border-radius:6px; font-weight:bold;" onclick="openExpeditionModal()">원정대</button>' +
         '    </div>' +
-        '    <h4 style="margin:0 0 10px 0; color:var(--TextGold); width:100%; text-align:left; font-size:1.1em;">🧑‍🎤 아바타</h4>' +
         '    <div style="flex-grow:1; display:flex; flex-direction:column; justify-content:center; align-items:center; width: 100%; min-height: 180px;">' +
         '      <img src="' + skinImgUrl + '" style="width: 80%; max-height: 220px; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); transform: scaleX(-1);">' +
         '    </div>' +
