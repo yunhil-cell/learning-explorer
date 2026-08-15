@@ -1,14 +1,11 @@
 function getTitleHtml(s) {
-    // 칭호가 없는 학생도 높이가 틀어지지 않도록 투명한 공백 할당
-    let titleHtml = '<span style="display:block; font-size:0.45em; margin-bottom:2px; opacity:0;">&nbsp;</span>';
+    let titleHtml = '<span style="display:block; font-size:0.68em; margin-bottom:2px; opacity:0; line-height:1.1;">&nbsp;</span>';
 
     if (s && s.equipped_title && String(s.equipped_title).trim() !== '' && String(s.equipped_title) !== 'undefined') {
-        // 칭호 영역: 말줄임표 삭제 및 자연스러운 두 줄 바꿈 허용 (white-space:normal)
-        titleHtml = '<span style="display:block; font-size:0.45em; color:var(--TextGold); margin-bottom:2px; text-shadow:none; width:100%; white-space:normal; word-break:keep-all;">' + s.equipped_title + '</span>';
+        titleHtml = '<span style="display:block; font-size:0.68em; font-weight:bold; color:var(--TextGold); margin-bottom:2px; text-shadow:none; width:100%; white-space:normal; word-break:keep-all; line-height:1.1;">' + s.equipped_title + '</span>';
     }
 
-    // 이름 영역: 말줄임표 삭제 및 자연스러운 두 줄 바꿈 허용 (white-space:normal)
-    return titleHtml + '<span style="display:block; width:100%; white-space:normal; word-break:keep-all;">' + s.name + '</span>';
+    return titleHtml + '<span style="display:block; width:100%; white-space:normal; word-break:keep-all; line-height:1.2;">' + s.name + '</span>';
 }
 
 let currentStudent = null;
@@ -194,8 +191,7 @@ function renderButtons(students) {
         btn.className = 'student-btn ' + (s.blessing ? 'btn-' + s.blessing : '');
         if (!s.blessing) btn.style.backgroundColor = '#E2E8F0';
 
-        // 텍스트가 넘치면 말줄임표 없이 자연스럽게 줄바꿈되도록 수정
-        btn.innerHTML = '<div style="width:100%; line-height:1.2; white-space:normal;">' + getTitleHtml(s) + '</div><div style="font-size: 0.7em; opacity: 0.8; margin-top:5px;">📚 ' + (s.reading_count || 0) + '편</div>';
+        btn.innerHTML = '<div style="width:100%; line-height:1.2; white-space:normal;">' + getTitleHtml(s) + '</div><div style="font-size: 0.88em; font-weight:bold; color:var(--TextSub); margin-top:5px; white-space:nowrap;">📚 ' + (s.reading_count || 0) + '편</div>';
 
         // 💡 학생 클릭 로직: 레이드 선택 분기를 없애고 바로 학생 정보 열기
         btn.onclick = () => {
@@ -649,10 +645,10 @@ function renderDashboard() {
         tabContent =
             '<div style="text-align:left;">' +
             '  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom:8px;">' +
-            '    <button class="btn-main" style="margin-top:0; padding:9px; background:var(--Highlight);" onclick="openSkillShop()">스킬 뽑기</button>' +
-            '    <button class="btn-main" style="margin-top:0; padding:9px; background:var(--Red);" onclick="openRelicShop()">유물 뽑기</button>' +
-            '    <button class="btn-main" style="margin-top:0; padding:9px; background:var(--Blue);" onclick="openMercenaryShop()">동료 뽑기</button>' +
-            '    <button class="btn-main" style="margin-top:0; padding:9px; background:var(--Yellow); color:black;" onclick="openForge()">대장간 진입</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:9px; background:#2563EB; color:white;" onclick="openSkillShop()">스킬 뽑기</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:9px; background:#2563EB; color:white;" onclick="openRelicShop()">유물 뽑기</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:9px; background:#0D9488; color:white;" onclick="openMercenaryShop()">동료 뽑기</button>' +
+            '    <button class="btn-main" style="margin-top:0; padding:9px; background:#D97706; color:white;" onclick="openForge()">대장간 진입</button>' +
             '  </div>' +
             '  <div style="display:grid; grid-template-columns: 1fr; gap: 5px; max-height:200px; overflow-y:auto; overflow-x:hidden; padding-right:4px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;">' +
             shopItemsHtml +
@@ -726,11 +722,11 @@ function renderDashboard() {
         '</div>' +
 
         '<div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:8px; margin-top:15px;">' +
-        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:var(--BtnBattle); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(230, 74, 25, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openStageSelection()">일반 사냥</button>' +
-        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:var(--Purple); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(167, 139, 250, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openBossSelection()">보스 도전</button>' +
-        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:#ff9900; color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(245, 158, 11, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openStudentRaidSetup()">파티 던전</button>' +
-        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:#10B981; color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(16, 185, 129, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="checkAndStartTower()">도전의 탑</button>' +
-        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:linear-gradient(135deg, #EF4444, #991B1B); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 2px 6px rgba(239, 68, 68, 0.25); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openWorldBossModal()">월드 보스</button>' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:linear-gradient(135deg, #F97316, #C2410C); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 3px 8px rgba(234, 88, 12, 0.3); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openStageSelection()">일반 사냥</button>' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:linear-gradient(135deg, #A855F7, #6B21A8); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 3px 8px rgba(139, 92, 246, 0.3); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openBossSelection()">보스 도전</button>' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:linear-gradient(135deg, #FBBF24, #B45309); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 3px 8px rgba(245, 158, 11, 0.3); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openStudentRaidSetup()">파티 던전</button>' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:linear-gradient(135deg, #10B981, #047857); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 3px 8px rgba(16, 185, 129, 0.3); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="checkAndStartTower()">도전의 탑</button>' +
+        '  <button style="padding:14px 2px; border-radius:10px; border:none; background:linear-gradient(135deg, #EF4444, #991B1B); color:white; font-weight:bold; font-size:0.95em; cursor:pointer; box-shadow:0 3px 8px rgba(239, 68, 68, 0.3); white-space:nowrap; transition:0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'" onclick="openWorldBossModal()">월드 보스</button>' +
         '</div>';
 }
 

@@ -1418,9 +1418,9 @@ function openStudentRaidSetup() {
         const targetRaidCount = (s.weekly_raid !== undefined && s.weekly_raid !== "") ? Number(s.weekly_raid) : maxWeeklyRaid;
 
         if (targetRaidCount <= 0) {
-            html += '<button id="raidSelectBtn_' + s.name + '" style="padding:12px 8px; background:#0F172A; border:2px solid #334155; border-radius:10px; color:#64748B; font-weight:bold; cursor:not-allowed; opacity:0.5;" disabled title="이번 주 던전 탐험 횟수를 모두 소진했습니다.">🚫 ' + s.name + '<br><span style="font-size:0.75em; color:#94A3B8;">(0/' + maxWeeklyRaid + '회)</span></button>';
+            html += '<button id="raidSelectBtn_' + s.name + '" style="padding:12px 8px; background:#0F172A; border:2px solid #334155; border-radius:10px; color:#64748B; font-weight:bold; cursor:not-allowed; opacity:0.5; font-size:1.05em;" disabled title="이번 주 던전 탐험 횟수를 모두 소진했습니다.">🚫 ' + s.name + '<br><span style="font-size:0.88em; color:#94A3B8; font-weight:normal;">(0/' + maxWeeklyRaid + '회)</span></button>';
         } else {
-            html += '<button id="raidSelectBtn_' + s.name + '" style="padding:12px 8px; background:#1E293B; border:2px solid #334155; border-radius:10px; color:white; font-weight:bold; cursor:pointer; transition:0.2s;" onclick="toggleStudentRaidMember(\'' + s.name + '\')">' + s.name + '<br><span style="font-size:0.75em; color:#34D399;">(' + targetRaidCount + '/' + maxWeeklyRaid + '회)</span></button>';
+            html += '<button id="raidSelectBtn_' + s.name + '" style="padding:12px 8px; background:#1E293B; border:2px solid #334155; border-radius:10px; color:white; font-weight:bold; cursor:pointer; transition:0.2s; font-size:1.05em;" onclick="toggleStudentRaidMember(\'' + s.name + '\')">' + s.name + '<br><span style="font-size:0.88em; color:#34D399; font-weight:bold;">(' + targetRaidCount + '/' + maxWeeklyRaid + '회)</span></button>';
         }
     });
 

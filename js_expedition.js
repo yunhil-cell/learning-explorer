@@ -310,9 +310,9 @@ function openEquipUI(slotNum) {
 
         return '<div style="background:#FFFFFF; ' + cardBorder + ' border-radius:12px; padding:10px 6px; text-align:center; display:flex; flex-direction:column; justify-content:space-between; align-items:center; transition:0.2s; box-shadow:0 2px 5px rgba(0,0,0,0.05); cursor:pointer;" onclick="showSkillDetail(\'' + sk.skill_id + '\')">' +
             '  ' + iconDisplay +
-            '  <div style="font-weight:bold; font-size:0.85em; color:var(--TextMain); margin:6px 0 2px 0; word-break:keep-all; line-height:1.2;">' + sk.name + '</div>' +
-            '  <div style="font-size:0.7em; color:var(--Red); font-weight:bold; margin-bottom:8px;">⏳ 쿨타임 ' + (sk.cooldown || 0) + '턴</div>' +
-            '  <button class="small-btn" style="width:100%; background:' + btnBg + '; padding:6px 0; border:none;">' + btnText + '</button>' +
+            '  <div style="font-weight:bold; font-size:0.92em; color:var(--TextMain); margin:6px 0 2px 0; word-break:keep-all; line-height:1.2;">' + sk.name + '</div>' +
+            '  <div style="font-size:0.82em; color:var(--Red); font-weight:bold; margin-bottom:8px;">⏳ 쿨타임 ' + (sk.cooldown || 0) + '턴</div>' +
+            '  <button class="small-btn" style="width:100%; background:' + btnBg + '; padding:6px 0; border:none; font-size:0.85em;" onclick="showSkillDetail(\'' + sk.skill_id + '\')">' + btnText + '</button>' +
             '</div>';
     }).join('');
 
@@ -436,9 +436,9 @@ function openRelicEquipUI(slotNum) {
 
         return '<div style="background:#FFFFFF; ' + cardBorder + ' border-radius:12px; padding:10px 6px; text-align:center; display:flex; flex-direction:column; justify-content:space-between; align-items:center; transition:0.2s; box-shadow:0 2px 5px rgba(0,0,0,0.05);">' +
             '  ' + iconDisplay +
-            '  <div style="font-weight:bold; font-size:0.85em; color:var(--TextMain); margin:6px 0 2px 0; word-break:keep-all; line-height:1.2;">' + r.name + '</div>' +
-            '  <div style="font-size:0.7em; color:var(--TextGold); font-weight:bold; margin-bottom:8px; white-space:nowrap;">✨ ' + effName + ' +' + valStr + '</div>' +
-            '  <button class="small-btn" style="width:100%; background:' + btnBg + '; padding:6px 0; border:none;" onclick="equipRelic(\'' + r.relic_id + '\')">' + btnText + '</button>' +
+            '  <div style="font-weight:bold; font-size:0.92em; color:var(--TextMain); margin:6px 0 2px 0; word-break:keep-all; line-height:1.2;">' + r.name + '</div>' +
+            '  <div style="font-size:0.82em; color:var(--TextGold); font-weight:bold; margin-bottom:8px; white-space:nowrap;">✨ ' + effName + ' +' + valStr + '</div>' +
+            '  <button class="small-btn" style="width:100%; background:' + btnBg + '; padding:6px 0; border:none; font-size:0.85em;" onclick="equipRelic(\'' + r.relic_id + '\')">' + btnText + '</button>' +
             '</div>';
     }).join('');
 
@@ -790,11 +790,11 @@ function openMercSelectModal(slotNum) {
         else if (isOtherSlot) { btnText = '다른슬롯'; btnBg = 'var(--TextSub)'; }
 
         html += '<div style="background:#FFFFFF; ' + cardBorder + ' border-radius:12px; padding:10px 6px; text-align:center; display:flex; flex-direction:column; justify-content:space-between; align-items:center; transition:0.2s; box-shadow:0 2px 5px rgba(0,0,0,0.05);">';
-        html += '  <div style="font-size:0.7em; font-weight:bold; color:' + tierColor + '; margin-bottom:2px;">[' + tier + '급]</div>';
+        html += '  <div style="font-size:0.8em; font-weight:bold; color:' + tierColor + '; margin-bottom:2px;">[' + tier + '급]</div>';
         html += '  ' + iconHtml;
-        html += '  <div style="font-weight:bold; font-size:0.85em; color:var(--TextMain); margin:4px 0 2px 0; word-break:keep-all; line-height:1.2;">' + m.name + '</div>';
-        html += '  <div style="font-size:0.7em; color:var(--TextSub); font-weight:bold; margin-bottom:8px; white-space:nowrap;">✨ ' + optName + ' +' + optValStr + '</div>';
-        html += '  <button class="small-btn" style="width:100%; background:' + btnBg + '; padding:6px 0; border:none;" onclick="selectMercForSlot(' + slotNum + ', \'' + m.merc_id + '\')">' + btnText + '</button>';
+        html += '  <div style="font-weight:bold; font-size:0.95em; color:var(--TextMain); margin:4px 0 2px 0; word-break:keep-all; line-height:1.2;">' + m.name + '</div>';
+        html += '  <div style="font-size:0.82em; color:var(--TextSub); font-weight:bold; margin-bottom:8px; white-space:nowrap;">✨ ' + optName + ' +' + optValStr + '</div>';
+        html += '  <button class="small-btn" style="width:100%; background:' + btnBg + '; padding:6px 0; border:none; font-size:0.85em;" onclick="selectMercForSlot(' + slotNum + ', \'' + m.merc_id + '\')">' + btnText + '</button>';
         html += '</div>';
     });
 
