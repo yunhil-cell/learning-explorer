@@ -478,56 +478,47 @@ function openWardrobe() {
         if (!mySkins.includes(ds)) mySkins.push(ds);
     });
 
-    // 💡 [수정] 장착 중인 스킨이 없을 때는 HD001을 기본 장착으로 간주
     const currentEquipped = s.equipped_skin || 'HD001';
 
-    let html = '<h2 style="color:var(--Yellow);">🧑‍🎤 옷장</h2>' +
-        '<p style="color:var(--TextSub); margin-bottom:20px;">획득한 외형을 선택하여 자세히 살펴보세요!</p>' +
-        '<div style="display:flex; justify-content:center; gap:15px; flex-wrap:wrap; margin-bottom:20px;">';
+    let html = '<h2 style="color:var(--TextGold); margin-top:0;">옷장</h2>' +
+        '<p style="color:var(--TextSub); font-size:0.9em; margin-bottom:15px;">외형을 선택하여 상세 정보를 확인하고 변경하세요.</p>' +
+        '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(115px, 1fr)); gap:10px; max-height:420px; overflow-y:auto; padding:5px; margin-bottom:15px;">';
 
-    // 2. skins 탭에 등록된 전체 스킨을 순회하며 카드 생성
+    // 2. skins 탭에 등록된 전체 스킨을 순회하며 컴팩트 카드 생성
     skinsData.forEach(skin => {
         if (!skin.skin_id) return; // 빈 줄 방지
 
         const isOwned = mySkins.includes(String(skin.skin_id));
         const isEquipped = String(skin.skin_id) === String(currentEquipped);
 
-        let borderStyle = 'border: 2px solid var(--BorderColor);';
-        let textStyle = 'color: var(--TextSub);';
-        let overlay = '';
+        let borderStyle = 'border: 1.5px solid var(--BorderColor); background:#F8FAFC; opacity: 0.55;';
+        let textStyle = 'color: var(--TextLock);';
+        let statusBadge = '<div style="font-size:0.75em; color:var(--TextLock); margin-top:3px;">미보유</div>';
 
-        // 💡 [수정] 모든 카드를 누르면 구매/장착 대신 무조건 '상세 정보 창'을 띄웁니다.
-        let clickAction = 'onclick="showSkinDetail(\'' + skin.skin_id + '\')"';
-
-        // 장착 중인 상태
+        // 장착 중인 상태 (초록 테두리)
         if (isEquipped) {
-            borderStyle = 'border: 3px solid var(--Green); box-shadow: 0 0 10px rgba(5, 150, 105, 0.2); cursor: pointer;';
+            borderStyle = 'border: 2px solid var(--Green); background:#FFFFFF; box-shadow: 0 0 8px rgba(5, 150, 105, 0.25);';
             textStyle = 'color: var(--Green); font-weight: bold;';
-            overlay = '<div style="font-size:0.75em; color:var(--Green); margin-top:5px;">[장착 중]</div>';
+            statusBadge = '<div style="font-size:0.75em; color:var(--Green); font-weight:bold; margin-top:3px;">[장착 중]</div>';
         }
-        // 보유했지만 미장착 상태
+        // 보유 상태 (파란 테두리)
         else if (isOwned) {
-            borderStyle = 'border: 2px solid var(--Highlight); cursor: pointer;';
-            textStyle = 'color: var(--Highlight);';
-            overlay = '<div style="font-size:0.75em; color:var(--TextSub); margin-top:5px;">클릭하여 상세 보기</div>';
-        }
-        // 아직 미획득(자물쇠) 상태
-        else {
-            borderStyle = 'border: 2px solid var(--BorderColor); opacity: 0.6; cursor: pointer;';
-            overlay = '<div style="font-size:1.5em; margin-top:5px;">🔒</div><div style="font-size:0.75em; color:var(--TextSub); margin-top:5px;">클릭하여 상세 보기</div>';
+            borderStyle = 'border: 1.5px solid var(--Highlight); background:#FFFFFF;';
+            textStyle = 'color: var(--Highlight); font-weight: bold;';
+            statusBadge = '<div style="font-size:0.75em; color:var(--Highlight); margin-top:3px;">보유중</div>';
         }
 
         html +=
-            '<div style="background:#FFFFFF; ' + borderStyle + ' border-radius:15px; padding:15px; width:130px; transition:0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.05);" ' +
-            'onmouseover="this.style.transform=\'scale(1.05)\'" onmouseout="this.style.transform=\'scale(1)\'" ' +
-            clickAction + '>' +
-            '  <img src="' + skin.skin_url + '" style="width:90px; height:90px; object-fit:contain; margin-bottom:10px; transform: scaleX(-1);">' +
-            '  <div style="font-size:0.95em; ' + textStyle + '">' + skin.name + '</div>' +
-            '  ' + overlay +
+            '<div style="' + borderStyle + ' border-radius:12px; padding:10px 6px; text-align:center; cursor:pointer; transition:0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.03);" ' +
+            'onmouseover="this.style.transform=\'scale(1.04)\'" onmouseout="this.style.transform=\'none\'" ' +
+            'onclick="showSkinDetail(\'' + skin.skin_id + '\')">' +
+            '  <img src="' + skin.skin_url + '" style="width:75px; height:75px; object-fit:contain; margin-bottom:6px; transform: scaleX(-1);">' +
+            '  <div style="font-size:0.85em; ' + textStyle + ' word-break:keep-all; line-height:1.2;">' + skin.name + '</div>' +
+            '  ' + statusBadge +
             '</div>';
     });
 
-    html += '</div><button class="btn-main" style="background:var(--TextSub);" onclick="renderDashboard()">메인으로 돌아가기</button>';
+    html += '</div><button class="btn-main" style="background:var(--TextSub);" onclick="renderDashboard()">대시보드로 돌아가기</button>';
     body.innerHTML = html;
 }
 

@@ -262,20 +262,23 @@ function showPasswordSetupPrompt() {
     }, 100);
 }
 
-// 💡 4. 핀번호 설정 검증 및 저장
+// 💡 4. 핀번호 설정 검증 및 저장 (파이어베이스 + 스프레드시트 즉시 동시 저장)
 function processPasswordSetup(pin) {
-    // 정규식을 사용해 오직 '숫자 4자리'만 통과시킴
     if (!/^\d{4}$/.test(pin)) {
         showUiAlert('❌ 오류', '비밀번호는 반드시 <b>숫자 4자리</b>여야 합니다.', 'showPasswordSetupPrompt()');
         return;
     }
 
-    // 로컬 데이터에 ! 붙여서 즉시 반영
     currentStudent.password = '!' + pin;
     closeUiPopup();
 
     openStudentDetailAfterAuth();
     updateFastFirebaseStudent(currentStudent);
+
+    // 💡 [신규] 구글 스프레드시트에도 비밀번호 즉시 기록
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run.updateStudentPassword(currentStudent.name, '!' + pin);
+    }
 }
 
 // 💡 2. 로그인 팝업 (엔터키 지원)
@@ -363,6 +366,11 @@ function saveBlessing(bId) {
 
     renderDashboard();
     updateFastFirebaseStudent(currentStudent);
+
+    // 💡 [신규] 구글 스프레드시트에도 가호, 스탯(5/5/5/5), 레벨 1, 주간횟수 등 즉시 일괄 저장
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run.updateStudentBlessing(currentStudent.name, bId);
+    }
 }
 
 // ==========================================
