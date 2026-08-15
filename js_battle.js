@@ -747,8 +747,9 @@ function playerTurnAuto() {
                 updateHpBars();
             }
 
-            // 2. 상태이상 (버프/디버프) 적용
-            if (effectType !== '없음' && !['null', '3연격', '처형', '방어관통', '회복'].includes(effectType) && effectDuration > 0) {
+            // 2. 상태이상 (버프/디버프) 적용 (none, null, 없음 완벽 필터링)
+            const isNoSpecial = ['없음', 'none', 'null', 'undefined', '', 'false'].includes(String(effectType).toLowerCase());
+            if (!isNoSpecial && !['3연격', '처형', '방어관통', '회복'].includes(effectType) && effectDuration > 0) {
                 let tType = String(usedSkill.target_type).trim().toLowerCase();
                 let isBuffEffect = ['은신', '보호막', '광폭화', '마력집중', '회피증가', '재생', '더블히트'].includes(effectType);
 
@@ -979,8 +980,11 @@ function monsterTurnAuto() {
     if (usedSkill) {
         logBattle('<span style="color:#ffdb4d;">[적 스킬 발동]</span> ' + usedSkill.name + '! ' + critText);
 
-        const rawEffect = String(usedSkill.special_effect).toLowerCase().trim();
+        const rawEffect = String(usedSkill.special_effect || '없음').toLowerCase().trim();
         effectType = effectTranslator[rawEffect] || usedSkill.special_effect;
+        if (['none', 'null', 'undefined', '없음', '', 'false'].includes(String(effectType).toLowerCase())) {
+            effectType = '없음';
+        }
         const effectDuration = Number(usedSkill.duration) || 0;
 
         // 🚨 몬스터 스킬 이펙트 재생 (재생 시간 변수 저장)
@@ -997,7 +1001,7 @@ function monsterTurnAuto() {
                 battleState.monsterEffects.push({ type: effectType, duration: effectDuration });
                 logBattle('🔥 적이 [' + effectType + '] 상태가 되었습니다! (' + effectDuration + '턴)');
             }
-            else if (effectType !== '없음' && effectType !== '방어관통' && effectType !== '흡혈' && effectType !== '체력비례피해') {
+            else if (effectType !== '없음' && effectType !== '방어관통' && effectType !== '흡혈' && effectType !== '체력비례피해' && effectDuration > 0) {
                 let actualType = effectType;
                 if (effectType === '맹독흡혈') actualType = '중독';
                 if (effectType === '방깎출혈') actualType = '출혈';
@@ -2115,7 +2119,11 @@ function raidMonsterTurnAuto() {
 
     if (usedSkill) {
         logBattle(`<span style="color:#ffdb4d;">[보스 스킬 발동]</span> ${usedSkill.name}! ${critText}`);
-        effectType = effectTranslator[String(usedSkill.special_effect).toLowerCase().trim()] || usedSkill.special_effect;
+        const rawSpecial = String(usedSkill.special_effect || '없음').toLowerCase().trim();
+        effectType = effectTranslator[rawSpecial] || usedSkill.special_effect;
+        if (['none', 'null', 'undefined', '없음', '', 'false'].includes(String(effectType).toLowerCase())) {
+            effectType = '없음';
+        }
         if (['전체', 'all', 'enemy_all'].includes(String(usedSkill.target_type).toLowerCase().trim())) isAoE = true;
 
         if (usedSkill.effect_url && String(usedSkill.effect_url).trim() !== '') {

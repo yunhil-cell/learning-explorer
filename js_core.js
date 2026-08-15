@@ -1,11 +1,11 @@
 function getTitleHtml(s) {
-    let titleHtml = '<span style="display:block; font-size:0.68em; margin-bottom:2px; opacity:0; line-height:1.1;">&nbsp;</span>';
+    let titleHtml = '<span style="display:block; font-size:0.48em; margin-bottom:2px; opacity:0; line-height:1;">&nbsp;</span>';
 
     if (s && s.equipped_title && String(s.equipped_title).trim() !== '' && String(s.equipped_title) !== 'undefined') {
-        titleHtml = '<span style="display:block; font-size:0.68em; font-weight:bold; color:var(--TextGold); margin-bottom:2px; text-shadow:none; width:100%; white-space:normal; word-break:keep-all; line-height:1.1;">' + s.equipped_title + '</span>';
+        titleHtml = '<span style="display:block; font-size:0.48em; font-weight:bold; color:var(--TextGold); margin-bottom:2px; text-shadow:none; width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1;">' + s.equipped_title + '</span>';
     }
 
-    return titleHtml + '<span style="display:block; width:100%; white-space:normal; word-break:keep-all; line-height:1.2;">' + s.name + '</span>';
+    return titleHtml + '<span style="display:block; width:100%; white-space:normal; word-break:keep-all; line-height:1.15;">' + s.name + '</span>';
 }
 
 let currentStudent = null;
