@@ -34,6 +34,8 @@ let currentEquipType = 'weapon';
 
 let sysConfig = {};
 let mercenariesData = []; // 💡 [신규] 동료(용병) 데이터 전역 변수
+let worldBossesData = []; // 💡 [신규] 월드 보스 데이터 전역 변수 🐲
+let worldBossState = { current_hp: 150000, max_hp: 150000, contributions: {}, is_cleared: false };
 // 💡 유물 효과 한글 번역 사전 (ui 표시용)
 const relicEffectTranslator = {
     'hp_up': '최대 체력 증가(고정)',
@@ -124,11 +126,13 @@ function initGameData(data) {
     lootBoxesData = data.lootBoxes || [];
     shopData = data.shopItems || [];
     mercenariesData = data.mercenaries || [];
+    worldBossesData = data.worldBosses || [];
     if (data.monsters) monsterList = data.monsters;
     if (data.monsterSkills) monsterSkillsData = data.monsterSkills;
     if (data.dungeons) dungeonsData = data.dungeons;
     if (data.bosses) bossList = data.bosses;
 
+    initWorldBossState();
     renderButtons(data.students);
 }
 
@@ -1264,4 +1268,145 @@ function showNoticeDetail(noticeId) {
 
     // 게임 UI 팝업(showUiAlert)을 활용하여 상세 내용 표시
     showUiAlert('📜 상세 내용', detailHtml, 'openNoticeBoard()');
+}
+
+// ==========================================
+// 🐲 월드 보스 시스템 (실시간 동기화 & 모달)
+// ==========================================
+async function initWorldBossState() {
+    const activeBoss = (worldBossesData || []).find(b => String(b.is_active).toUpperCase() === 'TRUE');
+    if (!activeBoss) {
+        const banner = document.getElementById('worldBossBanner');
+        if (banner) banner.style.display = 'none';
+        return;
+    }
+
+    try {
+        const res = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/worldBoss/${activeBoss.wb_id}.json`);
+        const fbWb = await res.json();
+        
+        const defaultMaxHp = Number(activeBoss.max_hp) || 150000;
+        if (fbWb) {
+            worldBossState = fbWb;
+        } else {
+            // 파이어베이스에 초기 노드가 없으면 생성
+            worldBossState = {
+                wb_id: activeBoss.wb_id,
+                name: activeBoss.name,
+                max_hp: defaultMaxHp,
+                current_hp: defaultMaxHp,
+                contributions: {},
+                is_cleared: false
+            };
+            fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/worldBoss/${activeBoss.wb_id}.json`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(worldBossState)
+            });
+        }
+        updateWorldBossBanner(activeBoss);
+    } catch (e) {
+        console.error("월드 보스 파이어베이스 로드 실패:", e);
+    }
+}
+
+function updateWorldBossBanner(activeBoss) {
+    const banner = document.getElementById('worldBossBanner');
+    if (!banner || !activeBoss) return;
+
+    banner.style.display = 'block';
+    const curHp = Math.max(0, Number(worldBossState.current_hp) || 0);
+    const maxHp = Number(activeBoss.max_hp) || 150000;
+    const hpPct = Math.min(100, ((curHp / maxHp) * 100)).toFixed(1);
+
+    document.getElementById('wbBannerTitle').innerText = `🐲 [월드 보스] ${activeBoss.name}`;
+    document.getElementById('wbBannerHpText').innerText = worldBossState.is_cleared 
+        ? "🎉 학급 전체 토벌 성공!" 
+        : `HP: ${curHp.toLocaleString()} / ${maxHp.toLocaleString()}`;
+    document.getElementById('wbBannerHpPct').innerText = `${hpPct}%`;
+    document.getElementById('wbBannerHpFill').style.width = `${hpPct}%`;
+}
+
+function openWorldBossModal() {
+    const activeBoss = (worldBossesData || []).find(b => String(b.is_active).toUpperCase() === 'TRUE');
+    if (!activeBoss) {
+        showUiAlert("🐲 월드 보스", "현재 진행 중인 월드 보스 레이드가 없습니다.", "");
+        return;
+    }
+
+    const subModal = document.getElementById('subModal');
+    const subBody = document.getElementById('subModalBody');
+
+    subModal.querySelector('.modal-content').style.background = '#0F172A';
+    subModal.querySelector('.modal-content').style.borderColor = '#EF4444';
+
+    const curHp = Math.max(0, Number(worldBossState.current_hp) || 0);
+    const maxHp = Number(activeBoss.max_hp) || 150000;
+    const hpPct = Math.min(100, ((curHp / maxHp) * 100)).toFixed(1);
+
+    // 기여도 TOP 5 집계
+    const contribs = worldBossState.contributions || {};
+    const sortedContribs = Object.entries(contribs).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const rankMedals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+    let rankingHtml = sortedContribs.map((item, idx) => {
+        return `<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed #334155; font-size:0.9em;">
+            <span style="color:white;">${rankMedals[idx] || ''} ${item[0]}</span>
+            <b style="color:#FBBF24;">${Number(item[1]).toLocaleString()} 딜</b>
+        </div>`;
+    }).join('');
+
+    if (!rankingHtml) rankingHtml = '<div style="color:#64748B; font-size:0.85em; padding:10px 0;">아직 참전한 모험가가 없습니다.</div>';
+
+    // 오늘 참여 여부 체크 (YYYY-MM-DD)
+    const todayStr = new Date().toISOString().split('T')[0];
+    let isFoughtToday = false;
+    if (currentStudent && currentStudent.last_wb_date === todayStr) {
+        isFoughtToday = true;
+    }
+
+    let battleBtnHtml = '';
+    if (!currentStudent) {
+        battleBtnHtml = '<button class="btn-main" style="background:#444;" disabled>먼저 학생 계정으로 로그인해주세요</button>';
+    } else if (worldBossState.is_cleared) {
+        battleBtnHtml = '<button class="btn-main" style="background:#10B981; color:white; font-weight:bold;" disabled>🎉 토벌 완료! 보상이 지급되었습니다</button>';
+    } else if (isFoughtToday && !isTeacherMode) {
+        battleBtnHtml = '<button class="btn-main" style="background:#444; color:#94A3B8;" disabled>✅ 오늘 도전 완료 (내일 다시 도전 가능)</button>';
+    } else {
+        battleBtnHtml = `<button class="btn-main" style="background:linear-gradient(135deg, #EF4444, #B91C1C); color:white; font-weight:bold; font-size:1.2em; padding:15px; box-shadow:0 0 20px rgba(239,68,68,0.4);" onclick="startWorldBossRaid('${activeBoss.wb_id}')">⚔️ 월드 보스 출전 (10턴 서바이벌)</button>`;
+    }
+
+    const bossImgSrc = activeBoss.icon_url || 'https://via.placeholder.com/150/444444/FFFFFF?text=WorldBoss';
+
+    subBody.innerHTML = `
+        <h2 style="color:#EF4444; margin-bottom: 5px;">🐲 [월드 보스] ${activeBoss.name}</h2>
+        <p style="color:#CBD5E1; font-size:0.9em; margin-bottom:15px;">학급 전체가 힘을 합쳐 10턴 동안 마왕에게 강력한 타격을 입히세요! (하루 1회 무료)</p>
+        
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px; text-align:left;">
+            <div style="background:#1E293B; border:1px solid #334155; border-radius:12px; padding:15px; text-align:center; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+                <img src="${bossImgSrc}" style="width:130px; height:130px; object-fit:contain; filter:drop-shadow(0 0 15px rgba(239,68,68,0.5)); margin-bottom:10px;">
+                <div style="width:100%;">
+                    <div style="display:flex; justify-content:space-between; font-size:0.85em; margin-bottom:4px;">
+                        <span style="color:#CBD5E1;">보스 체력</span>
+                        <b style="color:#FBBF24;">${curHp.toLocaleString()} / ${maxHp.toLocaleString()} (${hpPct}%)</b>
+                    </div>
+                    <div style="width:100%; background:#0F172A; height:12px; border-radius:6px; overflow:hidden; border:1px solid #475569;">
+                        <div style="width:${hpPct}%; background:linear-gradient(90deg, #EF4444, #F59E0B); height:100%; transition:width 0.5s;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="background:#1E293B; border:1px solid #334155; border-radius:12px; padding:15px;">
+                <div style="color:#FBBF24; font-weight:bold; font-size:0.95em; margin-bottom:8px;">🏆 학급 누적 딜량 TOP 5</div>
+                ${rankingHtml}
+                <div style="margin-top:10px; font-size:0.8em; color:#94A3B8; border-top:1px dashed #334155; padding-top:6px;">
+                    🎁 <b>일일 참여 보상</b>: ${activeBoss.daily_gold || 50}골드 + ${activeBoss.daily_exp || 30}EXP
+                </div>
+            </div>
+        </div>
+
+        ${battleBtnHtml}
+        <button style="margin-top:10px; width:100%; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>
+    `;
+
+    subModal.style.display = 'flex';
 }

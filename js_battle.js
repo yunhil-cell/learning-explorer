@@ -2680,3 +2680,307 @@ function endTowerAndReward(isMaxClear = false) {
 
     updateFastFirebaseStudent(currentStudent);
 }
+
+// ==========================================
+// 🐲 월드 보스 10턴 서바이벌 전투 엔진
+// ==========================================
+function startWorldBossRaid(wbId) {
+    const activeBoss = (worldBossesData || []).find(b => String(b.wb_id) === String(wbId));
+    if (!activeBoss) return showUiAlert("오류", "보스 데이터를 찾을 수 없습니다.", "");
+
+    closeSubModal();
+    document.getElementById('singlePlayerContainer').style.display = 'block';
+    document.getElementById('partyPlayerContainer').style.display = 'none';
+    document.getElementById('raidStageInfo').style.display = 'block';
+
+    const pStats = getPlayerTotalStats();
+
+    battleState = {
+        isWorldBoss: true,
+        wbBossData: activeBoss,
+        wbTurn: 1,
+        wbMaxTurns: Number(activeBoss.turn_limit) || 10,
+        wbDamageTotal: 0,
+        monster: activeBoss,
+        monsterMaxHp: Number(activeBoss.max_hp) || 150000,
+        monsterCurrentHp: Math.max(1, Number(worldBossState.current_hp) || 150000),
+        playerMaxHp: pStats.hp * (Number(sysConfig.hp_per_point) || 10),
+        playerCurrentHp: pStats.hp * (Number(sysConfig.hp_per_point) || 10),
+        playerAtk: pStats.atk,
+        playerDef: pStats.def,
+        playerLuk: pStats.luk,
+        skills: [],
+        playerEffects: [],
+        monsterEffects: [],
+        isAutoRunning: true,
+        turnTimer: null,
+        relicEffects: { dodge: 0, critRate: 0, critDmg: 0, regen: 0, skillProb: 0, goldMult: 0 }
+    };
+
+    // 가호 보정
+    const bColor = String(currentStudent.blessing).trim();
+    if (bColor === 'Red') battleState.playerAtk = Math.floor(battleState.playerAtk * 1.1);
+    else if (bColor === 'Blue') battleState.playerDef = Math.floor(battleState.playerDef * 1.1);
+    else if (bColor === 'Green') { battleState.playerMaxHp = Math.floor(battleState.playerMaxHp * 1.1); battleState.playerCurrentHp = battleState.playerMaxHp; }
+    else if (bColor === 'Yellow') battleState.playerLuk = Math.floor(battleState.playerLuk * 1.1);
+    battleState.purpleDodgeActive = (bColor === 'Purple');
+
+    // 대표 스킨 및 아바타
+    const currentSkinId = currentStudent.equipped_skin || 'HD001';
+    const skinObj = skinsData.find(x => String(x.skin_id) === String(currentSkinId));
+    document.getElementById('battlePlayerImg').src = (skinObj && skinObj.skin_url) ? skinObj.skin_url : 'https://via.placeholder.com/150';
+
+    // 동료 아바타 연동
+    const m1Box = document.getElementById('merc1BattleBox');
+    const m1Img = document.getElementById('merc1BattleImg');
+    if (m1Box && m1Img) {
+        const m1Obj = mercenariesData.find(m => String(m.merc_id) === String(currentStudent.party_m1));
+        if (m1Obj && m1Obj.icon_url) { m1Img.src = m1Obj.icon_url; m1Box.style.display = 'flex'; }
+        else { m1Box.style.display = 'none'; }
+    }
+
+    const m2Box = document.getElementById('merc2BattleBox');
+    const m2Img = document.getElementById('merc2BattleImg');
+    if (m2Box && m2Img) {
+        const m2Obj = mercenariesData.find(m => String(m.merc_id) === String(currentStudent.party_m2));
+        if (m2Obj && m2Obj.icon_url) { m2Img.src = m2Obj.icon_url; m2Box.style.display = 'flex'; }
+        else { m2Box.style.display = 'none'; }
+    }
+
+    // 보스 세팅
+    document.getElementById('battleTitle').innerText = `🐲 [월드 보스 레이드] ${activeBoss.name}`;
+    document.getElementById('raidStageInfo').innerText = `[ 1 / ${battleState.wbMaxTurns} 턴 ] 누적 딜량: 0`;
+    document.getElementById('battlePlayerName').innerHTML = getTitleHtml(currentStudent);
+    document.getElementById('battleMonsterName').innerText = activeBoss.name;
+
+    const mImg = document.getElementById('battleMonsterImg');
+    mImg.src = activeBoss.icon_url || 'https://via.placeholder.com/150';
+    mImg.style.width = '240px';
+    mImg.style.height = '240px';
+
+    setupPlayerSkills();
+    updateHpBars();
+    document.getElementById('battleLog').innerHTML = '';
+    logBattle(`🐲 월드 보스 <b>[${activeBoss.name}]</b>와의 결전이 시작되었습니다!`);
+    logBattle(`(목표: ${battleState.wbMaxTurns}턴 동안 살아남으며 최대 피해를 입히세요!)`);
+
+    document.getElementById('battleModal').style.display = 'flex';
+    battleState.turnTimer = setTimeout(worldBossPlayerTurnAuto, 1000);
+}
+
+function worldBossPlayerTurnAuto() {
+    if (!battleState.isAutoRunning) return;
+
+    const gType = String(battleState.wbBossData.gimmick_type || '없음').trim().toLowerCase();
+    const gVal = Number(battleState.wbBossData.gimmick_value) || 0;
+
+    // 💡 [기믹 1] 타임어택: 지정 턴에 도달하면 보스가 폭주하여 전멸기 발동
+    if ((gType === 'time_attack' || gType === '타임어택') && gVal > 0 && battleState.wbTurn >= gVal) {
+        logBattle('⏱️ <b style="color:var(--Red);">[타임 오버] 보스가 폭주하여 즉사 전멸기를 사용합니다!</b>');
+        battleState.playerCurrentHp = 0;
+        updateHpBars();
+        playAnim('battlePlayerImg', 'anim-damage-p', 400);
+        setTimeout(() => finishWorldBossSession(false), 1200);
+        return;
+    }
+
+    document.getElementById('raidStageInfo').innerText = `[ ${battleState.wbTurn} / ${battleState.wbMaxTurns} 턴 ] 누적 딜량: ${battleState.wbDamageTotal.toLocaleString()}`;
+
+    // 상태이상 체크
+    const canAct = processStatusEffects(true);
+    if (battleState.playerCurrentHp <= 0) {
+        logBattle('☠️ <b style="color:#ff4d4d;">보스의 압도적인 위압감에 쓰러졌습니다!</b>');
+        setTimeout(() => finishWorldBossSession(false), 1200);
+        return;
+    }
+
+    if (!canAct) {
+        decrementStatusEffects(true);
+        battleState.turnTimer = setTimeout(worldBossMonsterTurnAuto, 1000);
+        return;
+    }
+
+    // 스킬 추첨 및 공격 연산 (철저한 본인 스펙 반영)
+    let pAtk = battleState.playerAtk;
+    let pLuk = battleState.playerLuk;
+    let bDef = Number(battleState.wbBossData.def) || 10;
+
+    let usedSkill = null;
+    for (let i = 0; i < battleState.skills.length; i++) {
+        let sk = battleState.skills[i];
+        if (sk.currentCd === 0) {
+            let finalProb = (Number(sk.base_prob) || 50) + (pLuk * 0.5);
+            if ((Math.random() * 100) < finalProb) {
+                usedSkill = sk;
+                usedSkill.currentCd = Number(usedSkill.cooldown) || 3;
+                break;
+            }
+        }
+    }
+
+    let attackTarget = 'battlePlayerImg';
+    if (usedSkill) {
+        if (usedSkill.ownerType === 'm1') attackTarget = 'merc1BattleImg';
+        else if (usedSkill.ownerType === 'm2') attackTarget = 'merc2BattleImg';
+    }
+    playAnim(attackTarget, 'anim-attack-p', 300);
+
+    let multiplier = usedSkill ? (Number(usedSkill.multiplier) || Number(usedSkill.muliplier) || 1.5) : 1.0;
+    const isCrit = (Math.random() * 100) < (pLuk * 0.5);
+    const critMult = isCrit ? 1.5 : 1.0;
+
+    let hitDmg = Math.max(10, Math.floor((pAtk * multiplier * critMult) - bDef));
+
+    // 💡 [기믹 2] 철벽: N턴 주기마다 피해를 1로 고정
+    if ((gType === 'shield' || gType === '철벽') && gVal > 0 && battleState.wbTurn % gVal === 0) {
+        hitDmg = 1;
+        logBattle('🛡️ <b style="color:#34D399;">[철벽] 보스가 단단한 방어막을 전개하여 피해를 1로 줄였습니다!</b>');
+    }
+
+    battleState.wbDamageTotal += hitDmg;
+
+    setTimeout(() => {
+        let logPrefix = usedSkill ? `✨ [스킬] ${usedSkill.name}!` : `⚔️ [일반 공격]`;
+        logBattle(`${logPrefix} ${isCrit ? "💥크리티컬! " : ""}보스에게 <b>${hitDmg.toLocaleString()}</b>의 피해!`);
+        playAnim('battleMonsterImg', 'anim-damage', 250);
+        document.getElementById('raidStageInfo').innerText = `[ ${battleState.wbTurn} / ${battleState.wbMaxTurns} 턴 ] 누적 딜량: ${battleState.wbDamageTotal.toLocaleString()}`;
+        
+        battleState.skills.forEach(sk => { if (sk !== usedSkill && sk.currentCd > 0) sk.currentCd--; });
+        renderBattleSkillsUI();
+
+        decrementStatusEffects(true);
+        battleState.turnTimer = setTimeout(worldBossMonsterTurnAuto, 1000);
+    }, 400);
+}
+
+function worldBossMonsterTurnAuto() {
+    if (!battleState.isAutoRunning) return;
+
+    playAnim('battleMonsterImg', 'anim-attack-m', 300);
+
+    const gType = String(battleState.wbBossData.gimmick_type || '없음').trim().toLowerCase();
+    const gVal = Number(battleState.wbBossData.gimmick_value) || 0;
+
+    let bAtk = Number(battleState.wbBossData.atk) || 80;
+
+    // 💡 [기믹 3] 광폭화: 보스 체력 비율 이하 시 공격력 1.5배 증가
+    const curHp = Math.max(0, Number(worldBossState.current_hp) || battleState.monsterMaxHp);
+    const hpPercent = (curHp / battleState.monsterMaxHp) * 100;
+    if ((gType === 'berserk' || gType === '광폭화') && gVal > 0 && hpPercent <= gVal) {
+        bAtk = Math.floor(bAtk * 1.5);
+        logBattle('💢 <b style="color:var(--Red);">[광폭화] 마왕이 분노하여 공격력이 대폭 상승했습니다!</b>');
+    }
+
+    let turnScaling = 1.0 + (battleState.wbTurn * 0.08); // 턴 경과에 따른 점증 공격력
+    let bossDamage = Math.max(5, Math.floor((bAtk * turnScaling) - (battleState.playerDef * 0.6)));
+
+    setTimeout(() => {
+        if (battleState.purpleDodgeActive) {
+            logBattle('🟣 <b style="color:#d966ff;">[가호] 보스의 공격을 어둠의 장막으로 1회 무효화했습니다!</b>');
+            battleState.purpleDodgeActive = false;
+        } else {
+            battleState.playerCurrentHp = Math.max(0, battleState.playerCurrentHp - bossDamage);
+            logBattle(`💥 보스의 맹공! 플레이어가 <b>${bossDamage}</b> 피해를 입었습니다.`);
+            updateHpBars();
+            playAnim('battlePlayerImg', 'anim-damage-p', 400);
+
+            // 💡 [기믹 4] 흡혈: 플레이어에게 입힌 피해 비례 흡혈
+            if ((gType === 'lifesteal' || gType === '흡혈') && gVal > 0) {
+                let heal = Math.floor(bossDamage * (gVal / 100));
+                if (heal > 0) {
+                    logBattle(`🩸 <b style="color:var(--Red);">[흡혈] 보스가 내 생명력을 ${heal}만큼 흡수했습니다!</b>`);
+                }
+            }
+        }
+
+        if (battleState.playerCurrentHp <= 0) {
+            logBattle('☠️ <b style="color:#ff4d4d;">보스의 맹공을 버티지 못하고 쓰러졌습니다!</b>');
+            setTimeout(() => finishWorldBossSession(false), 1200);
+            return;
+        }
+
+        // 10턴 생존 완주 체크
+        if (battleState.wbTurn >= battleState.wbMaxTurns) {
+            logBattle('🎉 <b style="color:#ffd700;">10턴 동안 마왕에게 맞서 끝까지 살아남았습니다!</b>');
+            setTimeout(() => finishWorldBossSession(true), 1200);
+            return;
+        }
+
+        battleState.wbTurn++;
+        battleState.turnTimer = setTimeout(worldBossPlayerTurnAuto, 1000);
+    }, 400);
+}
+
+async function finishWorldBossSession(isSurvived) {
+    battleState.isAutoRunning = false;
+    clearTimeout(battleState.turnTimer);
+    document.getElementById('battleModal').style.display = 'none';
+
+    showGlobalLoading("🐲 월드 보스 레이드 결과 정산 중...");
+
+    const activeBoss = battleState.wbBossData;
+    const finalDamage = battleState.wbDamageTotal;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // 1. 학생 상태 갱신 (오늘 참여일자 기록, 골드/경험치 지급)
+    currentStudent.last_wb_date = todayStr;
+    currentStudent.wb_total_damage = (Number(currentStudent.wb_total_damage) || 0) + finalDamage;
+
+    const rewardGold = Number(activeBoss.daily_gold) || 50;
+    const rewardExp = Number(activeBoss.daily_exp) || 30;
+
+    currentStudent.game_money = (Number(currentStudent.game_money) || 0) + rewardGold;
+    currentStudent.exp = (Number(currentStudent.exp) || 0) + rewardExp;
+
+    // 레벨업 체크
+    const expMax = Number(sysConfig.exp_max) || 200;
+    const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
+    let leveledUp = false;
+    while (currentStudent.exp >= expMax) {
+        currentStudent.exp -= expMax;
+        currentStudent.level = (Number(currentStudent.level) || 1) + 1;
+        currentStudent.level_points = (Number(currentStudent.level_points) || 0) + pointsPerLevel;
+        leveledUp = true;
+    }
+
+    // 2. 파이어베이스 실시간 보스 체력 차감 및 기여도 랭킹 반영
+    try {
+        const curHp = Math.max(0, (Number(worldBossState.current_hp) || activeBoss.max_hp) - finalDamage);
+        const isCleared = (curHp <= 0);
+
+        const currentContribs = worldBossState.contributions || {};
+        currentContribs[currentStudent.name] = (Number(currentContribs[currentStudent.name]) || 0) + finalDamage;
+
+        worldBossState.current_hp = curHp;
+        worldBossState.contributions = currentContribs;
+        worldBossState.is_cleared = isCleared;
+
+        await Promise.all([
+            updateFastFirebaseStudent(currentStudent),
+            fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/worldBoss/${activeBoss.wb_id}.json`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    current_hp: curHp,
+                    is_cleared: isCleared,
+                    contributions: currentContribs
+                })
+            })
+        ]);
+
+        hideGlobalLoading();
+        updateWorldBossBanner(activeBoss);
+
+        const outcomeTitle = isSurvived ? "🎉 10턴 생존 완주 성공!" : "⚔️ 전투 종료";
+        const msg = `오늘 가한 총 피해량: <b style="color:#EF4444; font-size:1.3em;">${finalDamage.toLocaleString()} 딜</b><br>` +
+            `내 누적 기여도: <b style="color:#FBBF24;">${currentStudent.wb_total_damage.toLocaleString()} 딜</b><br><br>` +
+            `🎁 <b>일일 참여 보상 지급</b>: <span style="color:#34D399;">+${rewardGold} 골드</span> / <span style="color:#60A5FA;">+${rewardExp} EXP</span>` +
+            (leveledUp ? `<br><br>🎊 <b>Lv.${currentStudent.level}</b>로 레벨업했습니다!` : '');
+
+        showUiAlert(outcomeTitle, msg, "renderDashboard()");
+
+    } catch (e) {
+        hideGlobalLoading();
+        showUiAlert("정산 오류", "결과 저장 중 오류가 발생했습니다: " + e, "renderDashboard()");
+    }
+}
