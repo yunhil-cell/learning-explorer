@@ -272,7 +272,7 @@ function showPasswordSetupPrompt() {
     }, 100);
 }
 
-// 💡 4. 핀번호 설정 검증 및 저장 (파이어베이스 + 스프레드시트 즉시 동시 저장)
+// 💡 4. 핀번호 설정 검증 및 저장
 function processPasswordSetup(pin) {
     if (!/^\d{4}$/.test(pin)) {
         showUiAlert('❌ 오류', '비밀번호는 반드시 <b>숫자 4자리</b>여야 합니다.', 'showPasswordSetupPrompt()');
@@ -284,11 +284,6 @@ function processPasswordSetup(pin) {
 
     openStudentDetailAfterAuth();
     updateFastFirebaseStudent(currentStudent);
-
-    // 💡 [신규] 구글 스프레드시트에도 비밀번호 즉시 기록
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-        google.script.run.updateStudentPassword(currentStudent.name, '!' + pin);
-    }
 }
 
 // 💡 2. 로그인 팝업 (엔터키 지원)
@@ -1388,7 +1383,7 @@ function openWorldBossModal() {
     if (!checkFeatureLock('world_boss', '월드 보스 레이드', 4)) return;
     const activeBoss = (worldBossesData || []).find(b => String(b.is_active).toUpperCase() === 'TRUE');
     if (!activeBoss) {
-        showUiAlert("🐲 월드 보스", "현재 진행 중인 월드 보스 레이드가 없습니다.", "");
+        showUiAlert("월드 보스", "현재 진행 중인 월드 보스 레이드가 없습니다.", "");
         return;
     }
 
