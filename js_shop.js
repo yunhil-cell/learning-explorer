@@ -72,6 +72,15 @@ function processBuyItem(itemId) {
     currentStudent.inventory = items.join(',');
 
     updateFastFirebaseStudent(currentStudent);
+
+    // 📝 [Firebase 상점 구매 로그 전송]
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: "상점 구매",
+        content: item.item_name + " (" + cost + "골드)"
+    });
+
     hideGlobalLoading();
     renderDashboard();
     showUiAlert("🎁 구매 완료!", "[" + item.item_name + "]을(를) 구매했습니다!<br>가방에서 확인하고 원할 때 사용하세요.", "");
@@ -547,6 +556,14 @@ function openLootBox(itemName, boxId) {
 
     updateFastFirebaseStudent(currentStudent);
 
+    // 📝 [Firebase 상자 개봉 로그 전송]
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: "상자 개봉",
+        content: itemName + " -> " + earnedGold + "골드 / " + (earnedItems.join(',') || '아이템 없음')
+    });
+
     setTimeout(() => {
         hideGlobalLoading();
         let formattedItems = earnedItems.map(item => '<span style="color:var(--Highlight); background:rgba(59, 130, 246, 0.1); padding:5px 12px; border-radius:8px; display:inline-block; margin:4px 3px; font-weight:bold; border:1px solid rgba(59, 130, 246, 0.3); box-shadow:0 2px 4px rgba(0,0,0,0.05);">' + item + '</span>').join('');
@@ -561,6 +578,7 @@ function openLootBox(itemName, boxId) {
             '<button class="btn-main" onclick="openInventory()">가방으로 돌아가기</button>';
     }, 1000);
 }
+
 function processUseItem(itemName) {
     const rawInv = String(currentStudent.inventory || "");
     let items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
@@ -570,6 +588,14 @@ function processUseItem(itemName) {
         items.splice(index, 1);
     }
     currentStudent.inventory = items.join(',');
+
+    // 📝 [Firebase 아이템 사용 로그 전송]
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: "아이템 사용",
+        content: itemName
+    });
 
     if (itemName === '보스 도전기회 추가 티켓') {
         currentStudent.weekly_boss = (Number(currentStudent.weekly_boss) || 0) + 1;

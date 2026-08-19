@@ -16,7 +16,7 @@ function getGameData() {
     // 0. 초기 결과 객체에 relics 추가
     let result = { students: [], system: { config: {} }, skills: [], relics: [] };
 
-    // 1. 학생 데이터 (기존 유지)
+    // 1. 학생 데이터 (빈 행 필터링 추가)
     const studentSheet = ss.getSheetByName('students');
     if (!studentSheet) return "Error: 'students' 시트 없음";
     const studentData = studentSheet.getDataRange().getValues();
@@ -25,7 +25,7 @@ function getGameData() {
       let obj = {};
       sHeaders.forEach((header, i) => { obj[header] = row[i]; });
       return obj;
-    });
+    }).filter(s => s && s.name && String(s.name).trim() !== "");
 
     // 2. 시스템 데이터 (기존 유지)
     const systemSheet = ss.getSheetByName('system');
@@ -155,6 +155,10 @@ function getGameData() {
         });
       }
     }
+
+    // 💡 11. 퀘스트 및 성찰일지 제출물 데이터 로드
+    result.quests = getQuestsData() || [];
+    result.submissions = getSubmissionsData() || [];
 
     // 💡 [파이어베이스 연동 필수] 몬스터, 보스, 던전, 몬스터 스킬 데이터 묶음 포함
     result.monsters = getMonsterData() || [];
@@ -378,75 +382,40 @@ function updateEquippedRelic(name, slotNum, relicId) {
   }
 }
 
-// 💡 [완벽 보정] 신규/전학생 전체 54개 컬럼 데이터 스프레드시트 일괄 강제 주입 함수
-function initNewStudentOnSheet(name, password, blessing) {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('students');
-    if (!sheet) return "Error: students 시트 없음";
+// 1. 가호 선택 결과 업데이트 함수
+function updateStudentBlessing(name, blessing) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
 
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0].map(h => String(h).trim());
-    const nameIdx = headers.indexOf('name');
-    if (nameIdx === -1) return "Error: name 열 없음";
+  const colIdx = headers.indexOf('blessing') + 1;
+  const hpIdx = headers.indexOf('hp_points') + 1;
+  const atkIdx = headers.indexOf('atk_points') + 1;
+  const defIdx = headers.indexOf('def_points') + 1;
+  const lukIdx = headers.indexOf('luk_points') + 1;
+  const unlSkinsIdx = headers.indexOf('unlocked_skins') + 1;
+  const eqSkinIdx = headers.indexOf('equipped_skin') + 1;
 
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][nameIdx]).trim() === String(name).trim()) {
-        const rowNum = i + 1;
-        let fullRow = data[i];
+  if (colIdx === 0) return "오류: blessing 열 없음";
 
-        // 💡 모든 컬럼을 헤더 이름 기준으로 100% 완벽 매핑
-        const setVal = (colName, val) => {
-          const idx = headers.indexOf(colName);
-          if (idx !== -1) {
-            fullRow[idx] = val;
-          }
-        };
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      let rowData = data[i];
+      rowData[colIdx - 1] = blessing;
 
-        setVal('password', password || '!1234');
-        setVal('blessing', blessing);
-        setVal('level', 1);
-        setVal('exp', 0);
-        setVal('level_points', 0);
-        setVal('reading_count', 0);
-        setVal('bonus_points', 0);
-        setVal('hp_points', 5);
-        setVal('atk_points', 5);
-        setVal('def_points', 5);
-        setVal('luk_points', 5);
-        setVal('game_money', 0);
-        setVal('weapon_lv', 0);
-        setVal('head_lv', 0);
-        setVal('body_lv', 0);
-        setVal('accessory_lv', 0);
-        setVal('weapon_fail', 0);
-        setVal('head_fail', 0);
-        setVal('body_fail', 0);
-        setVal('accessory_fail', 0);
-        setVal('equipped_skin', 'HD001');
-        setVal('unlocked_skins', '!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008');
-        setVal('weekly_battles', 2);
-        setVal('weekly_boss', 3);
-        setVal('weekly_raid', 1);
-        setVal('weekly_tower', 1);
-        setVal('max_tower_floor', 0);
-        setVal('flee_count', 0);
-        setVal('relic_pull_count', 0);
-        setVal('quest_count', 0);
-        setVal('total_forge_fail', 0);
-        setVal('merc_slot2_unlocked', 'FALSE');
-        setVal('wb_total_damage', 0);
+      if (hpIdx > 0) rowData[hpIdx - 1] = 5;
+      if (atkIdx > 0) rowData[atkIdx - 1] = 5;
+      if (defIdx > 0) rowData[defIdx - 1] = 5;
+      if (lukIdx > 0) rowData[lukIdx - 1] = 5;
 
-        // 시트의 해당 행 전체에 도장 쾅!
-        sheet.getRange(rowNum, 1, 1, fullRow.length).setValues([fullRow]);
-        Logger.log("✅ [신규 학생 시트 일괄 저장 완료] " + name);
-        return "Success";
+      if (unlSkinsIdx > 0 && (!rowData[unlSkinsIdx - 1] || rowData[unlSkinsIdx - 1] === "")) {
+        rowData[unlSkinsIdx - 1] = "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008";
+        if (eqSkinIdx > 0) rowData[eqSkinIdx - 1] = "HD001";
       }
+
+      sheet.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
+      return "성공";
     }
-    return "Error: 학생을 찾을 수 없음";
-  } catch (e) {
-    Logger.log("❌ 신규 학생 초기화 오류: " + e.toString());
-    return "Error: " + e.toString();
   }
 }
 
@@ -2824,126 +2793,41 @@ function buyShopItem(studentName, itemName, cost) {
   }
 }
 
-// 💡 파이어베이스 전송 함수
-// 💡 [완벽 스마트 탭 분리 연동] 선생님의 탭별 시트 편집 + 학생 스탯 100% 보호 코드
-function syncToFirebase(e) {
+// 💡 [완벽 마스터 권한] 구글 시트에 보이는 데이터 전체(100%)를 Firebase에 그대로 덮어쓰는 직관적인 동기화 함수
+function syncToFirebase() {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData";
   
-  if (e && e.range) {
-    var sheet = e.range.getSheet();
-    var sheetName = sheet.getName();
-    
-    // 1. 학생(students) 시트를 고쳤을 때 -> 해당 학생 해당 셀만 핀포인트 업데이트
-    if (sheetName === "students") {
-      var row = e.range.getRow();
-      var col = e.range.getColumn();
-      if (row > 1) {
-        var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return String(h).trim(); });
-        var colName = headers[col - 1];
-        var studentName = String(sheet.getRange(row, 1).getValue()).trim();
-        var newValue = e.range.getValue();
-
-        var res = UrlFetchApp.fetch(baseUrl + ".json");
-        var data = JSON.parse(res.getContentText()) || {};
-        if (data.students) {
-          var idx = data.students.findIndex(function(s) { return s && String(s.name).trim() === studentName; });
-          
-          // 1. 기존 학생 수정 시 -> 해당 셀만 핀포인트 즉시 업데이트
-          if (idx !== -1 && colName) {
-            UrlFetchApp.fetch(baseUrl + "/students/" + idx + "/" + colName + ".json", {
-              method: "put",
-              contentType: "application/json",
-              payload: JSON.stringify(newValue)
-            });
-            Logger.log("✅ [학생 시트 수정] [" + studentName + "]의 " + colName + " = " + newValue);
-            return;
-          }
-          
-          // 2. 💡 [신규 학생 추가 시] -> 파이어베이스 학생 목록 맨 끝에 기본 데이터 즉시 생성!
-          if (idx === -1 && studentName) {
-            var newStudentObj = {
-              name: studentName,
-              level: 1, exp: 0, level_points: 0,
-              reading_count: 0, bonus_points: 0, game_money: 0,
-              hp_points: 5, atk_points: 5, def_points: 5, luk_points: 5,
-              weapon_lv: 0, head_lv: 0, body_lv: 0, accessory_lv: 0,
-              weapon_fail: 0, head_fail: 0, body_fail: 0, accessory_fail: 0,
-              equipped_skin: "HD001",
-              unlocked_skins: "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008",
-              weekly_battles: 2, weekly_boss: 3, weekly_raid: 1, weekly_tower: 1,
-              max_tower_floor: 0, flee_count: 0, relic_pull_count: 0, quest_count: 0, total_forge_fail: 0,
-              merc_slot2_unlocked: "FALSE", wb_total_damage: 0
-            };
-            var newIdx = data.students.length;
-            UrlFetchApp.fetch(baseUrl + "/students/" + newIdx + ".json", {
-              method: "put",
-              contentType: "application/json",
-              payload: JSON.stringify(newStudentObj)
-            });
-            Logger.log("🎉 [신규 학생 시트 입력] [" + studentName + "] 파이어베이스 즉시 등록 완료!");
-            return;
-          }
-        }
-      }
-    }
-
-    // 2. 다른 기획/설정 시트를 고쳤을 때 -> 해당 탭만 파이어베이스로 스마트 업데이트 (학생 스탯 100% 보호!)
-    var gameData = getGameData();
-    var tabKeyMap = {
-      "system": "system",
-      "skills": "skills",
-      "relics": "relics",
-      "skins": "skins",
-      "monsters": "monsters",
-      "monster_skills": "monsterSkills",
-      "bosses": "bosses",
-      "dungeons": "dungeons",
-      "loot_boxes": "lootBoxes",
-      "shop": "shopItems",
-      "mercenaries": "mercenaries",
-      "world_bosses": "worldBosses",
-      "Quests": "quests",
-      "Notices": "notices"
-    };
-
-    var targetKey = tabKeyMap[sheetName];
-    if (targetKey && gameData[targetKey]) {
-      UrlFetchApp.fetch(baseUrl + "/" + targetKey + ".json", {
-        method: "put",
-        contentType: "application/json",
-        payload: JSON.stringify(gameData[targetKey])
-      });
-      Logger.log("✅ [" + sheetName + " 시트 수정] 파이어베이스 " + targetKey + " 탭 업데이트 완료!");
+  try {
+    // 1. 구글 시트의 전체 데이터(학생 54개 컬럼, 퀘스트, 몬스터, 상점 등) 로드
+    var fullData = getGameData();
+    if (typeof fullData === 'string' && fullData.startsWith("Error")) {
+      Logger.log("❌ 데이터 로드 실패: " + fullData);
       return;
     }
+
+    // 2. 월드 보스 레이드 진행 상태만 기존 파이어베이스에서 보존 (실시간 체력 유지용)
+    try {
+      var fbWbRes = UrlFetchApp.fetch(baseUrl + "/worldBoss.json");
+      var fbWbData = JSON.parse(fbWbRes.getContentText());
+      if (fbWbData) {
+        fullData.worldBoss = fbWbData;
+      }
+    } catch(wbErr) {}
+
+    // 3. 구글 시트의 모든 데이터를 파이어베이스에 100% 완벽 동기화 (Full PUT)
+    UrlFetchApp.fetch(baseUrl + ".json", {
+      method: "put",
+      contentType: "application/json",
+      payload: JSON.stringify(fullData)
+    });
+
+    Logger.log("🎉 [시트 100% 전체 동기화 완료] 구글 시트의 모든 학생 데이터와 기획 설정이 웹(Firebase)에 완벽히 적용되었습니다!");
+  } catch (e) {
+    Logger.log("❌ 동기화 중 오류 발생: " + e.toString());
   }
-
-  // 3. 전체 수동 실행 시: 학생 최신 스탯 보존 후 전체 안전 전송
-  var fullData = getGameData();
-  try {
-    var fbRes = UrlFetchApp.fetch(baseUrl + ".json");
-    var fbData = JSON.parse(fbRes.getContentText()) || {};
-    if (fbData.students && fullData.students) {
-      var preserveFields = ["hp_points", "atk_points", "def_points", "luk_points", "password", "inventory", "equipped_1", "equipped_2", "relic_1", "relic_2", "equipped_skin", "equipped_title", "party_m1", "party_m2", "party_s1", "party_s2", "unlocked_skills", "unlocked_relics", "unlocked_skins", "unlocked_mercenaries", "weekly_battles", "weekly_boss", "weekly_raid", "weekly_tower", "max_tower_floor"];
-      fullData.students.forEach(function(s, idx) {
-        var fbS = fbData.students[idx];
-        if (fbS && fbS.name === s.name) {
-          preserveFields.forEach(function(f) { if (fbS[f] !== undefined) s[f] = fbS[f]; });
-        }
-      });
-    }
-  } catch(err) {}
-
-  UrlFetchApp.fetch(baseUrl + ".json", {
-    method: "put",
-    contentType: "application/json",
-    payload: JSON.stringify(fullData)
-  });
-  Logger.log("✅ 학생 스탯 보존 + 전체 데이터 파이어베이스 수동 동기화 완료!");
 }
 
-// 💡 [통합 백업] 학생 데이터, 퀘스트, 성찰일지, 공지사항 시트 자동 연동 함수
-// 💡 [시간 제한 해제] 24시간 언제든 파이어베이스 최신 데이터를 시트로 0.1초 일괄 백업
+// 💡 [완전 백업] 웹사이트에서 작성한 퀘스트, 공지, 학생 스탯, 성찰일지 제출물 4개 탭 전체 시트 자동 백업
 function syncFromFirebase() {
   var firebaseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData.json";
   var res = UrlFetchApp.fetch(firebaseUrl);
@@ -2953,26 +2837,24 @@ function syncFromFirebase() {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 1. 학생(students) 탭 0.1초 일괄 백업 (setValues 활용)
-  if (data.students && Array.isArray(data.students)) {
+  // 1. 학생(students) 탭 실시간 플레이 데이터 백업
+  if (data.students) {
+    var stList = Array.isArray(data.students) ? data.students : Object.values(data.students);
     var stSheet = ss.getSheetByName("students");
     if (stSheet) {
       var range = stSheet.getDataRange();
-      var values = range.getValues(); // 시트 전체 데이터 2D 배열로 읽기
+      var values = range.getValues();
       var headers = values[0].map(function(h) { return String(h).trim(); });
 
-      // 선생님 전담 영역 (보존할 컬럼 인덱스 추출)
-      var teacherFields = ["reading_count", "bonus_points", "custom_titles"];
+      var teacherFields = ["reading_count", "custom_titles"];
       var teacherColIndices = teacherFields.map(function(f) { return headers.indexOf(f); });
 
-      // 메모리(RAM) 상에서 0.001초 만에 최신 학생 데이터 병합 (시트 호출 0회)
-      data.students.forEach(function(student) {
+      stList.forEach(function(student) {
         if (!student || !student.name) return;
 
         for (var r = 1; r < values.length; r++) {
           if (String(values[r][headers.indexOf("name")]).trim() === String(student.name).trim()) {
             headers.forEach(function(h, c) {
-              // 선생님 전담 컬럼이 아니고, 파이어베이스에 값이 존재하는 경우만 메모리 표 업데이트
               if (c !== -1 && !teacherColIndices.includes(c) && student[h] !== undefined) {
                 values[r][c] = student[h];
               }
@@ -2982,55 +2864,172 @@ function syncFromFirebase() {
         }
       });
 
-      // 단 1번의 시트 명령으로 0.1초 만에 완성된 표 데이터를 도장 쾅!
       stSheet.getRange(1, 1, values.length, values[0].length).setValues(values);
     }
   }
 
-  // 2. 퀘스트(Quests) 탭 일괄 백업
-  if (data.quests && Array.isArray(data.quests)) {
+  // 2. 퀘스트(Quests) 탭 웹 작성 데이터 백업
+  if (data.quests) {
+    var qList = Array.isArray(data.quests) ? data.quests : Object.values(data.quests);
     var qSheet = ss.getSheetByName("Quests");
     if (qSheet) {
       var qRows = [["quest_id", "title", "description", "require_text", "reward_gold", "reward_exp", "reward_point", "is_active", "is_auto_approve", "repeat_cycle"]];
-      data.quests.forEach(function(q) {
+      qList.forEach(function(q) {
         if (q && q.quest_id) {
-          qRows.push([q.quest_id, q.title, q.description, q.require_text, q.reward_gold, q.reward_exp, q.reward_point, q.is_active, q.is_auto_approve, q.repeat_cycle]);
+          qRows.push([
+            q.quest_id || '',
+            q.title || '',
+            q.description || '',
+            q.require_text !== undefined ? q.require_text : true,
+            q.reward_gold || 0,
+            q.reward_exp || 0,
+            q.reward_point || 0,
+            q.is_active !== undefined ? q.is_active : true,
+            q.is_auto_approve !== undefined ? q.is_auto_approve : false,
+            q.repeat_cycle || '1회성'
+          ]);
         }
       });
-      qSheet.clearContents();
-      qSheet.getRange(1, 1, qRows.length, qRows[0].length).setValues(qRows);
+      if (qRows.length > 1) {
+        qSheet.clearContents();
+        qSheet.getRange(1, 1, qRows.length, qRows[0].length).setValues(qRows);
+      }
     }
   }
 
-  // 3. 성찰일지 제출물(Submissions) 탭 일괄 백업
-  if (data.submissions && Array.isArray(data.submissions)) {
+  // 3. 성찰일지 제출물(Submissions) 탭 백업
+  if (data.submissions) {
+    var subList = Array.isArray(data.submissions) ? data.submissions : Object.values(data.submissions);
     var subSheet = ss.getSheetByName("Submissions");
     if (subSheet) {
       var subRows = [["quest_id", "student_name", "status", "answer_text", "submitted_at"]];
-      data.submissions.forEach(function(sub) {
+      subList.forEach(function(sub) {
         if (sub && sub.quest_id) {
-          subRows.push([sub.quest_id, sub.student_name, sub.status, sub.answer_text, sub.submitted_at]);
+          subRows.push([
+            sub.quest_id || '',
+            sub.student_name || '',
+            sub.status || '',
+            sub.answer_text || '',
+            sub.submitted_at || ''
+          ]);
         }
       });
-      subSheet.clearContents();
-      subSheet.getRange(1, 1, subRows.length, subRows[0].length).setValues(subRows);
+      if (subRows.length > 1) {
+        subSheet.clearContents();
+        subSheet.getRange(1, 1, subRows.length, subRows[0].length).setValues(subRows);
+      }
     }
   }
 
-  // 4. 공지사항(Notices) 탭 일괄 백업
-  if (data.notices && Array.isArray(data.notices)) {
+  // 4. 공지사항(Notices) 탭 웹 작성 데이터 백업
+  if (data.notices) {
+    var nList = Array.isArray(data.notices) ? data.notices : Object.values(data.notices);
     var nSheet = ss.getSheetByName("Notices");
     if (nSheet) {
       var nRows = [["notice_id", "date", "category", "title", "content", "is_active"]];
-      data.notices.forEach(function(n) {
+      nList.forEach(function(n) {
         if (n && n.notice_id) {
-          nRows.push([n.notice_id, n.date, n.category, n.title, n.content, n.is_active]);
+          nRows.push([
+            n.notice_id || '',
+            n.date || '',
+            n.category || '안내',
+            n.title || '',
+            n.content || '',
+            n.is_active !== undefined ? n.is_active : true
+          ]);
         }
       });
-      nSheet.clearContents();
-      nSheet.getRange(1, 1, nRows.length, nRows[0].length).setValues(nRows);
+      if (nRows.length > 1) {
+        nSheet.clearContents();
+        nSheet.getRange(1, 1, nRows.length, nRows[0].length).setValues(nRows);
+      }
     }
   }
 
-  Logger.log("✅ 0.1초 초고속 배치(setValues) 통합 시트 백업 완료!");
+  // 5. 🔨 대장간 강화 로그(ForgeLog) 시트 백업
+  if (data.forgeLogs) {
+    var forgeList = Object.values(data.forgeLogs);
+    var fSheet = ss.getSheetByName("ForgeLog");
+    if (!fSheet) {
+      fSheet = ss.insertSheet("ForgeLog");
+      fSheet.appendRow(["시간", "학생명", "장비부위", "도전단계", "결과", "누적실패"]);
+    }
+    var fRows = [["시간", "학생명", "장비부위", "도전단계", "결과", "누적실패"]];
+    var equipMap = { 'weapon': '무기', 'head': '투구', 'body': '갑옷', 'accessory': '장신구' };
+    forgeList.forEach(function(log) {
+      if (log && log.name) {
+        var timeStr = log.time ? Utilities.formatDate(new Date(log.time), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss") : '';
+        var eqName = equipMap[log.equip] || log.equip || '';
+        fRows.push([timeStr, log.name, eqName, log.level || '', log.result || '', log.fail || '-']);
+      }
+    });
+    if (fRows.length > 1) {
+      fSheet.clearContents();
+      fSheet.getRange(1, 1, fRows.length, fRows[0].length).setValues(fRows);
+    }
+  }
+
+  // 6. 📜 일반 활동/전투/아이템 로그(logs) 시트 백업
+  if (data.logs) {
+    var commonLogs = Object.values(data.logs);
+    var lSheet = ss.getSheetByName("logs");
+    if (!lSheet) {
+      lSheet = ss.insertSheet("logs");
+      lSheet.appendRow(["시간", "학생명", "분류", "내용"]);
+    }
+    var lRows = [["시간", "학생명", "분류", "내용"]];
+    commonLogs.forEach(function(log) {
+      if (log && log.name) {
+        var timeStr = log.time ? Utilities.formatDate(new Date(log.time), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss") : '';
+        lRows.push([timeStr, log.name, log.category || '활동', log.content || '']);
+      }
+    });
+    if (lRows.length > 1) {
+      lSheet.clearContents();
+      lSheet.getRange(1, 1, lRows.length, lRows[0].length).setValues(lRows);
+    }
+  }
+
+  Logger.log("✅ [완전 백업 완료] 학생 스탯, 퀘스트, 공지, 제출물, 강화로그(ForgeLog), 활동로그(logs) 전체 시트 동기화 완료!");
+}
+
+// 📝 [신규] 대장간 강화 로그 실시간 기록 함수
+function logForgeAction(studentName, equipType, attemptLevel, isSuccess, failCount) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let logSheet = ss.getSheetByName('ForgeLog');
+    if (!logSheet) {
+      logSheet = ss.insertSheet('ForgeLog');
+      logSheet.appendRow(["시간", "학생명", "장비부위", "도전단계", "결과", "누적실패"]);
+    }
+    const now = new Date();
+    const timestamp = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+    const equipMap = { 'weapon': '무기', 'head': '투구', 'body': '갑옷', 'accessory': '장신구' };
+    const equipName = equipMap[equipType] || equipType;
+    const resultText = isSuccess ? "성공 ✅" : "실패 ❌";
+    const failText = isSuccess ? "-" : failCount + "회";
+    
+    logSheet.appendRow([timestamp, studentName, equipName, "+" + attemptLevel, resultText, failText]);
+    return "Success";
+  } catch(e) {
+    return "Error: " + e.toString();
+  }
+}
+
+// 📝 [신규] 일반 활동/아이템/전투 로그 실시간 기록 함수
+function logCommonAction(studentName, category, content) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let logSheet = ss.getSheetByName('logs');
+    if (!logSheet) {
+      logSheet = ss.insertSheet('logs');
+      logSheet.appendRow(["시간", "학생명", "분류", "내용"]);
+    }
+    const now = new Date();
+    const timestamp = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+    logSheet.appendRow([timestamp, studentName, category, content]);
+    return "Success";
+  } catch(e) {
+    return "Error: " + e.toString();
+  }
 }

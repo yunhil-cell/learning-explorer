@@ -11,6 +11,7 @@ function updateTeacherBtnUI() {
     const noticeBtn = document.getElementById('noticeAdminBtn');
     const exchangeBtn = document.getElementById('exchangeAdminBtn');
     const statBtn = document.getElementById('statAdminBtn');
+    const logBtn = document.getElementById('logAdminBtn');
     if (!btn) return;
     if (isTeacherMode) {
         btn.style.background = '#ff4d4d';
@@ -19,6 +20,7 @@ function updateTeacherBtnUI() {
         if (noticeBtn) noticeBtn.style.display = 'block';
         if (exchangeBtn) exchangeBtn.style.display = 'block';
         if (statBtn) statBtn.style.display = 'block';
+        if (logBtn) logBtn.style.display = 'block';
     } else {
         btn.style.background = '#444';
         btn.innerHTML = '🔒 교사 모드 OFF';
@@ -26,6 +28,7 @@ function updateTeacherBtnUI() {
         if (noticeBtn) noticeBtn.style.display = 'none';
         if (exchangeBtn) exchangeBtn.style.display = 'none';
         if (statBtn) statBtn.style.display = 'none';
+        if (logBtn) logBtn.style.display = 'none';
     }
 }
 
@@ -922,4 +925,150 @@ function executeDeleteNotice(noticeId) {
     }).catch(err => {
         showUiAlert("❌ 삭제 실패", err);
     });
+}
+
+// ==========================================
+// 📜 실시간 로그 뷰어 시스템 (교사 전용)
+// ==========================================
+async function openLogAdmin(tab = 'forge', filterStudent = 'ALL') {
+    if (!checkTeacherAuth()) return;
+    const subModal = document.getElementById('subModal');
+    const subBody = document.getElementById('subModalBody');
+
+    subModal.querySelector('.modal-content').style.background = '#0F172A';
+    subModal.querySelector('.modal-content').style.borderColor = '#6366F1';
+    subModal.style.display = 'flex';
+
+    subBody.innerHTML = '<div style="padding:40px; color:#A78BFA; font-size:1.2em;">⏳ 최신 로그를 불러오는 중...</div>';
+
+    try {
+        const [forgeRes, commonRes] = await Promise.all([
+            fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/forgeLogs.json'),
+            fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/logs.json')
+        ]);
+        const forgeData = await forgeRes.json();
+        const commonData = await commonRes.json();
+
+        window.cachedForgeLogs = forgeData ? Object.values(forgeData) : [];
+        window.cachedCommonLogs = commonData ? Object.values(commonData) : [];
+
+        renderLogAdmin(tab, filterStudent);
+    } catch(e) {
+        subBody.innerHTML = '<div style="color:#EF4444; padding:30px;">❌ 로그 로드 실패: ' + e + '</div>';
+    }
+}
+
+function renderLogAdmin(tab = 'forge', filterStudent = 'ALL') {
+    const subBody = document.getElementById('subModalBody');
+    const students = window.allStudentsData || [];
+
+    // 학생 선택 드롭다운 옵션 구성
+    let studentOptions = '<option value="ALL"' + (filterStudent === 'ALL' ? ' selected' : '') + '>전체 학생 모아보기</option>';
+    students.forEach(s => {
+        if (s && s.name) {
+            studentOptions += '<option value="' + s.name + '"' + (filterStudent === s.name ? ' selected' : '') + '>' + s.name + '</option>';
+        }
+    });
+
+    const filterHtml =
+        '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:10px;">' +
+        '  <div style="font-size:0.9em; color:#CBD5E1;">🔍 학생 필터:</div>' +
+        '  <select id="logStudentFilter" style="padding:8px 12px; border-radius:8px; border:1px solid #334155; background:#1E293B; color:white; font-size:0.9em;" onchange="renderLogAdmin(\'' + tab + '\', this.value)">' +
+        studentOptions +
+        '  </select>' +
+        '</div>';
+
+    const tabsHtml =
+        '<div style="display:flex; margin-bottom:15px; border-bottom:1px solid #334155; font-size:0.95em;">' +
+        '  <div style="flex:1; padding:10px; cursor:pointer; font-weight:bold; color:' + (tab === 'forge' ? '#818CF8' : '#9CA3AF') + '; border-bottom:' + (tab === 'forge' ? '3px solid #818CF8' : 'none') + ';" onclick="renderLogAdmin(\'forge\', \'' + filterStudent + '\')">🔨 대장간 강화 로그</div>' +
+        '  <div style="flex:1; padding:10px; cursor:pointer; font-weight:bold; color:' + (tab === 'common' ? '#818CF8' : '#9CA3AF') + '; border-bottom:' + (tab === 'common' ? '3px solid #818CF8' : 'none') + ';" onclick="renderLogAdmin(\'common\', \'' + filterStudent + '\')">📜 일반 활동 / 아이템 / 전투</div>' +
+        '</div>';
+
+    let tableHtml = '';
+    const equipMap = { 'weapon': '무기', 'head': '투구', 'body': '갑옷', 'accessory': '장신구' };
+
+    if (tab === 'forge') {
+        let logs = (window.cachedForgeLogs || []).slice().reverse();
+        if (filterStudent !== 'ALL') {
+            logs = logs.filter(l => l && l.name === filterStudent);
+        }
+
+        if (logs.length === 0) {
+            tableHtml = '<div style="padding:40px; color:#64748B;">기록된 강화 로그가 없습니다.</div>';
+        } else {
+            let rowsHtml = logs.map(l => {
+                const dateStr = l.time ? new Date(l.time).toLocaleString('ko-KR', { hour12: false }) : '-';
+                const eqName = equipMap[l.equip] || l.equip || '-';
+                const isWin = (l.result && l.result.includes('성공'));
+                const resultBadge = isWin
+                    ? '<span style="color:#10B981; font-weight:bold;">성공 ✅</span>'
+                    : '<span style="color:#EF4444; font-weight:bold;">실패 ❌</span>';
+
+                return '<tr style="border-bottom:1px solid #1E293B;">' +
+                    '  <td style="padding:8px; font-size:0.8em; color:#94A3B8;">' + dateStr + '</td>' +
+                    '  <td style="padding:8px; font-weight:bold; color:white;">' + (l.name || '-') + '</td>' +
+                    '  <td style="padding:8px; color:#CBD5E1;">' + eqName + '</td>' +
+                    '  <td style="padding:8px; font-weight:bold; color:#FBBF24;">' + (l.level || '-') + '</td>' +
+                    '  <td style="padding:8px;">' + resultBadge + '</td>' +
+                    '  <td style="padding:8px; color:#94A3B8; font-size:0.85em;">' + (l.fail || '-') + '</td>' +
+                    '</tr>';
+            }).join('');
+
+            tableHtml =
+                '<div style="max-height:360px; overflow-y:auto; border:1px solid #334155; border-radius:8px;">' +
+                '  <table style="width:100%; border-collapse:collapse; text-align:center; font-size:0.9em; background:#0F172A;">' +
+                '    <thead style="background:#1E293B; color:#A78BFA; position:sticky; top:0;">' +
+                '      <tr><th style="padding:10px;">시간</th><th>학생명</th><th>부위</th><th>단계</th><th>결과</th><th>누적실패</th></tr>' +
+                '    </thead>' +
+                '    <tbody>' + rowsHtml + '</tbody>' +
+                '  </table>' +
+                '</div>';
+        }
+    } else {
+        let logs = (window.cachedCommonLogs || []).slice().reverse();
+        if (filterStudent !== 'ALL') {
+            logs = logs.filter(l => l && l.name === filterStudent);
+        }
+
+        if (logs.length === 0) {
+            tableHtml = '<div style="padding:40px; color:#64748B;">기록된 활동 로그가 없습니다.</div>';
+        } else {
+            let rowsHtml = logs.map(l => {
+                const dateStr = l.time ? new Date(l.time).toLocaleString('ko-KR', { hour12: false }) : '-';
+                let catColor = '#38BDF8';
+                if (l.category === '상점 구매') catColor = '#F59E0B';
+                else if (l.category === '아이템 사용') catColor = '#10B981';
+                else if (l.category === '전투 승리') catColor = '#EC4899';
+                else if (l.category === '상자 개봉') catColor = '#8B5CF6';
+
+                return '<tr style="border-bottom:1px solid #1E293B;">' +
+                    '  <td style="padding:8px; font-size:0.8em; color:#94A3B8; white-space:nowrap;">' + dateStr + '</td>' +
+                    '  <td style="padding:8px; font-weight:bold; color:white; white-space:nowrap;">' + (l.name || '-') + '</td>' +
+                    '  <td style="padding:8px; font-weight:bold; color:' + catColor + '; white-space:nowrap;">[' + (l.category || '-') + ']</td>' +
+                    '  <td style="padding:8px; text-align:left; color:#CBD5E1; font-size:0.88em; word-break:break-all;">' + (l.content || '-') + '</td>' +
+                    '</tr>';
+            }).join('');
+
+            tableHtml =
+                '<div style="max-height:360px; overflow-y:auto; border:1px solid #334155; border-radius:8px;">' +
+                '  <table style="width:100%; border-collapse:collapse; text-align:center; font-size:0.9em; background:#0F172A;">' +
+                '    <thead style="background:#1E293B; color:#A78BFA; position:sticky; top:0;">' +
+                '      <tr><th style="padding:10px; width:25%;">시간</th><th style="width:15%;">학생명</th><th style="width:20%;">분류</th><th style="width:40%;">내용</th></tr>' +
+                '    </thead>' +
+                '    <tbody>' + rowsHtml + '</tbody>' +
+                '  </table>' +
+                '</div>';
+        }
+    }
+
+    subBody.innerHTML =
+        '<h2 style="color:#818CF8; margin-bottom: 5px;">📜 실시간 로그 뷰어</h2>' +
+        '<p style="color:#CBD5E1; font-size:0.85em; margin-bottom:15px;">학생들의 대장간 강화 및 주요 활동 기록을 실시간으로 확인합니다.</p>' +
+        tabsHtml +
+        filterHtml +
+        tableHtml +
+        '<div style="display:flex; gap:10px; margin-top:15px;">' +
+        '  <button style="flex:1; padding:12px; border-radius:10px; border:none; background:#312E81; color:#A78BFA; font-weight:bold; cursor:pointer;" onclick="openLogAdmin(\'' + tab + '\', \'' + filterStudent + '\')">🔄 새로고침</button>' +
+        '  <button style="flex:1; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>' +
+        '</div>';
 }

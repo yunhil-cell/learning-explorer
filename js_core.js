@@ -11,6 +11,16 @@ function getTitleHtml(s) {
 let currentStudent = null;
 let tempStats = { hp: 0, atk: 0, def: 0, luk: 0, remain: 0 };
 
+// 📝 [신규] 깃허브 호환 파이어베이스 실시간 로그 전송 헬퍼 함수
+function pushFirebaseLog(type, logData) {
+    const targetPath = type === 'forge' ? 'forgeLogs' : 'logs';
+    fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/${targetPath}.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(logData)
+    }).catch(err => console.error("로그 전송 실패:", err));
+}
+
 // 💡 파이어베이스 학생 데이터 실시간 동기화 헬퍼 함수 (신규 학생 자동 생성 지원)
 async function updateFastFirebaseStudent(student) {
     if (!student || !student.name) return;

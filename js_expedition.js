@@ -243,6 +243,16 @@ function processEnhance(currentLv, finalProb, currentFailCount) {
             currentStudent[currentEquipType + '_fail'] = 0;
             updateFastFirebaseStudent(currentStudent);
 
+            // 📝 [Firebase 강화 로그 실시간 전송]
+            pushFirebaseLog('forge', {
+                time: new Date().toISOString(),
+                name: currentStudent.name,
+                equip: currentEquipType,
+                level: "+" + (currentLv + 1),
+                result: "성공 ✅",
+                fail: "-"
+            });
+
             setTimeout(() => {
                 anvil.classList.remove('anim-success');
                 if (forgeContainer) forgeContainer.classList.remove('forge-flash-success');
@@ -260,6 +270,16 @@ function processEnhance(currentLv, finalProb, currentFailCount) {
             currentStudent[currentEquipType + '_fail'] = currentFailCount + 1;
             currentStudent.total_forge_fail = (Number(currentStudent.total_forge_fail) || 0) + 1;
             updateFastFirebaseStudent(currentStudent);
+
+            // 📝 [Firebase 강화 로그 실시간 전송]
+            pushFirebaseLog('forge', {
+                time: new Date().toISOString(),
+                name: currentStudent.name,
+                equip: currentEquipType,
+                level: "+" + (currentLv + 1),
+                result: "실패 ❌",
+                fail: (currentFailCount + 1) + "회"
+            });
 
             setTimeout(() => {
                 anvil.classList.remove('anim-fail');

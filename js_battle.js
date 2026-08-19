@@ -1326,6 +1326,14 @@ function claimReward(rowIdx, colIdx) {
             leveledUp = true;
         }
 
+        // 📝 [Firebase 전투 승리 로그 전송]
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "전투 승리",
+            content: mName + " 처치 -> " + combinedRewardStr + (leveledUp ? " (Lv." + currentStudent.level + " 레벨업)" : "")
+        });
+
         updateFastFirebaseStudent(currentStudent).then(() => {
             hideGlobalLoading();
             if (leveledUp) {
