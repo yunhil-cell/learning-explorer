@@ -134,6 +134,9 @@ function initGameData(data) {
     shopData = data.shopItems || [];
     mercenariesData = data.mercenaries || [];
     worldBossesData = data.worldBosses || [];
+    // 💡 [핵심] 웹페이지에서 작성/조회하는 퀘스트 및 제출물 데이터 정상 바인딩
+    if (data.quests) window.questsData = Array.isArray(data.quests) ? data.quests : Object.values(data.quests);
+    if (data.submissions) window.submissionsData = Array.isArray(data.submissions) ? data.submissions : Object.values(data.submissions);
     if (data.monsters) monsterList = data.monsters;
     if (data.monsterSkills) monsterSkillsData = data.monsterSkills;
     if (data.dungeons) dungeonsData = data.dungeons;
@@ -195,7 +198,9 @@ function renderButtons(students) {
 
         // 💡 학생 클릭 로직: 레이드 선택 분기를 없애고 바로 학생 정보 열기
         btn.onclick = () => {
-            currentStudent = s;
+            // 💡 항상 최신 allStudentsData에서 학생 객체를 찾아 할당
+            const freshStudent = (window.allStudentsData || []).find(st => st && st.name === s.name) || s;
+            currentStudent = freshStudent;
             openStudentDetail();
         };
         grid.appendChild(btn);
@@ -1139,7 +1144,7 @@ function showStudentQuestDetail(questId) {
         '</div>';
 }
 
-function submitStudentQuest(questId, isRequireText) {
+async function submitStudentQuest(questId, isRequireText) {
     let answerText = '';
     if (isRequireText) {
         answerText = document.getElementById('studentQAnswer').value.trim();
@@ -1150,30 +1155,42 @@ function submitStudentQuest(questId, isRequireText) {
 
     showGlobalLoading("📜 퀘스트 보고서 제출 중...");
 
-    if (!window.submissionsData) window.submissionsData = [];
-    const newSub = {
-        quest_id: questId,
-        student_name: currentStudent.name,
-        status: '제출완료',
-        answer_text: answerText,
-        submitted_at: new Date().toISOString()
-    };
+    try {
+        // 💡 [안전장치] 제출 전 Firebase에서 최신 제출물 목록을 먼저 읽어와 다른 학생 글 덮어쓰기 방지
+        const res = await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json');
+        let currentSubs = await res.json();
+        if (!currentSubs) currentSubs = [];
+        if (!Array.isArray(currentSubs)) currentSubs = Object.values(currentSubs);
 
-    const existingIdx = window.submissionsData.findIndex(s => String(s.quest_id) === String(questId) && String(s.student_name) === currentStudent.name);
-    if (existingIdx > -1) window.submissionsData[existingIdx] = newSub;
-    else window.submissionsData.push(newSub);
+        const newSub = {
+            quest_id: String(questId),
+            student_name: currentStudent.name,
+            status: '제출완료',
+            answer_text: answerText,
+            submitted_at: new Date().toISOString()
+        };
 
-    fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(window.submissionsData)
-    }).then(() => {
+        const existingIdx = currentSubs.findIndex(s => s && String(s.quest_id) === String(questId) && String(s.student_name) === currentStudent.name);
+        if (existingIdx > -1) {
+            currentSubs[existingIdx] = newSub;
+        } else {
+            currentSubs.push(newSub);
+        }
+
+        window.submissionsData = currentSubs;
+
+        await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentSubs)
+        });
+
         hideGlobalLoading();
-        showUiAlert("🎉 제출 완료!", "길드에 성공적으로 보고되었습니다!<br>선생님의 승인을 기다려주세요.", "openStudentQuestBoard()");
-    }).catch(err => {
+        showUiAlert("🎉 제출 완료!", "길드에 성공적으로 보고되었습니다!<br>선생님의 승인을 기다려주세요.", "renderStudentQuestBoard()");
+    } catch (err) {
         hideGlobalLoading();
-        showUiAlert("❌ 제출 실패", err);
-    });
+        showUiAlert("❌ 제출 실패", "통신 중 오류가 발생했습니다: " + err, "");
+    }
 }
 
 function autoCompleteStudentQuest(questId, rewardGold, rewardPoint, rewardExp, isRequireText) {

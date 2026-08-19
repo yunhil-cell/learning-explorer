@@ -733,37 +733,45 @@ function updateSubStatus(questId, studentName, newStatus, rewardGold, rewardPoin
     const q = questsData.find(x => String(x.quest_id) === String(questId));
     const rewardExp = q ? (Number(q.reward_exp) || 0) : 0;
 
+    const targetStudent = window.allStudentsData.find(x => x.name === studentName);
+    let leveledUp = false;
+
     if (newStatus === '승인완료') {
-        const targetStudent = window.allStudentsData.find(x => x.name === studentName);
         if (targetStudent) {
             targetStudent.bonus_points = (Number(targetStudent.bonus_points) || 0) + Number(rewardPoint);
             targetStudent.game_money = (Number(targetStudent.game_money) || 0) + Number(rewardGold);
             targetStudent.exp = (Number(targetStudent.exp) || 0) + Number(rewardExp);
+            targetStudent.quest_count = (Number(targetStudent.quest_count) || 0) + 1;
+
+            const expMax = Number(sysConfig.exp_max) || 200;
+            const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
+            while (targetStudent.exp >= expMax) {
+                targetStudent.exp -= expMax;
+                targetStudent.level = (Number(targetStudent.level) || 1) + 1;
+                targetStudent.level_points = (Number(targetStudent.level_points) || 0) + pointsPerLevel;
+                leveledUp = true;
+            }
         }
     } else if (newStatus === '제출완료') {
-        const targetStudent = window.allStudentsData.find(x => x.name === studentName);
         if (targetStudent) {
             targetStudent.bonus_points = Math.max(0, (Number(targetStudent.bonus_points) || 0) - Number(rewardPoint));
             targetStudent.game_money = Math.max(0, (Number(targetStudent.game_money) || 0) - Number(rewardGold));
             targetStudent.exp = Math.max(0, (Number(targetStudent.exp) || 0) - Number(rewardExp));
+            targetStudent.quest_count = Math.max(0, (Number(targetStudent.quest_count) || 0) - 1);
         }
     }
 
-    const targetStudent = window.allStudentsData.find(x => x.name === studentName);
-    let leveledUp = false;
-
-    if (newStatus === '승인완료' && targetStudent) {
-        targetStudent.quest_count = (Number(targetStudent.quest_count) || 0) + 1;
-        const expMax = Number(sysConfig.exp_max) || 200;
-        const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
-        while (targetStudent.exp >= expMax) {
-            targetStudent.exp -= expMax;
-            targetStudent.level = (Number(targetStudent.level) || 1) + 1;
-            targetStudent.level_points = (Number(targetStudent.level_points) || 0) + pointsPerLevel;
-            leveledUp = true;
+    // 💡 [핵심] 현재 접속/조회 중인 학생 객체(currentStudent)도 즉시 동기화
+    if (currentStudent && currentStudent.name === studentName && targetStudent) {
+        currentStudent.bonus_points = targetStudent.bonus_points;
+        currentStudent.game_money = targetStudent.game_money;
+        currentStudent.exp = targetStudent.exp;
+        currentStudent.level = targetStudent.level;
+        currentStudent.level_points = targetStudent.level_points;
+        currentStudent.quest_count = targetStudent.quest_count;
+        if (document.getElementById('detailModal').style.display === 'flex') {
+            renderDashboard();
         }
-    } else if (newStatus === '제출완료' && targetStudent) {
-        targetStudent.quest_count = Math.max(0, (Number(targetStudent.quest_count) || 0) - 1);
     }
 
     renderQuestAdmin('list', questId);

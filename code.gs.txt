@@ -1,0 +1,3036 @@
+function doGet() {
+  return HtmlService.createTemplateFromFile('index')
+      .evaluate()
+      .setTitle('배움 원정대')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+}
+
+// 맨 아래에 새로 추가할 함수
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+function getGameData() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    // 0. 초기 결과 객체에 relics 추가
+    let result = { students: [], system: { config: {} }, skills: [], relics: [] };
+
+    // 1. 학생 데이터 (기존 유지)
+    const studentSheet = ss.getSheetByName('students');
+    if (!studentSheet) return "Error: 'students' 시트 없음";
+    const studentData = studentSheet.getDataRange().getValues();
+    const sHeaders = studentData[0].map(h => String(h).trim());
+    result.students = studentData.slice(1).map(row => {
+      let obj = {};
+      sHeaders.forEach((header, i) => { obj[header] = row[i]; });
+      return obj;
+    });
+
+    // 2. 시스템 데이터 (기존 유지)
+    const systemSheet = ss.getSheetByName('system');
+    if (systemSheet) {
+      const sysData = systemSheet.getDataRange().getValues();
+      result.system.enhance = []; // 배열 초기화
+      for (let i = 1; i < sysData.length; i++) {
+        const row = sysData[i];
+        if (row[0] && row[0] !== "") result.system.config[String(row[0]).trim()] = row[1];
+        if (row[3] !== "" && row[4] !== "" && row[5] !== "") {
+          result.system.enhance[Number(row[3])] = { prob: Number(row[4]), cost: Number(row[5]) };
+        }
+      }
+    }
+
+    // 3. 스킬 데이터 (기존 유지)
+    const skillSheet = ss.getSheetByName('skills');
+    if (skillSheet) {
+      const skillData = skillSheet.getDataRange().getValues();
+      const skHeaders = skillData[0].map(h => String(h).trim());
+      result.skills = skillData.slice(1).map(row => {
+        let obj = {};
+        skHeaders.forEach((header, i) => { obj[header] = row[i]; });
+        return obj;
+      });
+    }
+
+    // 4. 유물 데이터 (신규 추가된 부분 🚀)
+    const relicSheet = ss.getSheetByName('relics');
+    if (relicSheet) {
+      const relicData = relicSheet.getDataRange().getValues();
+      const relHeaders = relicData[0].map(h => String(h).trim());
+      result.relics = relicData.slice(1).map(row => {
+        let obj = {};
+        relHeaders.forEach((header, i) => { obj[header] = row[i]; });
+        return obj;
+      });
+    }
+
+    // 💡 5. 스킨 데이터 로드 (신규 추가)
+    const skinSheet = ss.getSheetByName('skins');
+    if (skinSheet) {
+      const skinData = skinSheet.getDataRange().getValues();
+      const skinHeaders = skinData[0].map(h => String(h).trim());
+      result.skins = skinData.slice(1).map(row => {
+        let obj = {};
+        skinHeaders.forEach((header, i) => { obj[header] = row[i]; });
+        return obj;
+      });
+    }
+
+    // 💡 6. 공지사항 데이터 로드 (신규 추가)
+    result.notices = [];
+    const noticeSheet = ss.getSheetByName('Notices');
+    if (noticeSheet) {
+      const noticeData = noticeSheet.getDataRange().getValues();
+      if (noticeData.length > 1) {
+        const noticeHeaders = noticeData[0].map(h => String(h).trim());
+        result.notices = noticeData.slice(1).map(row => {
+          let obj = {};
+          noticeHeaders.forEach((header, i) => { obj[header] = row[i]; });
+          // 구글 시트 Date 객체 변환 버그 방어
+          if (obj.date && typeof obj.date.getTime === 'function') {
+            obj.date = obj.date.getTime();
+          }
+          return obj;
+        });
+      }
+    }
+
+    // 💡 7. 전리품 상자 데이터 로드 (신규 추가)
+    result.lootBoxes = [];
+    const boxSheet = ss.getSheetByName('loot_boxes');
+    if (boxSheet) {
+      const boxData = boxSheet.getDataRange().getValues();
+      if (boxData.length > 1) {
+        const boxHeaders = boxData[0].map(h => String(h).trim());
+        result.lootBoxes = boxData.slice(1).map(row => {
+          let obj = {};
+          boxHeaders.forEach((header, i) => { obj[header] = row[i]; });
+          return obj;
+        });
+      }
+    }
+
+    // 💡 8. 상점 데이터 로드 (신규 추가)
+    result.shopItems = [];
+    const shopSheet = ss.getSheetByName('shop');
+    if (shopSheet) {
+      const shopSheetData = shopSheet.getDataRange().getValues();
+      if (shopSheetData.length > 1) {
+        const shopHeaders = shopSheetData[0].map(h => String(h).trim());
+        result.shopItems = shopSheetData.slice(1).map(row => {
+          let obj = {};
+          shopHeaders.forEach((header, i) => { obj[header] = row[i]; });
+          return obj;
+        });
+      }
+    }
+
+    // 💡 9. 동료(용병) 데이터 로드 (신규 추가)
+    result.mercenaries = [];
+    const mercSheet = ss.getSheetByName('mercenaries');
+    if (mercSheet) {
+      const mercData = mercSheet.getDataRange().getValues();
+      if (mercData.length > 1) {
+        const mercHeaders = mercData[0].map(h => String(h).trim());
+        result.mercenaries = mercData.slice(1).map(row => {
+          let obj = {};
+          mercHeaders.forEach((header, i) => { obj[header] = row[i]; });
+          return obj;
+        });
+      }
+    }
+
+    // 💡 10. 월드 보스 데이터 로드 (신규 추가 🐲)
+    result.worldBosses = [];
+    const wbSheet = ss.getSheetByName('world_bosses');
+    if (wbSheet) {
+      const wbData = wbSheet.getDataRange().getValues();
+      if (wbData.length > 1) {
+        const wbHeaders = wbData[0].map(h => String(h).trim());
+        result.worldBosses = wbData.slice(1).map(row => {
+          let obj = {};
+          wbHeaders.forEach((header, i) => { obj[header] = row[i]; });
+          return obj;
+        });
+      }
+    }
+
+    // 💡 [파이어베이스 연동 필수] 몬스터, 보스, 던전, 몬스터 스킬 데이터 묶음 포함
+    result.monsters = getMonsterData() || [];
+    result.monsterSkills = getMonsterSkillData() || [];
+    result.dungeons = getDungeonData() || [];
+    result.bosses = getBossData() || [];
+
+    if (!result.system.config.currency_name) result.system.config.currency_name = '골드';
+    if (!result.system.config.skill_price) result.system.config.skill_price = 100;
+
+    return result;
+  } catch (e) {
+    return "Error: " + e.toString();
+  }
+}
+
+// 💡 열 이름으로 정확히 추적하는 스탯 저장 함수
+function updateStudentStats(name, hp, atk, def, luk) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  const hpCol = headers.indexOf('hp_points') + 1;
+  const atkCol = headers.indexOf('atk_points') + 1;
+  const defCol = headers.indexOf('def_points') + 1;
+  const lukCol = headers.indexOf('luk_points') + 1;
+  
+  // 💡 [해킹 방어용 컬럼 추적]
+  const readCol = headers.indexOf('reading_count') + 1;
+  const bonusCol = headers.indexOf('bonus_points') + 1;
+  const lpCol = headers.indexOf('level_points') + 1;
+
+  if (hpCol === 0 || atkCol === 0 || defCol === 0 || lukCol === 0) return "Error";
+
+  // 시스템 시트에서 스탯 검증용 설정값 로드
+  const sysSheet = ss.getSheetByName('system');
+  const sysData = sysSheet.getDataRange().getValues();
+  let maxStat = 150, currentWeek = 1, maxPerWeek = 3, ppb = 4;
+  for (let i = 0; i < sysData.length; i++) {
+    const key = String(sysData[i][0]).trim();
+    if (key === 'max_stat_point') maxStat = Number(sysData[i][1]) || 150;
+    if (key === 'current_week') currentWeek = Number(sysData[i][1]) || 1;
+    if (key === 'max_weekly_books') maxPerWeek = Number(sysData[i][1]) || 3;
+    if (key === 'point_per_book') ppb = Number(sysData[i][1]) || 4;
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      let rowData = data[i];
+      const oldHp = Number(rowData[hpCol - 1]) || 5;
+      const oldAtk = Number(rowData[atkCol - 1]) || 5;
+      const oldDef = Number(rowData[defCol - 1]) || 5;
+      const oldLuk = Number(rowData[lukCol - 1]) || 5;
+
+      // 🛡️ 1차 방어: 기존 스탯보다 낮게 요청 시 에러 반환
+      if (hp < oldHp || atk < oldAtk || def < oldDef || luk < oldLuk) {
+        return "Error: 이미 투자한 능력치는 회수할 수 없습니다.";
+      }
+
+      // 🛡️ 2차 방어 (해킹 차단): 학생이 가질 수 있는 "총 최대 포인트"를 서버가 직접 재계산
+      const actualReading = Number(rowData[readCol - 1]) || 0;
+      const maxReadingLimit = currentWeek * maxPerWeek;
+      const appliedReading = Math.min(actualReading, maxReadingLimit);
+      const bonusP = Number(rowData[bonusCol - 1]) || 0;
+      const levelP = Number(rowData[lpCol - 1]) || 0;
+      
+      // 총 허용치 = 20(초기 스탯 합) + 독서 포인트 + 퀘스트 보너스 포인트 + 레벨업 포인트
+      const maxAllowedTotal = 20 + (appliedReading * ppb) + bonusP + levelP;
+      const requestTotal = hp + atk + def + luk;
+      
+      if (requestTotal > maxAllowedTotal) {
+          return "Error: 비정상적인 스탯 포인트가 감지되었습니다. (F12 조작 의심)";
+      }
+
+      // 상한선 강제 보정
+      hp = Math.min(maxStat, hp);
+      atk = Math.min(maxStat, atk);
+      def = Math.min(maxStat, def);
+      luk = Math.min(maxStat, luk);
+
+      rowData[hpCol - 1] = hp;
+      rowData[atkCol - 1] = atk;
+      rowData[defCol - 1] = def;
+      rowData[lukCol - 1] = luk;
+      sheet.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
+      return "성공";
+    }
+  }
+  return "Error: 학생을 찾을 수 없습니다.";
+}
+
+// 💡 열 이름으로 정확히 추적하는 장비 강화 저장 함수 (+ 📝 강화 로그 자동 기록)
+function updateEnhanceResult(name, equipType, newLevel, failCount) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  const lvCol = headers.indexOf(equipType + '_lv') + 1;
+  const failCol = headers.indexOf(equipType + '_fail') + 1;
+
+  if (lvCol === 0 || failCol === 0) return "Error";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, lvCol).setValue(newLevel);
+      sheet.getRange(i + 1, failCol).setValue(failCount);
+
+      // 📝 [신규] ForgeLog 시트에 강화 기록 몰래 남기기
+      try {
+        const logSheet = ss.getSheetByName('ForgeLog');
+        if (logSheet) {
+          const now = new Date();
+          const timestamp = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+          const equipMap = { 'weapon': '무기', 'head': '투구', 'body': '갑옷', 'accessory': '장신구' };
+          const equipName = equipMap[equipType] || equipType;
+          
+          const isSuccess = (failCount === 0);
+          const attemptLevel = isSuccess ? newLevel : newLevel + 1;
+          const resultText = isSuccess ? "성공 ✅" : "실패 ❌";
+          const failText = isSuccess ? "-" : failCount + "회";
+          
+          logSheet.appendRow([timestamp, name, equipName, "+" + attemptLevel, resultText, failText]);
+        }
+      } catch (e) {
+        console.error("강화 로그 저장 실패:", e);
+      }
+
+      return "성공";
+    }
+  }
+  return "Error: User not found";
+}
+
+// 💡 [수정] 획득한 스킬 문자열 업데이트 (안전장치 추가)
+function updateUnlockedSkills(name, skillStr) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  if (!sheet) return "Error: students 시트를 찾을 수 없음";
+  
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const colIdx = headers.indexOf('unlocked_skills') + 1;
+
+  // 시트에 해당 열이 없을 경우 에러 처리
+  if (colIdx === 0) return "Error: unlocked_skills 열을 찾을 수 없음";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx).setValue(skillStr); 
+      return "성공";
+    }
+  }
+  return "Error: 학생을 찾을 수 없음";
+}
+
+// 💡 [수정] 장착한 스킬 업데이트 (안전장치 추가)
+function updateEquippedSkill(name, slot, skillId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  if (!sheet) return "Error: students 시트를 찾을 수 없음";
+  
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  
+  const colName = slot === 1 ? 'equipped_1' : 'equipped_2';
+  const colIdx = headers.indexOf(colName) + 1;
+  
+  // 시트에 해당 열이 없을 경우 에러 처리
+  if (colIdx === 0) return "Error: " + colName + " 열을 찾을 수 없음";
+  
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx).setValue(skillId);
+      return "성공";
+    }
+  }
+  return "Error: 학생을 찾을 수 없음";
+}
+
+// [Code.gs] 유물 획득 정보 업데이트
+function updateUnlockedRelics(name, relicStr) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const colIdx = headers.indexOf('unlocked_relics') + 1; // 시트에 이 열이 있어야 합니다!
+  
+  let pullCol = headers.indexOf("relic_pull_count");
+  if (pullCol === -1) { pullCol = headers.length; sheet.getRange(1, pullCol + 1).setValue("relic_pull_count"); }
+
+  if (colIdx === 0) return "오류: unlocked_relics 열을 찾을 수 없음";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx).setValue(relicStr);
+      let curPull = Number(sheet.getRange(i + 1, pullCol + 1).getValue()) || 0;
+      sheet.getRange(i + 1, pullCol + 1).setValue(curPull + 1);
+      return "성공";
+    }
+  }
+}
+
+function updateEquippedRelic(name, slotNum, relicId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  // 💡 선생님의 원래 시트 열 이름(relic_1, relic_2)으로 되돌렸습니다!
+  const colName = "relic_" + slotNum;
+  const colIdx = headers.indexOf(colName) + 1;
+
+  if (colIdx === 0) {
+    Logger.log("❌ 오류: students 시트에서 '" + colName + "' 열을 찾을 수 없습니다.");
+    return "오류";
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx).setValue(relicId);
+      return "성공";
+    }
+  }
+}
+
+// 💡 [완벽 보정] 신규/전학생 전체 54개 컬럼 데이터 스프레드시트 일괄 강제 주입 함수
+function initNewStudentOnSheet(name, password, blessing) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('students');
+    if (!sheet) return "Error: students 시트 없음";
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const nameIdx = headers.indexOf('name');
+    if (nameIdx === -1) return "Error: name 열 없음";
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][nameIdx]).trim() === String(name).trim()) {
+        const rowNum = i + 1;
+        let fullRow = data[i];
+
+        // 💡 모든 컬럼을 헤더 이름 기준으로 100% 완벽 매핑
+        const setVal = (colName, val) => {
+          const idx = headers.indexOf(colName);
+          if (idx !== -1) {
+            fullRow[idx] = val;
+          }
+        };
+
+        setVal('password', password || '!1234');
+        setVal('blessing', blessing);
+        setVal('level', 1);
+        setVal('exp', 0);
+        setVal('level_points', 0);
+        setVal('reading_count', 0);
+        setVal('bonus_points', 0);
+        setVal('hp_points', 5);
+        setVal('atk_points', 5);
+        setVal('def_points', 5);
+        setVal('luk_points', 5);
+        setVal('game_money', 0);
+        setVal('weapon_lv', 0);
+        setVal('head_lv', 0);
+        setVal('body_lv', 0);
+        setVal('accessory_lv', 0);
+        setVal('weapon_fail', 0);
+        setVal('head_fail', 0);
+        setVal('body_fail', 0);
+        setVal('accessory_fail', 0);
+        setVal('equipped_skin', 'HD001');
+        setVal('unlocked_skins', '!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008');
+        setVal('weekly_battles', 2);
+        setVal('weekly_boss', 3);
+        setVal('weekly_raid', 1);
+        setVal('weekly_tower', 1);
+        setVal('max_tower_floor', 0);
+        setVal('flee_count', 0);
+        setVal('relic_pull_count', 0);
+        setVal('quest_count', 0);
+        setVal('total_forge_fail', 0);
+        setVal('merc_slot2_unlocked', 'FALSE');
+        setVal('wb_total_damage', 0);
+
+        // 시트의 해당 행 전체에 도장 쾅!
+        sheet.getRange(rowNum, 1, 1, fullRow.length).setValues([fullRow]);
+        Logger.log("✅ [신규 학생 시트 일괄 저장 완료] " + name);
+        return "Success";
+      }
+    }
+    return "Error: 학생을 찾을 수 없음";
+  } catch (e) {
+    Logger.log("❌ 신규 학생 초기화 오류: " + e.toString());
+    return "Error: " + e.toString();
+  }
+}
+
+// 2. 독서록 편수 업데이트 함수
+function updateReadingCount(name, count) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const colIdx = headers.indexOf('reading_count') + 1; // 시트의 reading_count 열 찾기
+
+  if (colIdx === 0) {
+    Logger.log("❌ 오류: students 시트에서 'reading_count' 열을 찾을 수 없습니다.");
+    return "오류";
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx).setValue(count);
+      return "성공";
+    }
+  }
+}
+
+// [신규] 슬롯 해금 상태를 시트에 저장하는 함수 (유물/동료 2번 슬롯)
+function updateSlotUnlock(name, type, isUnlocked) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  if (!sheet) return "Error";
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  let colIdx = 0;
+  let targetColName = '';
+
+  if (type === 'relic') {
+    colIdx = headers.indexOf('relic_slot2_unlocked') + 1;
+    if (colIdx === 0) colIdx = headers.indexOf('relic_slot_2_unlocked') + 1;
+    targetColName = 'relic_slot2_unlocked';
+  } else if (type === 'merc') {
+    colIdx = headers.indexOf('merc_slot2_unlocked') + 1;
+    targetColName = 'merc_slot2_unlocked';
+  }
+
+  if (colIdx === 0) {
+    Logger.log("❌ 오류: students 시트에서 '" + targetColName + "' 열을 찾을 수 없습니다.");
+    return "오류";
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === String(name).trim()) {
+      sheet.getRange(i + 1, colIdx).setValue(isUnlocked ? "TRUE" : "FALSE");
+      Logger.log(`✅ ${name} 학생의 ${targetColName} 확장이 기록되었습니다.`);
+      return "성공";
+    }
+  }
+  return "오류";
+}
+
+// monsters 시트의 모든 데이터를 객체 배열로 가져오는 함수
+function getMonsterData() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("monsters");
+  if (!sheet) return []; // 시트가 없으면 빈 배열 반환
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const monsters = [];
+
+  // 2번째 줄(인덱스 1)부터 실제 데이터 읽기
+  for (let i = 1; i < data.length; i++) {
+    let monster = {};
+    for (let j = 0; j < headers.length; j++) {
+      // 헤더 이름을 키(key)로 사용하여 값 저장 (예: monster.icon_url = "링크")
+      monster[headers[j]] = data[i][j];
+    }
+    // monster_id가 비어있지 않은 유효한 데이터만 배열에 추가
+    if (monster.monster_id) {
+      monsters.push(monster);
+    }
+  }
+  return monsters;
+}
+
+// --- [1회용] 드라이브 이미지를 시트에 자동 매핑하는 함수 ---
+function autoMapIcons() {
+  const folderId = '1e6dbfR4rdCNPLTwq5VO8iKycjKDEeeNO';
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFiles();
+  let urlMap = {};
+
+  while (files.hasNext()) {
+    let file = files.next();
+    let name = file.getName().split('.')[0].trim();
+
+    // 💡 핵심 변경 부분: 외부 송출이 100% 허용되는 썸네일 전용 주소로 바꿨습니다.
+    urlMap[name] = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w200';
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('skills');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  let iconIdIdx = headers.indexOf('icon_id');
+  let iconUrlIdx = headers.indexOf('icon_url');
+
+  let matchCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    let iconId = String(data[i][iconIdIdx]).trim();
+    if (urlMap[iconId]) {
+      sheet.getRange(i + 1, iconUrlIdx + 1).setValue(urlMap[iconId]);
+      matchCount++;
+    }
+  }
+  Logger.log("✅ 총 " + matchCount + "개의 스킬에 우회 URL이 성공적으로 입력되었습니다.");
+}
+
+// --- [유물 전용] 드라이브 이미지를 relics 시트에 매핑하는 함수 ---
+function autoMapRelicIcons() {
+  // 1. 유물 아이콘이 들어있는 폴더 ID를 여기에 입력하세요.
+  const folderId = '1yNjLqnbfuib7nzcUTJrhLVYU4cvNPk4O';
+
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFiles();
+  let urlMap = {};
+
+  // 드라이브 파일 수집
+  while (files.hasNext()) {
+    let file = files.next();
+    // 파일명에서 확장자를 제거하고 앞뒤 공백을 깎아냅니다. (예: "relic (1).png" -> "relic (1)")
+    let name = file.getName().split('.')[0].trim();
+    urlMap[name] = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w200';
+  }
+
+  // 로그 확인용: 드라이브에서 어떤 이름들을 읽어왔는지 출력합니다.
+  Logger.log("📂 드라이브에서 찾은 유물 파일들: " + Object.keys(urlMap).join(', '));
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('relics');
+  if (!sheet) {
+    Logger.log("❌ 오류: 'relics' 시트 탭을 찾을 수 없습니다.");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  let iconIdIdx = headers.indexOf('icon_id');
+  let iconUrlIdx = headers.indexOf('icon_url');
+
+  if (iconUrlIdx === -1) {
+    Logger.log("❌ 오류: relics 시트에 'icon_url' 열 헤더가 없습니다.");
+    return;
+  }
+
+  let matchCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    // 시트의 icon_id 값 (예: relic (1))
+    let iconId = String(data[i][iconIdIdx]).trim();
+
+    if (urlMap[iconId]) {
+      sheet.getRange(i + 1, iconUrlIdx + 1).setValue(urlMap[iconId]);
+      matchCount++;
+    }
+  }
+
+  Logger.log("✅ 결과: 총 " + matchCount + "개의 유물 아이콘 주소를 시트에 연결했습니다.");
+}
+
+// --- [몬스터 전용] 드라이브 이미지를 monsters 시트에 매핑하는 함수 ---
+function autoMapMonsterIcons() {
+  // 1. 몬스터 이미지가 들어있는 폴더 ID를 여기에 입력하세요.
+  const folderId = '1GeUt-4e2PxEYxSTZCSB2DtJXnUbijyDE';
+
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFiles();
+  let urlMap = {};
+
+  // 드라이브 파일 수집
+  while (files.hasNext()) {
+    let file = files.next();
+    // 파일명에서 확장자를 제거하고 앞뒤 공백을 깎아냅니다. (예: "m01.png" -> "m01")
+    let name = file.getName().split('.')[0].trim();
+    urlMap[name] = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w200';
+  }
+
+  // 로그 확인용: 드라이브에서 어떤 이름들을 읽어왔는지 출력합니다.
+  Logger.log("📂 드라이브에서 찾은 몬스터 파일들: " + Object.keys(urlMap).join(', '));
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('monsters');
+  if (!sheet) {
+    Logger.log("❌ 오류: 'monsters' 시트 탭을 찾을 수 없습니다.");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  let idIdx = headers.indexOf('monster_id');
+  let iconUrlIdx = headers.indexOf('icon_url');
+
+  if (idIdx === -1 || iconUrlIdx === -1) {
+    Logger.log("❌ 오류: monsters 시트에 'monster_id' 또는 'icon_url' 열 헤더가 없습니다.");
+    return;
+  }
+
+  let matchCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    // 시트의 monster_id 값 (예: m01)
+    let monsterId = String(data[i][idIdx]).trim();
+
+    // 드라이브 파일명과 monster_id가 일치하면 URL 입력
+    if (urlMap[monsterId]) {
+      sheet.getRange(i + 1, iconUrlIdx + 1).setValue(urlMap[monsterId]);
+      matchCount++;
+    }
+  }
+
+  Logger.log("✅ 결과: 총 " + matchCount + "개의 몬스터 아이콘 주소를 시트에 연결했습니다.");
+}
+
+// --- [용병/동료 전용] 드라이브 이미지를 mercenaries 시트에 매핑하는 함수 ---
+function autoMapMercenaryIcons() {
+  // 💡 1. 용병 이미지가 들어있는 구글 드라이브 폴더 ID를 여기에 입력하세요.
+  const folderId = '1X0hA2_ACymbezQrbIvHQhd5jXi-rj7Vc';
+
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFiles();
+  let urlMap = {};
+
+  // 드라이브 파일 수집 (파일명 예: "MC001.png" -> "MC001")
+  while (files.hasNext()) {
+    let file = files.next();
+    let name = file.getName().split('.')[0].trim();
+    urlMap[name] = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w200';
+  }
+
+  Logger.log("📂 드라이브에서 찾은 용병 파일들: " + Object.keys(urlMap).join(', '));
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('mercenaries');
+  if (!sheet) {
+    Logger.log("❌ 오류: 'mercenaries' 시트 탭을 찾을 수 없습니다.");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  let idIdx = headers.indexOf('merc_id');
+  let iconUrlIdx = headers.indexOf('icon_url');
+
+  if (idIdx === -1 || iconUrlIdx === -1) {
+    Logger.log("❌ 오류: mercenaries 시트에 'merc_id' 또는 'icon_url' 열 헤더가 없습니다.");
+    return;
+  }
+
+  let matchCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    let mercId = String(data[i][idIdx]).trim();
+
+    if (urlMap[mercId]) {
+      sheet.getRange(i + 1, iconUrlIdx + 1).setValue(urlMap[mercId]);
+      matchCount++;
+    }
+  }
+
+  Logger.log("✅ 결과: 총 " + matchCount + "개의 용병 아이콘 주소를 시트에 연결했습니다.");
+}
+
+// --- [신규] monster_skill 시트의 데이터를 객체 배열로 가져오는 함수 ---
+function getMonsterSkillData() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("monster_skills");
+  if (!sheet) return [];
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const skills = [];
+
+  for (let i = 1; i < data.length; i++) {
+    let skill = {};
+    for (let j = 0; j < headers.length; j++) {
+      skill[headers[j]] = data[i][j];
+    }
+    if (skill.skill_id) {
+      // 💡 몬스터 스킬 아이콘 ID가 있으면 드라이브 URL로 즉시 변환
+      if (skill.icon_id && !skill.icon_url) {
+        skill.icon_url = 'https://drive.google.com/thumbnail?id=' + skill.icon_id + '&sz=w100';
+      }
+      skills.push(skill);
+    }
+  }
+  return skills;
+}
+
+// --- [몬스터 스킬 전용] 드라이브 이미지를 monster_skill 시트에 매핑하는 함수 ---
+function autoMapMonsterSkillIcons() {
+  // 1. 💡 몬스터 스킬 아이콘들이 들어있는 구글 드라이브 폴더 ID를 여기에 입력하세요!
+  const folderId = '1e6dbfR4rdCNPLTwq5VO8iKycjKDEeeNO';
+
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFiles();
+  let urlMap = {};
+
+  // 드라이브 파일 수집
+  while (files.hasNext()) {
+    let file = files.next();
+    // 파일명에서 확장자를 제거하고 앞뒤 공백을 깎아냅니다.
+    let name = file.getName().split('.')[0].trim();
+    urlMap[name] = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w200';
+  }
+
+  // 로그 확인용
+  Logger.log("📂 드라이브에서 찾은 몬스터 스킬 파일들: " + Object.keys(urlMap).join(', '));
+
+  // 💡 몬스터 스킬이 있는 탭 이름 ('monster_skill'이 맞는지 확인)
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('monster_skills');
+  if (!sheet) {
+    Logger.log("❌ 오류: 'monster_skill' 시트 탭을 찾을 수 없습니다.");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  let iconIdIdx = headers.indexOf('icon_id');
+  let iconUrlIdx = headers.indexOf('icon_url');
+
+  if (iconIdIdx === -1 || iconUrlIdx === -1) {
+    Logger.log("❌ 오류: monster_skill 시트에 'icon_id' 또는 'icon_url' 열 헤더가 없습니다.");
+    return;
+  }
+
+  let matchCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    // 시트의 icon_id 값
+    let iconId = String(data[i][iconIdIdx]).trim();
+
+    // 드라이브 파일명과 icon_id가 일치하면 URL 입력
+    if (urlMap[iconId]) {
+      sheet.getRange(i + 1, iconUrlIdx + 1).setValue(urlMap[iconId]);
+      matchCount++;
+    }
+  }
+
+  Logger.log("✅ 결과: 총 " + matchCount + "개의 몬스터 스킬 아이콘 주소를 시트에 연결했습니다.");
+}
+
+// ==========================================
+// 🧑‍🎤 스킨(옷장) 전용 업데이트 함수들
+// ==========================================
+
+// 💡 1. 현재 장착 중인 스킨 업데이트
+function updateEquippedSkin(name, skinId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const colIdx = headers.indexOf('equipped_skin') + 1; // 시트에 이 열이 있어야 함!
+
+  if (colIdx === 0) return "오류: equipped_skin 열을 찾을 수 없음";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx).setValue(skinId);
+      return "성공";
+    }
+  }
+}
+
+// 💡 2. 스킨 해금(획득) 정보 업데이트 (완벽 형태)
+function updateUnlockedSkins(name, skinStr) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const colIdx = headers.indexOf('unlocked_skins') + 1; 
+
+  if (colIdx === 0) return "오류: unlocked_skins 열을 찾을 수 없음";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx).setValue(skinStr);
+      return "성공";
+    }
+  }
+  return "오류: 학생을 찾을 수 없음"; // <- 1번 코드의 장점을 흡수한 이 한 줄 추가!
+}
+
+// 💡 3. (선택사항) 드라이브 이미지를 skins 시트에 매핑하는 자동화 함수
+function autoMapSkinIcons() {
+  // 스킨 이미지가 들어있는 구글 드라이브 폴더 ID를 여기에 입력하세요.
+  const folderId = '1HKc-o6cLAfxMV8HN-hIz7jJs0wL-ctO4';
+
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFiles();
+  let urlMap = {};
+
+  while (files.hasNext()) {
+    let file = files.next();
+    // 파일명 추출 (예: "BR0.png" -> "BR0")
+    let name = file.getName().split('.')[0].trim();
+    urlMap[name] = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w200';
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('skins');
+  if (!sheet) {
+    Logger.log("❌ 오류: 'skins' 시트 탭을 찾을 수 없습니다.");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  let idIdx = headers.indexOf('skin_id');
+  let urlIdx = headers.indexOf('skin_url');
+
+  if (idIdx === -1 || urlIdx === -1) {
+    Logger.log("❌ 오류: skins 시트에 'skin_id' 또는 'skin_url' 열 헤더가 없습니다.");
+    return;
+  }
+
+  let matchCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    let skinId = String(data[i][idIdx]).trim();
+
+    if (urlMap[skinId]) {
+      sheet.getRange(i + 1, urlIdx + 1).setValue(urlMap[skinId]);
+      matchCount++;
+    }
+  }
+
+  Logger.log("✅ 결과: 총 " + matchCount + "개의 스킨 아이콘 주소를 시트에 연결했습니다.");
+}
+
+// [신규] 학생 비밀번호 저장 함수
+function updateStudentPassword(studentName, newPassword) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("students");
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+
+  const nameIdx = headers.indexOf("name");
+  const pwIdx = headers.indexOf("password");
+
+  if (nameIdx === -1 || pwIdx === -1) return "Error: password 열이 없습니다.";
+
+  for (let i = 1; i < data.length; i++) {
+    // 💡 안전장치(trim) 추가
+    if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
+      sheet.getRange(i + 1, pwIdx + 1).setValue(newPassword); // !1234 형태로 저장
+      return "Success";
+    }
+  }
+  return "Error: 학생을 찾을 수 없습니다.";
+}
+
+// 💡 [신규] 전투 결과 저장 (승리 시 횟수 차감, 패배 시 시간 기록)
+function updateBattleResult(studentName, isWin, isBoss = false, isFlee = false) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("students");
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  const nameIdx = headers.indexOf("name");
+  const weeklyIdx = headers.indexOf("weekly_battles");
+  const defeatIdx = headers.indexOf("last_defeat");
+  const bossIdx = headers.indexOf("weekly_boss");
+
+  let penaltyEndCol = headers.indexOf("penalty_end_time") + 1;
+  if (penaltyEndCol === 0) {
+    penaltyEndCol = headers.length + 1;
+    sheet.getRange(1, penaltyEndCol).setValue("penalty_end_time");
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
+      let timeNow = new Date().getTime();
+      if (isWin) {
+        if (!isBoss && weeklyIdx > -1) {
+          let current = Number(data[i][weeklyIdx]);
+          if (isNaN(current)) current = 2; 
+          sheet.getRange(i + 1, weeklyIdx + 1).setValue(Math.max(0, current - 1));
+        }
+      } else {
+        if (defeatIdx > -1) {
+          sheet.getRange(i + 1, defeatIdx + 1).setValue(timeNow);
+        }
+        let penaltyDuration = isFlee ? (2 * 60 * 60 * 1000) : (8 * 60 * 60 * 1000);
+        sheet.getRange(i + 1, penaltyEndCol).setValue(timeNow + penaltyDuration);
+      }
+      return "Success";
+    }
+  }
+}
+
+// 💡 [신규] 매주 월요일 초기화 스크립트 (시스템 설정값을 정상적으로 불러오도록 패치)
+function resetWeeklyBattles() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. 시스템 탭에서 최대 횟수 모두 읽어오기
+  const sysSheet = ss.getSheetByName("system");
+  const sysData = sysSheet.getDataRange().getValues();
+  
+  let maxBattles = 2;
+  let maxRaid = 1;
+  let maxTower = 1;
+  let maxBoss = 3;
+
+  for (let i = 0; i < sysData.length; i++) {
+    if (sysData[i][0] === "max_weekly_battles") maxBattles = Number(sysData[i][1]) || 2;
+    if (sysData[i][0] === "max_weekly_raid") maxRaid = Number(sysData[i][1]) || 1;
+    if (sysData[i][0] === "max_weekly_tower") maxTower = Number(sysData[i][1]) || 1;
+    if (sysData[i][0] === "max_weekly_boss") maxBoss = Number(sysData[i][1]) || 3;
+  }
+
+  // 2. 학생 탭의 횟수를 덮어쓰기
+  const stSheet = ss.getSheetByName("students");
+  const stData = stSheet.getDataRange().getValues();
+  const headers = stData[0].map(h => String(h).trim());
+  const weeklyIdx = headers.indexOf("weekly_battles");
+  const raidIdx = headers.indexOf("weekly_raid");
+  let towerIdx = headers.indexOf("weekly_tower");
+  let bossIdx = headers.indexOf("weekly_boss");
+
+  // 도전의 탑 열이 없으면 즉시 생성
+  if (towerIdx === -1) {
+    towerIdx = headers.length;
+    stSheet.getRange(1, towerIdx + 1).setValue("weekly_tower");
+  }
+
+  // 보스 도전 기회 열 안정성 확보 검증
+  if (bossIdx === -1) {
+    bossIdx = stSheet.getLastColumn();
+    stSheet.getRange(1, bossIdx + 1).setValue("weekly_boss");
+  }
+
+  for (let i = 1; i < stData.length; i++) {
+    if (weeklyIdx > -1) stSheet.getRange(i + 1, weeklyIdx + 1).setValue(maxBattles);
+    if (raidIdx > -1) stSheet.getRange(i + 1, raidIdx + 1).setValue(maxRaid);
+    if (bossIdx > -1) stSheet.getRange(i + 1, bossIdx + 1).setValue(maxBoss);
+    stSheet.getRange(i + 1, towerIdx + 1).setValue(maxTower);
+  }
+}
+
+// 💡 [신규] 도전의 탑 결과 저장 (골드 지급 없음, RM 교환권 인벤토리행)
+function processTowerEnd(studentName, rmAmount, monsterIdsStr, clearedFloors) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const stSheet = ss.getSheetByName("students");
+    const data = stSheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+
+    const nameIdx = headers.indexOf("name");
+    let towerIdx = headers.indexOf("weekly_tower");
+    const invIdx = headers.indexOf("inventory");
+    const monsterIdx = headers.indexOf("monster_data");
+    
+    // 💡 [신규] 최고 층수 기록용 열 탐색
+    let maxFloorIdx = headers.indexOf("max_tower_floor");
+
+    if (nameIdx === -1) return "Error";
+
+    // weekly_tower 열이 없으면 맨 끝에 생성
+    if (towerIdx === -1) {
+      towerIdx = stSheet.getLastColumn();
+      stSheet.getRange(1, towerIdx + 1).setValue("weekly_tower");
+      for(let r = 1; r < data.length; r++) {
+         stSheet.getRange(r + 1, towerIdx + 1).setValue(1);
+      }
+    }
+    
+    // max_tower_floor 열이 없으면 맨 끝에 생성
+    if (maxFloorIdx === -1) {
+      maxFloorIdx = stSheet.getLastColumn(); 
+      stSheet.getRange(1, maxFloorIdx + 1).setValue("max_tower_floor");
+      for(let r = 1; r < data.length; r++) {
+         stSheet.getRange(r + 1, maxFloorIdx + 1).setValue(0);
+      }
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][nameIdx]).trim() === studentName) {
+        // 1. 도전의 탑 주간 횟수 차감
+        let currentTower = Number(stSheet.getRange(i + 1, towerIdx + 1).getValue());
+        if (isNaN(currentTower)) currentTower = 1;
+        stSheet.getRange(i + 1, towerIdx + 1).setValue(Math.max(0, currentTower - 1));
+        
+        // 💡 2. 최고 층수 기록 갱신 (추가된 부분)
+        // 🛡️ [해킹 방어] 층수 한계(23층)를 긋고, 보상(RM)을 서버에서 직접 재계산하여 조작 방지!
+        clearedFloors = Math.min(23, Number(clearedFloors) || 0);
+        let validBossCount = 0;
+        if (clearedFloors >= 8) validBossCount++;
+        if (clearedFloors >= 13) validBossCount++;
+        if (clearedFloors >= 18) validBossCount++;
+        // 💡 2층당 10티 + 보스당 30티 (무조건 10티 단위로 딱 떨어짐)
+        rmAmount = (Math.floor(clearedFloors / 2) * 10) + (validBossCount * 30);
+
+        let currentMaxFloor = Number(stSheet.getRange(i + 1, maxFloorIdx + 1).getValue()) || 0;
+        if (clearedFloors > currentMaxFloor) {
+            stSheet.getRange(i + 1, maxFloorIdx + 1).setValue(clearedFloors);
+        }
+
+        // 3. 인벤토리에 RM 보상 지급 (골드는 전혀 건드리지 않음)
+        if (rmAmount > 0 && invIdx > -1) {
+          let realCurrency = "RM";
+          const sysData = ss.getSheetByName("system").getDataRange().getValues();
+          for(let j = 0; j < sysData.length; j++){
+            if(sysData[j][0] === "currency_name") { realCurrency = sysData[j][1]; break; }
+          }
+          const rmItemName = "[현실 재화] " + rmAmount + realCurrency + " 교환권";
+          let currentInv = String(stSheet.getRange(i + 1, invIdx + 1).getValue()).trim();
+          let newInv = currentInv ? currentInv + "," + rmItemName : rmItemName;
+          stSheet.getRange(i + 1, invIdx + 1).setValue(newInv);
+        }
+
+        // 3. 몬스터 처치 기록 (도감용) 누적
+        if (monsterIdsStr && monsterIdx > -1) {
+           let currentMonsters = String(stSheet.getRange(i + 1, monsterIdx + 1).getValue() || "").replace('!', '');
+           let arr = currentMonsters ? currentMonsters.split(',') : [];
+           arr.push(...monsterIdsStr.split(',').filter(Boolean));
+           stSheet.getRange(i + 1, monsterIdx + 1).setValue("!" + arr.join(','));
+        }
+        return "Success";
+      }
+    }
+  } catch (e) {
+    return "Error: " + e.toString();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 💡 [신규] 사냥 보상 로그 기록 함수
+function logBattleReward(studentName, monsterName, rewardStr) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000); // 💡 동시 기록 충돌 방지 (최대 5초 대기)
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName("logs");
+
+    // 만약 선생님이 logs 탭을 안 만들었다면 코드가 알아서 만듭니다.
+    if (!sheet) {
+      sheet = ss.insertSheet("logs");
+      sheet.appendRow(["시간", "학생명", "사냥한 몬스터", "획득 보상"]);
+    }
+
+    // 현재 한국 시간 생성
+    const now = new Date();
+    const timestamp = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+
+    // 시트의 맨 아래에 데이터 한 줄 추가
+    sheet.appendRow([timestamp, studentName, monsterName, rewardStr]);
+
+    return "Success";
+  } catch (e) {
+    return "Error: 동시 접속 폭주로 로그 기록 지연";
+  } finally {
+    lock.releaseLock(); // 💡 작업 완료 후 즉시 자물쇠 해제
+  }
+}
+
+// 💡 [신규] 스킬 이펙트(GIF) 구글 드라이브 자동 매핑 함수
+function mapSkillEffects() {
+  // 👇 아까 복사해둔 이펙트 GIF들이 모여있는 '폴더 ID'를 아래 따옴표 사이에 넣으세요!
+  const FOLDER_ID = "1syFuEnG5LnkBS-ejuwgyLZQffCEfX1Uj";
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("skills"); // 시트 이름이 skills가 맞는지 확인
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("❌ 'skills' 탭을 찾을 수 없습니다.");
+    return;
+  }
+
+  // 1. 폴더 내의 모든 GIF 파일을 읽어서 매핑 딕셔너리 생성 (속도 최적화)
+  const folder = DriveApp.getFolderById(FOLDER_ID);
+  const files = folder.getFiles();
+  const fileMap = {};
+
+  while (files.hasNext()) {
+    const file = files.next();
+    const fileName = file.getName();
+    const fileId = file.getId();
+
+    // 확장자를 제거한 파일명 추출 (예: "101.gif" -> "101")
+    const skillId = fileName.replace(".gif", "").replace(".png", "").trim();
+
+    // 🚨 [수정] 구글 보안 정책을 우회하는 최신 다이렉트 이미지 서버(lh3) 주소로 변경!
+    const directUrl = "https://lh3.googleusercontent.com/d/" + fileId;
+    fileMap[skillId] = directUrl;
+  }
+
+  // 2. 시트 데이터 업데이트
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+
+  const skillIdCol = headers.indexOf("skill_id");
+  const effectUrlCol = headers.indexOf("effect_url");
+
+  if (skillIdCol === -1 || effectUrlCol === -1) {
+    SpreadsheetApp.getUi().alert("❌ skills 시트의 첫 줄에 'skill_id'와 'effect_url' 열(헤더)이 있는지 확인해주세요.");
+    return;
+  }
+
+  // 3. 매핑된 URL 시트에 기록
+  let updateCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    let currentSkillId = String(data[i][skillIdCol]).trim();
+
+    if (currentSkillId && fileMap[currentSkillId]) {
+      // 행과 열은 1부터 시작하므로 +1 씩 해줌
+      sheet.getRange(i + 1, effectUrlCol + 1).setValue(fileMap[currentSkillId]);
+      updateCount++;
+    }
+  }
+
+  SpreadsheetApp.getUi().alert("🎉 완료! 총 " + updateCount + "개의 스킬 이펙트가 자동으로 매핑되었습니다.");
+}
+
+// ==========================================
+// 🏰 파티 레이드(던전) 데이터 로드 함수
+// ==========================================
+function getDungeonData() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("dungeons");
+  if (!sheet) return []; // 시트가 없으면 빈 배열 반환
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const dungeons = [];
+
+  // 2번째 줄(인덱스 1)부터 실제 데이터 읽기
+  for (let i = 1; i < data.length; i++) {
+    let dungeon = {};
+    let isEmptyRow = true;
+    for (let j = 0; j < headers.length; j++) {
+      // 헤더 이름을 키(key)로 사용하여 값 저장
+      dungeon[headers[j]] = data[i][j];
+      if (data[i][j] !== "") isEmptyRow = false;
+    }
+
+    // dungeon_id가 비어있지 않은 유효한 데이터만 배열에 추가
+    if (!isEmptyRow && dungeon.dungeon_id && String(dungeon.dungeon_id).trim() !== "") {
+      dungeons.push(dungeon);
+    }
+  }
+  return dungeons;
+}
+
+// =====================================================================
+// 📜 2분기 업데이트: 길드 의뢰(퀘스트) 및 성찰일지 시스템 서버 로직
+// =====================================================================
+
+// 1. 모든 퀘스트 데이터 불러오기 (교사 & 학생 대시보드 표시용)
+function getQuestsData() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Quests');
+  if (!sheet) return [];
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return []; // 헤더만 있는 경우
+
+  var headers = data[0];
+  var quests = [];
+
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = data[i][j];
+    }
+    quests.push(obj);
+  }
+  return quests;
+}
+
+// 2. 모든 제출물 데이터 불러오기 (교사 채점 및 학생 본인 확인용)
+function getSubmissionsData() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Submissions');
+  if (!sheet) return [];
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return []; // 헤더만 있는 경우
+
+  var headers = data[0].map(function (h) { return String(h).trim(); });
+  var submissions = [];
+
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      var val = data[i][j];
+      // 💡 구글 앱스 스크립트 특유의 Date 객체 반환 버그를 확실히 우회합니다
+      if (val && typeof val.getTime === 'function') {
+        val = val.getTime();
+      }
+      obj[headers[j]] = val;
+    }
+    submissions.push(obj);
+  }
+  return submissions;
+}
+
+// 3. [교사 전용] 새로운 퀘스트 등록하기
+function createQuest(title, description, requireText, rewardGold, rewardExp, rewardPoint, isAutoApprove, repeatCycle) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Quests');
+  if (!sheet) return "Error: Quests 시트를 찾을 수 없습니다.";
+
+  // 고유 식별자(ID) 생성: 'Q' + 현재 시간 밀리초
+  var questId = 'Q' + new Date().getTime();
+  var isActive = true; // 생성 시 기본적으로 활성화 상태
+
+  // 💡 시트 헤더 순서(gold, exp, point)에 완벽하게 맞춰서 배열에 담아 저장합니다.
+  sheet.appendRow([questId, title, description, requireText, rewardGold, rewardExp, rewardPoint, isActive, isAutoApprove, repeatCycle]);
+  return "Success";
+}
+
+// 4. [교사 전용] 퀘스트 활성화/비활성화 상태 변경 (마감 처리)
+function toggleQuestActive(questId, isActive) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Quests');
+  if (!sheet) return "Error: Quests 시트를 찾을 수 없습니다.";
+
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var qIdIdx = headers.indexOf('quest_id');
+  var activeIdx = headers.indexOf('is_active');
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][qIdIdx]) === String(questId)) {
+      sheet.getRange(i + 1, activeIdx + 1).setValue(isActive);
+      return "Success";
+    }
+  }
+  return "Not Found";
+}
+
+// 5. [학생 전용] 퀘스트 답변 제출하기 (또는 수정하기)
+function submitQuest(questId, studentName, answerText) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000); // 💡 동시 제출 충돌 방지 (최대 5초 대기)
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Submissions');
+    if (!sheet) return "Error: Submissions 시트를 찾을 수 없습니다.";
+
+    var questSheet = ss.getSheetByName('Quests');
+    var repeatCycle = '1회성';
+    if (questSheet) {
+      var qData = questSheet.getDataRange().getValues();
+      var qIdIdxForCycle = qData[0].indexOf('quest_id');
+      var qCycleIdx = qData[0].indexOf('repeat_cycle');
+      for (var q = 1; q < qData.length; q++) {
+        if (String(qData[q][qIdIdxForCycle]) === String(questId)) {
+          repeatCycle = String(qData[q][qCycleIdx]);
+          break;
+        }
+      }
+    }
+
+    var timestamp = new Date();
+    var status = "제출완료"; // 교사가 확인하기 전 기본 상태
+
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var qIdIdx = headers.indexOf('quest_id');
+    var nameIdx = headers.indexOf('student_name');
+    var statusIdx = headers.indexOf('status');
+    var ansIdx = headers.indexOf('answer_text');
+    var timeIdx = headers.indexOf('submitted_at');
+
+    let foundIdx = -1;
+    
+    // 이미 제출한 기록이 있는지 확인하되, 반복 주기에 따라 '같은 주기'인지 검사
+    if (data.length > 1) {
+      for (var i = data.length - 1; i >= 1; i--) {
+        if (String(data[i][qIdIdx]) === String(questId) && String(data[i][nameIdx]) === String(studentName)) {
+          let subDate = new Date(data[i][timeIdx]);
+          let isSameCycle = false;
+
+          if (repeatCycle === '일일반복') {
+              isSameCycle = subDate.getDate() === timestamp.getDate() && subDate.getMonth() === timestamp.getMonth() && subDate.getFullYear() === timestamp.getFullYear();
+          } else if (repeatCycle === '주간반복') {
+              const getMonday = function(d) {
+                  const date = new Date(d);
+                  const day = date.getDay();
+                  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+                  return new Date(date.setDate(diff)).setHours(0, 0, 0, 0);
+              };
+              isSameCycle = getMonday(subDate) === getMonday(timestamp);
+          } else if (repeatCycle === '월반복') {
+              isSameCycle = subDate.getMonth() === timestamp.getMonth() && subDate.getFullYear() === timestamp.getFullYear();
+          } else {
+              isSameCycle = true; // 1회성이면 항상 덮어쓰기
+          }
+
+          if (isSameCycle) {
+             foundIdx = i;
+             break;
+          }
+        }
+      }
+    }
+
+    if (foundIdx > -1) {
+      // 💡 [배치 업데이트] 같은 주기 내라면 상태, 내용, 제출 시간을 한 번에 덮어씌웁니다.
+      let rowData = data[foundIdx];
+      rowData[statusIdx] = status;
+      rowData[ansIdx] = answerText;
+      rowData[timeIdx] = timestamp;
+
+      sheet.getRange(foundIdx + 1, 1, 1, rowData.length).setValues([rowData]);
+      return "Success: Updated";
+    }
+
+    // 제출한 적이 없거나 새로운 주기라면 맨 밑에 새로 추가
+    sheet.appendRow([questId, studentName, status, answerText, timestamp]);
+    return "Success: Appended";
+  } catch (e) {
+    return "Error: 제출 지연 (다시 시도해주세요)";
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 6. [교사 전용] 제출물 승인 및 상태 업데이트 (완료/미완료 토글용)
+function updateSubmissionStatus(questId, studentName, newStatus, rewardPoint, rewardExp) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var subSheet = ss.getSheetByName('Submissions');
+  if (!subSheet) return "Error: Submissions 시트를 찾을 수 없습니다.";
+
+  var questSheet = ss.getSheetByName('Quests');
+  var rewardGold = 0;
+  if (questSheet) {
+    var qData = questSheet.getDataRange().getValues();
+    var qHeaders = qData[0].map(function (h) { return String(h).trim(); });
+    var qIdIdx = qHeaders.indexOf('quest_id');
+    var qGoldIdx = qHeaders.indexOf('reward_gold');
+    if (qIdIdx > -1 && qGoldIdx > -1) {
+      for (var q = 1; q < qData.length; q++) {
+        if (String(qData[q][qIdIdx]) === String(questId)) {
+          rewardGold = Number(qData[q][qGoldIdx]) || 0;
+          break;
+        }
+      }
+    }
+  }
+
+  let leveledUp = false;
+  let newLv = 0;
+
+  var stuSheet = ss.getSheetByName('students');
+  if (stuSheet) {
+    var stuData = stuSheet.getDataRange().getValues();
+    var sHeaders = stuData[0].map(function (h) { return String(h).trim(); });
+    var nameIdx = sHeaders.indexOf('name');
+    var pointIdx = sHeaders.indexOf('bonus_points');
+    var moneyIdx = sHeaders.indexOf('game_money');
+
+    if (nameIdx > -1) {
+      for (var k = 1; k < stuData.length; k++) {
+        if (String(stuData[k][nameIdx]).trim() === String(studentName).trim()) {
+          
+          if (newStatus === '승인완료') {
+            if (pointIdx > -1 && rewardPoint) {
+              var currentPoint = Number(stuData[k][pointIdx]) || 0;
+              stuSheet.getRange(k + 1, pointIdx + 1).setValue(currentPoint + Number(rewardPoint));
+            }
+            if (moneyIdx > -1 && rewardGold > 0) {
+              var currentMoney = Number(stuData[k][moneyIdx]) || 0;
+              stuSheet.getRange(k + 1, moneyIdx + 1).setValue(currentMoney + rewardGold);
+            }
+            let questCountCol = sHeaders.indexOf("quest_count");
+            if (questCountCol === -1) { questCountCol = sHeaders.length; stuSheet.getRange(1, questCountCol + 1).setValue("quest_count"); }
+            let curQ = Number(stuSheet.getRange(k + 1, questCountCol + 1).getValue()) || 0;
+            stuSheet.getRange(k + 1, questCountCol + 1).setValue(curQ + 1);
+          } else if (newStatus === '제출완료') {
+            if (pointIdx > -1 && rewardPoint) {
+              var currentPoint = Number(stuData[k][pointIdx]) || 0;
+              stuSheet.getRange(k + 1, pointIdx + 1).setValue(Math.max(0, currentPoint - Number(rewardPoint)));
+            }
+            if (moneyIdx > -1 && rewardGold > 0) {
+              var currentMoney = Number(stuData[k][moneyIdx]) || 0;
+              stuSheet.getRange(k + 1, moneyIdx + 1).setValue(Math.max(0, currentMoney - rewardGold));
+            }
+            // 💡 [버그 수정] 승인 취소 시 비정상적으로 부풀려진 퀘스트 완료 횟수도 함께 회수(차감)합니다.
+            let questCountCol = sHeaders.indexOf("quest_count");
+            if (questCountCol !== -1) {
+              let curQ = Number(stuSheet.getRange(k + 1, questCountCol + 1).getValue()) || 0;
+              stuSheet.getRange(k + 1, questCountCol + 1).setValue(Math.max(0, curQ - 1));
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (newStatus === '승인완료' && rewardExp && Number(rewardExp) > 0) {
+    let expResult = gainExpAndCheckLevelUp(studentName, Number(rewardExp));
+    if (expResult && expResult.leveledUp) {
+      leveledUp = true;
+      newLv = expResult.newLv;
+    }
+  } else if (newStatus === '제출완료' && rewardExp && Number(rewardExp) > 0) {
+    gainExpAndCheckLevelUp(studentName, -Number(rewardExp));
+  }
+
+  var data = subSheet.getDataRange().getValues();
+  var headers = data[0];
+  var qIdIdx = headers.indexOf('quest_id');
+  var nameIdx = headers.indexOf('student_name');
+  var statusIdx = headers.indexOf('status');
+
+  // 💡 최신(가장 아래) 제출 기록부터 찾아야 '반복 퀘스트' 채점 시 과거 기록을 건드리지 않습니다.
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][qIdIdx]) === String(questId) && String(data[i][nameIdx]) === String(studentName)) {
+      subSheet.getRange(i + 1, statusIdx + 1).setValue(newStatus);
+      if (leveledUp) {
+        return { status: "Success", leveledUp: true, newLv: newLv, newLP: newLP };
+      }
+      return "Success";
+    }
+  }
+  return "Not Found";
+}
+
+// =====================================================================
+// 📢 길드 게시판 (공지사항) 서버 로직
+// =====================================================================
+
+// 1. [학생/공통] 마지막으로 읽은 공지 ID 갱신
+function updateLastReadNotice(studentName, noticeId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(function (h) { return String(h).trim(); });
+  const nameIdx = headers.indexOf('name');
+  const noticeIdx = headers.indexOf('last_read_notice');
+
+  if (nameIdx === -1 || noticeIdx === -1) return "Error: 컬럼을 찾을 수 없음";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
+      sheet.getRange(i + 1, noticeIdx + 1).setValue(noticeId);
+      return "Success";
+    }
+  }
+  return "Not Found";
+}
+
+// 2. [교사 전용] 새로운 공지사항 등록
+function createNotice(title, content, category) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Notices');
+  if (!sheet) return "Error: Notices 시트를 찾을 수 없습니다.";
+
+  const noticeId = 'N' + new Date().getTime();
+  const dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  const isActive = true;
+
+  sheet.appendRow([noticeId, dateStr, category, title, content, isActive]);
+  return "Success";
+}
+
+// 3. [교사 전용] 공지사항 노출 상태 변경 (숨김 처리)
+function toggleNoticeActive(noticeId, isActive) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Notices');
+  if (!sheet) return "Error: Notices 시트를 찾을 수 없습니다.";
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(function (h) { return String(h).trim(); });
+  const idIdx = headers.indexOf('notice_id');
+  const activeIdx = headers.indexOf('is_active');
+
+  if (idIdx === -1 || activeIdx === -1) return "Error: 컬럼 누락";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idIdx]).trim() === String(noticeId).trim()) {
+      sheet.getRange(i + 1, activeIdx + 1).setValue(isActive);
+      return "Success";
+    }
+  }
+  return "Not Found";
+}
+
+// 4. [교사 전용] 공지사항 완전 삭제
+function deleteNoticeData(noticeId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Notices');
+  if (!sheet) return "Error";
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(function (h) { return String(h).trim(); });
+  const idIdx = headers.indexOf('notice_id');
+
+  if (idIdx === -1) return "Error";
+
+  // 행(Row) 삭제는 아래에서부터 올라가면서 지우는 것이 안전합니다.
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][idIdx]).trim() === String(noticeId).trim()) {
+      sheet.deleteRow(i + 1);
+      return "Success";
+    }
+  }
+  return "Not Found";
+}
+
+function setFleePenalty(studentName, penaltyTime) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("students");
+  if (!sheet) return "Error";
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const nameIdx = headers.indexOf("name");
+  const defeatIdx = headers.indexOf("last_defeat");
+  
+  let penaltyEndCol = headers.indexOf("penalty_end_time") + 1;
+  if (penaltyEndCol === 0) {
+    penaltyEndCol = headers.length + 1;
+    sheet.getRange(1, penaltyEndCol).setValue("penalty_end_time");
+  }
+
+  let fleeCol = headers.indexOf("flee_count");
+  if (fleeCol === -1) { fleeCol = headers.length; sheet.getRange(1, fleeCol + 1).setValue("flee_count"); }
+
+  if (nameIdx === -1 || defeatIdx === -1) return "Error";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][nameIdx]).trim() === studentName) {
+      let timeNow = new Date().getTime();
+      sheet.getRange(i + 1, defeatIdx + 1).setValue(timeNow);
+      sheet.getRange(i + 1, penaltyEndCol).setValue(timeNow + (2 * 60 * 60 * 1000));
+      
+      let curFlee = Number(sheet.getRange(i + 1, fleeCol + 1).getValue()) || 0;
+      sheet.getRange(i + 1, fleeCol + 1).setValue(curFlee + 1);
+      return "Success";
+    }
+  }
+  return "Not Found";
+}
+
+// 💡 [최적화] *N 연산 및 다중 루팅을 지원하는 통합 함수 (보스 판정 파라미터 연동 패치)
+function processBattleEndCombined(studentName, isWin, monsterName, rewardStr, entryType = '', isBossInput = false) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000); // 동시 접속 폭주 시 최대 5초간 대기열에서 대기 후 순차 처리합니다.
+
+    // 이름 분석 방식 대신, 프론트엔드 전투 세션에서 수립된 절대적인 보스 판정값을 그대로 라우팅합니다.
+    let isBoss = isBossInput;
+
+    if (isWin && rewardStr) {
+    // 1. 전체 보상 로그 기록
+    logBattleReward(studentName, monsterName, rewardStr);
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let realCurrency = '티';
+    const sysSheet = ss.getSheetByName("system");
+    if (sysSheet) {
+      const sysData = sysSheet.getDataRange().getValues();
+      for(let j=0; j<sysData.length; j++){
+        if(sysData[j][0] === "currency_name") {
+          realCurrency = sysData[j][1]; break;
+        }
+      }
+    }
+    
+    // 2. 콤마(,)로 분리된 보상들을 하나씩 처리
+    let rewards = String(rewardStr).split(',');
+    
+    rewards.forEach(r => {
+      let rTrim = r.trim();
+      if (!rTrim) return;
+      
+      // 💡 [신규] "아이템명*숫자" 패턴 분석 (예: 간식추첨권*2)
+      let count = 1;
+      let itemName = rTrim;
+      if (rTrim.includes('*')) {
+        let parts = rTrim.split('*');
+        itemName = parts[0].trim();
+        count = parseInt(parts[1]) || 1;
+      }
+      
+      // 3. 갯수(count)만큼 반복 처리 (간식추첨권*2 이면 인벤토리에 간식추첨권이 2번 들어감)
+      for (let i = 0; i < count; i++) {
+        let match = itemName.match(/^(\d+)(.*)$/);
+        if (match) {
+          let amount = Number(match[1]);
+          let textPart = match[2].trim();
+          
+          if (textPart.toUpperCase() === 'RM') {
+            addItemToInventoryBackend(studentName, '[현실 재화] ' + amount + realCurrency + ' 교환권');
+          } else if (!textPart.includes('권') && !textPart.includes('도전') && !textPart.includes('티켓') && !textPart.includes('단장')) {
+            updateGameMoney(studentName, amount);
+          } else {
+            addItemToInventoryBackend(studentName, itemName);
+          }
+        } else {
+          addItemToInventoryBackend(studentName, itemName);
+        }
+      }
+    });
+  }
+  
+  // 💀 보스 도전 기회는 입장 시 consumeBossEntryResources()에서 이미 차감됨
+
+  // 보상 선택 카드(claimReward)까지 진입하여 처리가 끝난 상태라면 도주일 수 없으므로 false를 확정하여 전달합니다.
+  if (isWin) {
+    updateBattleResult(studentName, true, isBoss, false);
+  }
+  
+  // 승리 시 경험치 계산 및 지급
+  if (isWin) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const mSheet = ss.getSheetByName(monsterName.includes('[보스]') ? 'bosses' : 'monsters');
+    const mData = mSheet.getDataRange().getValues();
+    const mHeaders = mData[0].map(h => String(h).trim());
+    const diffIdx = mHeaders.indexOf('difficulty');
+    
+    let star = 1;
+    for(let j=1; j<mData.length; j++) {
+      if(String(mData[j][1]).trim() === monsterName.replace('[보스] ', '').trim()) {
+        star = Number(mData[j][diffIdx]) || 1;
+        break;
+      }
+    }
+    
+    let expGain = monsterName.includes('[보스]') ? (star * 30) : (star * 10);
+    return gainExpAndCheckLevelUp(studentName, expGain);
+  }
+  
+  return "Success"; 
+  } catch (e) {
+    return "Error: 동시 접속 폭주로 정산 지연 (" + e.toString() + ")";
+  } finally {
+    lock.releaseLock(); // 처리가 끝나면 자물쇠를 열어 다음 대기 학생을 진입시킵니다.
+  }
+}
+
+// 💡 [신규] 인게임 재화(game_money) 데이터를 시트에 반영하는 함수
+function updateGameMoney(studentName, amount) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(3000); // 연타 방지 자물쇠 대기
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("students");
+    if (!sheet) return "Error";
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const nameIdx = headers.indexOf("name");
+    const moneyIdx = headers.indexOf("game_money");
+    
+    if (nameIdx === -1 || moneyIdx === -1) return "Error: game_money 열이 없습니다.";
+    
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][nameIdx]).trim() === studentName) {
+        let currentMoney = Number(data[i][moneyIdx]);
+        if (isNaN(currentMoney)) currentMoney = 0;
+
+        // 💡 [마이너스 통장 방어] 차감일 경우 남은 돈이 0보다 적어지면 즉시 무효화
+        if (amount < 0 && currentMoney + amount < 0) {
+          return "Error: 잔액 부족";
+        }
+
+        sheet.getRange(i + 1, moneyIdx + 1).setValue(currentMoney + amount);
+        return "Success";
+      }
+    }
+    return "Error: 학생을 찾을 수 없습니다.";
+  } catch (e) {
+    return "Error: " + e.toString();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 💡 [신규] 인벤토리 통째로 덮어쓰기 (아이템 소모용)
+function updateInventory(studentName, inventoryStr) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("students");
+  if (!sheet) return "Error";
+  
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const nameIdx = headers.indexOf("name");
+  const invIdx = headers.indexOf("inventory");
+  
+  if (nameIdx === -1 || invIdx === -1) return "Error: inventory 열이 없습니다.";
+  
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][nameIdx]).trim() === studentName) {
+      sheet.getRange(i + 1, invIdx + 1).setValue(inventoryStr);
+      return "Success";
+    }
+  }
+  return "Error: 학생을 찾을 수 없습니다.";
+}
+
+// 💡 [신규] 아이템을 인벤토리에 추가하는 백엔드 함수
+function addItemToInventoryBackend(studentName, itemName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("students");
+  if (!sheet) return;
+  
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const nameIdx = headers.indexOf("name");
+  const invIdx = headers.indexOf("inventory");
+  
+  if (nameIdx === -1 || invIdx === -1) return;
+  
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][nameIdx]).trim() === studentName) {
+      let currentInv = String(data[i][invIdx]).trim();
+      let newInv = currentInv ? currentInv + "," + itemName : itemName;
+      sheet.getRange(i + 1, invIdx + 1).setValue(newInv);
+      return;
+    }
+  }
+}
+
+// 💡 [신규] 보스 데이터 불러오기
+function getBossData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("bosses");
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  // 헤더의 앞뒤 공백을 확실하게 제거하여 매핑 오류를 방지합니다.
+  const headers = data[0].map(h => String(h).trim());
+  return data.slice(1).map(row => {
+    let obj = {};
+    headers.forEach((h, i) => { obj[h] = row[i]; });
+    return obj;
+  });
+}
+
+// --- [보스 전용] 드라이브 이미지를 bosses 시트에 매핑하는 함수 ---
+function autoMapBossIcons() {
+  // 1. 보스 이미지가 들어있는 구글 드라이브 폴더 ID를 여기에 입력하세요.
+  const folderId = '1GeUt-4e2PxEYxSTZCSB2DtJXnUbijyDE';
+
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFiles();
+  let urlMap = {};
+
+  // 드라이브 파일 수집
+  while (files.hasNext()) {
+    let file = files.next();
+    // 파일명에서 확장자를 제거하고 앞뒤 공백을 깎아냅니다. (예: "b01.png" -> "b01")
+    let name = file.getName().split('.')[0].trim();
+    urlMap[name] = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w200';
+  }
+
+  // 로그 확인용
+  Logger.log("📂 드라이브에서 찾은 보스 파일들: " + Object.keys(urlMap).join(', '));
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('bosses');
+  if (!sheet) {
+    Logger.log("❌ 오류: 'bosses' 시트 탭을 찾을 수 없습니다.");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  let idIdx = headers.indexOf('boss_id');
+  let iconUrlIdx = headers.indexOf('icon_url');
+
+  if (idIdx === -1 || iconUrlIdx === -1) {
+    Logger.log("❌ 오류: bosses 시트에 'boss_id' 또는 'icon_url' 열 헤더가 없습니다.");
+    return;
+  }
+
+  let matchCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    // 시트의 boss_id 값 (예: b01)
+    let bossId = String(data[i][idIdx]).trim();
+
+    // 드라이브 파일명과 boss_id가 일치하면 URL 입력
+    if (urlMap[bossId]) {
+      sheet.getRange(i + 1, iconUrlIdx + 1).setValue(urlMap[bossId]);
+      matchCount++;
+    }
+  }
+
+  Logger.log("✅ 결과: 총 " + matchCount + "개의 보스 아이콘 주소를 시트에 연결했습니다.");
+}
+
+// 💡 [신규] 일일 퀘스트 즉시 완료 및 보상 지급 로직
+function autoCompleteQuest(questId, studentName, rewardGold, rewardPoint, rewardExp, answerText) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // 💡 1. 퀘스트 반복 주기 파악
+    var questSheet = ss.getSheetByName('Quests');
+    var repeatCycle = '1회성';
+    if (questSheet) {
+      var qData = questSheet.getDataRange().getValues();
+      var qIdIdxForCycle = qData[0].indexOf('quest_id');
+      var qCycleIdx = qData[0].indexOf('repeat_cycle');
+      var qGoldIdx = qData[0].indexOf('reward_gold');
+      var qPointIdx = qData[0].indexOf('reward_point');
+      var qExpIdx = qData[0].indexOf('reward_exp');
+      for (var q = 1; q < qData.length; q++) {
+        if (String(qData[q][qIdIdxForCycle]) === String(questId)) {
+          repeatCycle = String(qData[q][qCycleIdx]);
+          // 💡 [해킹 방어] 학생이 조작한 보상 값을 무시하고, 서버의 진짜 시트 값으로 강제 덮어쓰기!
+          rewardGold = Number(qData[q][qGoldIdx]) || 0;
+          rewardPoint = Number(qData[q][qPointIdx]) || 0;
+          rewardExp = Number(qData[q][qExpIdx]) || 0;
+          break;
+        }
+      }
+    }
+
+    // 💡 2. 이미 이번 주기에 보상을 수령했는지 중복 방지 체크 먼저 수행!
+    const subSheet = ss.getSheetByName('Submissions');
+    const now = new Date();
+    const nowStr = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+    let foundIdx = -1;
+    let isAlreadyApproved = false;
+
+    if (subSheet) {
+      const subData = subSheet.getDataRange().getValues();
+      const subHeaders = subData[0].map(h => String(h).trim());
+      const qIdIdx = subHeaders.indexOf('quest_id');
+      const sNameIdx = subHeaders.indexOf('student_name');
+      const statusIdx = subHeaders.indexOf('status');
+      const dateIdx = subHeaders.indexOf('submitted_at');
+      
+      if (subData.length > 1) {
+        for (let i = subData.length - 1; i >= 1; i--) {
+          if (String(subData[i][qIdIdx]) === String(questId) && String(subData[i][sNameIdx]) === String(studentName)) {
+            let subDate = new Date(subData[i][dateIdx]);
+            let isSameCycle = false;
+
+            if (repeatCycle === '일일반복') {
+                isSameCycle = subDate.getDate() === now.getDate() && subDate.getMonth() === now.getMonth() && subDate.getFullYear() === now.getFullYear();
+            } else if (repeatCycle === '주간반복') {
+                const getMonday = function(d) {
+                    const date = new Date(d);
+                    const day = date.getDay();
+                    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+                    return new Date(date.setDate(diff)).setHours(0, 0, 0, 0);
+                };
+                isSameCycle = getMonday(subDate) === getMonday(now);
+            } else if (repeatCycle === '월반복') {
+                isSameCycle = subDate.getMonth() === now.getMonth() && subDate.getFullYear() === now.getFullYear();
+            } else {
+                isSameCycle = true;
+            }
+
+            if (isSameCycle) {
+               foundIdx = i;
+               if (String(subData[i][statusIdx]) === '승인완료') {
+                   isAlreadyApproved = true;
+               }
+               break;
+            }
+          }
+        }
+      }
+    }
+
+    // 이미 수령했다면 컷!
+    if (isAlreadyApproved) {
+        return { error: "이번 주기에 이미 보상을 수령한 퀘스트입니다." };
+    }
+
+    // 💡 3. 학생 재화 및 경험치 즉시 증가
+    let leveledUp = false;
+    let newLv = 0;
+    let newLP = 0;
+    let newExp = 0;
+    
+    const stSheet = ss.getSheetByName('students');
+    if (stSheet) {
+      const stData = stSheet.getDataRange().getValues();
+      const stHeaders = stData[0].map(h => String(h).trim());
+      const nameIdx = stHeaders.indexOf('name');
+      const moneyIdx = stHeaders.indexOf('game_money');
+      const pointIdx = stHeaders.indexOf('bonus_points');
+      
+      if (nameIdx !== -1) {
+        for (let i = 1; i < stData.length; i++) {
+          if (String(stData[i][nameIdx]).trim() === String(studentName).trim()) {
+            if (moneyIdx !== -1) stSheet.getRange(i + 1, moneyIdx + 1).setValue((Number(stData[i][moneyIdx]) || 0) + Number(rewardGold));
+            if (pointIdx !== -1) stSheet.getRange(i + 1, pointIdx + 1).setValue((Number(stData[i][pointIdx]) || 0) + Number(rewardPoint));
+            
+            let questCountCol = stHeaders.indexOf("quest_count");
+            if (questCountCol === -1) { questCountCol = stHeaders.length; stSheet.getRange(1, questCountCol + 1).setValue("quest_count"); }
+            let curQ = Number(stSheet.getRange(i + 1, questCountCol + 1).getValue()) || 0;
+            stSheet.getRange(i + 1, questCountCol + 1).setValue(curQ + 1);
+            break;
+          }
+        }
+      }
+    }
+    
+    if (rewardExp && Number(rewardExp) > 0) {
+      let expResult = gainExpAndCheckLevelUp(studentName, Number(rewardExp));
+      if (expResult) {
+        if (expResult.leveledUp) {
+          leveledUp = true;
+          newLv = expResult.newLv;
+          newLP = expResult.newLP;
+        }
+        newExp = expResult.newExp; // 남은 경험치를 저장
+      }
+    }
+
+    // 💡 4. Submissions 시트에 '승인완료' 상태로 덮어쓰기 또는 신규 기록
+    if (subSheet) {
+      const subHeaders = subSheet.getDataRange().getValues()[0].map(h => String(h).trim());
+      const statusIdx = subHeaders.indexOf('status');
+      const dateIdx = subHeaders.indexOf('submitted_at');
+      const ansIdx = subHeaders.indexOf('answer_text');
+      
+      if (foundIdx > -1) {
+        subSheet.getRange(foundIdx + 1, statusIdx + 1).setValue("승인완료");
+        subSheet.getRange(foundIdx + 1, dateIdx + 1).setValue(nowStr);
+        if (ansIdx > -1) subSheet.getRange(foundIdx + 1, ansIdx + 1).setValue(answerText || '일일 퀘스트 자동 완수');
+      } else {
+        const newRow = [];
+        for(let j=0; j<subHeaders.length; j++) {
+          if (subHeaders[j] === 'quest_id') newRow.push(questId);
+          else if (subHeaders[j] === 'student_name') newRow.push(studentName);
+          else if (subHeaders[j] === 'answer_text') newRow.push(answerText || '일일 퀘스트 자동 완수');
+          else if (subHeaders[j] === 'status') newRow.push('승인완료');
+          else if (subHeaders[j] === 'submitted_at') newRow.push(nowStr);
+          else newRow.push('');
+        }
+        subSheet.appendRow(newRow);
+      }
+    }
+    
+    return { status: "Success", leveledUp: leveledUp, newLv: newLv, newLP: newLP, newExp: newExp };
+  } catch (e) {
+    return { error: "자동 승인 지연 (" + e.toString() + ")" };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 💡 [경험치 시스템] 경험치 획득 및 레벨업 체크 (이 함수가 통째로 빠져있었습니다!)
+function gainExpAndCheckLevelUp(studentName, expAmount) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(3000); // 💡 경험치 증발 방지 자물쇠
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('students');
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    
+    const lvIdx = headers.indexOf('level');
+    const expIdx = headers.indexOf('exp');
+    const lpIdx = headers.indexOf('level_points');
+    const nameIdx = headers.indexOf('name');
+
+    // 시스템 설정에서 최대 경험치와 레벨당 포인트 로드
+    const sysData = ss.getSheetByName('system').getDataRange().getValues();
+    let expMax = 100; 
+    let pointsPerLevel = 3; // 💡 기본값 3
+    for(let i=0; i<sysData.length; i++) {
+      const key = String(sysData[i][0]).trim();
+      if(key === 'exp_max') expMax = Number(sysData[i][1]) || 100;
+      if(key === 'points_per_level') pointsPerLevel = Number(sysData[i][1]) || 3;
+    }
+
+    // 🚨 시트에 열이 없으면 에러 반환
+    if (nameIdx === -1 || lvIdx === -1 || expIdx === -1 || lpIdx === -1) return "Error: 학생 시트에 level, exp, level_points 열이 없습니다.";
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
+        let currentLv = Number(data[i][lvIdx]) || 1;
+        let currentExp = (Number(data[i][expIdx]) || 0) + Number(expAmount);
+        let currentLP = Number(data[i][lpIdx]) || 0;
+        let leveledUp = false;
+
+        // 경험치가 0 미만으로 내려가는 것을 원천 차단 (마이너스 버그 방어)
+        if (currentExp < 0) {
+          currentExp = 0;
+        }
+
+        // 경험치가 꽉 차면 레벨업 처리 (초과분 이월)
+        while (currentExp >= expMax) {
+          currentExp -= expMax;
+          currentLv += 1;
+          currentLP += pointsPerLevel; // 💡 시스템 탭 설정값 연동
+          leveledUp = true;
+        }
+        
+        // 시트에 저장
+        sheet.getRange(i + 1, lvIdx + 1).setValue(currentLv);
+        sheet.getRange(i + 1, expIdx + 1).setValue(currentExp);
+        sheet.getRange(i + 1, lpIdx + 1).setValue(currentLP);
+        
+        // 💡 시트 저장 직후의 currentLv(레벨업 반영본)를 명확히 반환
+        return { status: "Success", leveledUp: leveledUp, newLv: currentLv, newExp: currentExp, newLP: currentLP };
+      }
+    }
+    return "Error: 학생을 찾을 수 없습니다.";
+  } catch(e) {
+    return "Error: " + e.toString();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 💡 [신규] 학생 아이템 사용 로그 기록 함수
+function logItemUsage(studentName, itemName) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(3000);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName("logs");
+    
+    // logs 탭이 없으면 알아서 생성
+    if (!sheet) {
+      sheet = ss.insertSheet("logs");
+      sheet.appendRow(["시간", "학생명", "분류", "내용"]);
+    }
+    
+    const now = new Date();
+    const timestamp = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+    
+    // 시트 맨 아래에 아이템 사용 기록 추가
+    sheet.appendRow([timestamp, studentName, "아이템 사용", itemName]);
+    return "Success";
+  } catch (e) {
+    return "Error";
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ==========================================
+// 🏰 파티 던전 탐험 결과 처리 및 보상 지급
+// ==========================================
+function processRaidResult(partyNamesStr, isWin, totalExp, boxToGive) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000); // 💡 여러 명의 동시 요청 완벽 차단
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const stSheet = ss.getSheetByName("students");
+    const data = stSheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    
+    const nameIdx = headers.indexOf("name");
+    const raidIdx = headers.indexOf("weekly_raid");
+    const invIdx = headers.indexOf("inventory");
+    
+    if (nameIdx === -1 || raidIdx === -1) return { error: "students 시트에 weekly_raid 열이 없습니다." };
+
+    const partyNames = partyNamesStr.split(',');
+    let targetRows = []; // 업데이트할 행 인덱스 저장
+
+    // 1. 파티원 전원의 자격(횟수) 검증
+    for (let i = 1; i < data.length; i++) {
+      if (partyNames.includes(String(data[i][nameIdx]).trim())) {
+        let rawRaidVal = data[i][raidIdx];
+        // 💡 시트 셀이 비어있거나("") undefined면 기본값 1 적용 (Number("") === 0 오작동 방지)
+        let currentRaidCount = (rawRaidVal !== "" && rawRaidVal !== undefined) ? Number(rawRaidVal) : 1;
+        if (isNaN(currentRaidCount)) currentRaidCount = 1;
+        
+        // 💡 핵심 방어 로직: 1명이라도 횟수가 없으면 즉시 에러 반환 (어뷰징 차단)
+        if (currentRaidCount <= 0) {
+          return { error: `파티원 중 이미 던전 탐험을 완료한 학생(${data[i][nameIdx]})이 있습니다.` };
+        }
+        targetRows.push(i);
+      }
+    }
+
+    if (targetRows.length === 0) return { error: "파티원 정보를 찾을 수 없습니다." };
+
+    let leveledUp = false;
+    let newLv = 0;
+    let newLP = 0;
+
+    // 2. 횟수 차감 및 보상 지급 진행
+    targetRows.forEach(rowIndex => {
+      // (1) 주간 횟수 무조건 1 차감
+      let currentRaidCount = Number(data[rowIndex][raidIdx]);
+      if (isNaN(currentRaidCount)) currentRaidCount = 1;
+      stSheet.getRange(rowIndex + 1, raidIdx + 1).setValue(Math.max(0, currentRaidCount - 1));
+
+      // 승리했을 때만 보상 지급
+      if (isWin) {
+        let sName = String(data[rowIndex][nameIdx]).trim();
+        
+        // (2) 상자 인벤토리에 지급
+        if (boxToGive && invIdx > -1) {
+          let currentInv = String(data[rowIndex][invIdx]).trim();
+          let newInv = currentInv ? currentInv + "," + boxToGive : boxToGive;
+          stSheet.getRange(rowIndex + 1, invIdx + 1).setValue(newInv);
+        }
+
+        // (3) 경험치 지급 및 레벨업 체크
+        // 🛡️ [해킹 방어] 비정상적으로 조작된 경험치 폭증 방어 (최대 1000 EXP로 강제 커트)
+        totalExp = Math.min(1000, Number(totalExp) || 0);
+        
+        if (totalExp > 0) {
+          let expResult = gainExpAndCheckLevelUp(sName, Number(totalExp));
+          if (expResult && expResult.leveledUp) {
+            // 대시보드를 열고 있는 방장(본인)의 레벨업 정보가 다른 파티원 루프에 의해 오염되지 않도록 방어합니다.
+            if (sName === partyNames[0].trim()) {
+              leveledUp = true;
+              newLv = expResult.newLv;
+              newLP = expResult.newLP;
+            }
+          }
+        }
+        
+        // (4) 서버 로그 기록
+        logBattleReward(sName, "[파티 던전 탐험]", `${totalExp}EXP / ${boxToGive}`);
+      }
+    });
+
+    return { success: true, leveledUp: leveledUp, newLv: newLv, newLP: newLP };
+
+  } catch (e) {
+    return { error: "처리 중 오류 발생: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ==========================================
+// 📦 전리품 상자 개봉 (가챠) 처리 로직
+// ==========================================
+function openLootBoxServer(studentName, boxId) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(3000); // 아이템 중복 사용 방지
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // 1. 상자 데이터 찾기
+    const boxSheet = ss.getSheetByName("loot_boxes");
+    if (!boxSheet) return { error: "loot_boxes 시트가 없습니다." };
+    const boxData = boxSheet.getDataRange().getValues();
+    const boxHeaders = boxData[0].map(h => String(h).trim());
+    
+    let targetBox = null;
+    for (let i = 1; i < boxData.length; i++) {
+      if (String(boxData[i][boxHeaders.indexOf("box_id")]).trim() === boxId) {
+        targetBox = {};
+        boxHeaders.forEach((h, idx) => targetBox[h] = boxData[i][idx]);
+        break;
+      }
+    }
+    if (!targetBox) return { error: "상자 정보를 찾을 수 없습니다." };
+
+    // 2. 학생 데이터 찾기
+    const stSheet = ss.getSheetByName("students");
+    const stData = stSheet.getDataRange().getValues();
+    const stHeaders = stData[0].map(h => String(h).trim());
+    const nameIdx = stHeaders.indexOf("name");
+    const moneyIdx = stHeaders.indexOf("game_money");
+    const invIdx = stHeaders.indexOf("inventory");
+    const lukIdx = stHeaders.indexOf("luk_points"); // 💡 행운 스탯 위치
+    
+    let stRowIdx = -1;
+    let stLuk = 5;
+    let currentInv = "";
+    let currentMoney = 0;
+
+    for (let i = 1; i < stData.length; i++) {
+      if (String(stData[i][nameIdx]).trim() === studentName) {
+        stRowIdx = i;
+        stLuk = Number(stData[i][lukIdx]) || 5;
+        currentInv = String(stData[i][invIdx]).trim();
+        currentMoney = Number(stData[i][moneyIdx]) || 0;
+        break;
+      }
+    }
+    if (stRowIdx === -1) return { error: "학생 정보를 찾을 수 없습니다." };
+
+    // 3. 인벤토리에서 상자 차감 처리 (안전 검사)
+    let invArray = currentInv ? currentInv.split(',').map(x => x.trim()) : [];
+    let boxIndex = invArray.indexOf(targetBox.box_name);
+    if (boxIndex === -1) return { error: "가방에 해당 상자가 없습니다." };
+    invArray.splice(boxIndex, 1); // 상자 1개 삭제
+
+    // 💡 4. 보상 뽑기 연산 (골드 + 아이템 독립 시행)
+    const minM = Number(targetBox.min_money) || 0;
+    const maxM = Number(targetBox.max_money) || 0;
+    
+    const sysData = ss.getSheetByName("system").getDataRange().getValues();
+    let realCurrency = "티";
+    for(let j=0; j<sysData.length; j++){
+      if(sysData[j][0] === "currency_name") {
+        realCurrency = sysData[j][1]; break;
+      }
+    }
+    
+    // 행운(LUK)에 따른 골드 보정
+    const lukRatio = Math.min(1.0, stLuk / 100); 
+    const baseRand = Math.random(); 
+    const finalRand = Math.min(1.0, baseRand + (lukRatio * 0.5)); 
+    const earnedGold = Math.floor(minM + (maxM - minM) * finalRand);
+
+    // 아이템 가챠 연산 (독립 시행: 운이 좋으면 여러 개가 동시에 당첨될 수도 있음!)
+    let earnedItems = [];
+    let rawPicked = [];
+    
+    if (Math.random() * 100 <= (Number(targetBox.prob_1) || 0)) rawPicked.push(targetBox.item_1);
+    if (Math.random() * 100 <= (Number(targetBox.prob_2) || 0)) rawPicked.push(targetBox.item_2);
+    if (Math.random() * 100 <= (Number(targetBox.prob_3) || 0)) rawPicked.push(targetBox.item_3);
+
+    // 💡 [핵심] 3개 다 꽝이 나와서 아무것도 당첨되지 않았다면, 최소 1개의 보상(item_1)을 확정 지급
+    if (rawPicked.length === 0 && targetBox.item_1) {
+      rawPicked.push(targetBox.item_1);
+    }
+
+    // *N 파싱 로직 적용 (아이템 복수 당첨 시 낱개로 인벤토리에 넣기)
+    rawPicked.forEach(pickedItemStr => {
+      if (pickedItemStr && String(pickedItemStr).trim() !== "") {
+        let count = 1;
+        let itemName = String(pickedItemStr).trim();
+        if (itemName.includes('*')) {
+          let parts = itemName.split('*');
+          itemName = parts[0].trim();
+          count = parseInt(parts[1]) || 1;
+        }
+        
+        let match = itemName.match(/^(\d+)\s*(.*)$/);
+        if (match && match[2].trim().toUpperCase() === 'RM') {
+          itemName = "[현실 재화] " + match[1] + realCurrency + " 교환권";
+        }
+        
+        for (let i = 0; i < count; i++) {
+          invArray.push(itemName);
+          earnedItems.push(itemName);
+        }
+      }
+    });
+
+    // 5. 최종 결과 시트에 저장
+    stSheet.getRange(stRowIdx + 1, moneyIdx + 1).setValue(currentMoney + earnedGold);
+    stSheet.getRange(stRowIdx + 1, invIdx + 1).setValue(invArray.join(','));
+    
+    // 로그 남기기
+    logBattleReward(studentName, `[상자 개봉] ${targetBox.box_name}`, `${earnedGold}골드 / ${earnedItems.join(',')}`);
+
+    return { gold: earnedGold, items: earnedItems };
+
+  } catch (e) {
+    return { error: "상자 개봉 중 오류 발생: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// [신규] 몬스터 도감 데이터 업데이트 함수
+function updateUnlockedMonsters(name, monsterStr) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const colIdx = headers.indexOf('monster_data') + 1;
+
+  if (colIdx === 0) return "오류: monster_data 열을 찾을 수 없음";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx).setValue(monsterStr);
+      return "성공";
+    }
+  }
+}
+
+// [신규] 칭호 장착 정보 업데이트
+function updateEquippedTitle(name, title) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  
+  let colIdx = headers.indexOf('equipped_title');
+  if (colIdx === -1) {
+    colIdx = headers.length;
+    sheet.getRange(1, colIdx + 1).setValue('equipped_title');
+  }
+  
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx + 1).setValue(title);
+      return "성공";
+    }
+  }
+}
+
+// [신규] 영구 누적 강화 실패 횟수 저장 함수 (칭호 해금용)
+function updateTotalForgeFail(name, totalFailCount) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  if (!sheet) return "Error";
+  
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  
+  let colIdx = headers.indexOf('total_forge_fail');
+  if (colIdx === -1) {
+    // 만약 시트에 열을 깜빡하고 안 만들었을 경우, 자동으로 끝에 생성해주는 안전장치
+    colIdx = headers.length;
+    sheet.getRange(1, colIdx + 1).setValue('total_forge_fail');
+  }
+  
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      sheet.getRange(i + 1, colIdx + 1).setValue(totalFailCount);
+      return "성공";
+    }
+  }
+  return "Error: 학생을 찾을 수 없습니다.";
+}
+
+// 💡 [신규] 부상 치료제 전용: 전투 패배 및 도주 패널티(penalty_end_time) 완전 초기화 패치
+function resetDefeatPenalty(studentName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("students");
+  if (!sheet) return "Error";
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const nameIdx = headers.indexOf("name");
+  const defeatIdx = headers.indexOf("last_defeat");
+  const penaltyEndIdx = headers.indexOf("penalty_end_time");
+
+  if (nameIdx === -1 || defeatIdx === -1) return "Error";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][nameIdx]).trim() === studentName) {
+      // 일반 패배 기록 시간 초기화
+      sheet.getRange(i + 1, defeatIdx + 1).setValue(0); 
+      
+      // 시즌2 패배/도주 통합 시간 제한 열(penalty_end_time)이 시트에 존재한다면 함께 0으로 치료
+      if (penaltyEndIdx > -1) {
+        sheet.getRange(i + 1, penaltyEndIdx + 1).setValue(0);
+      }
+      return "Success";
+    }
+  }
+  return "Not Found";
+}
+
+// ==========================================
+// 💀 보스 입장 자원 소모 처리
+// 조건: weekly_boss 1회 이상 + 해당 등급 보스 도전권 1장 보유
+// 처리: weekly_boss -1, 보스 도전권 -1
+// ==========================================
+function consumeBossEntryResources(studentName, bossGrade) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("students");
+    if (!sheet) return { success: false, error: "students 시트를 찾을 수 없습니다." };
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+
+    const nameIdx = headers.indexOf("name");
+    const invIdx = headers.indexOf("inventory");
+    let bossIdx = headers.indexOf("weekly_boss");
+
+    if (nameIdx === -1) return { success: false, error: "students 시트에 name 열이 없습니다." };
+    if (invIdx === -1) return { success: false, error: "students 시트에 inventory 열이 없습니다." };
+
+    if (bossIdx === -1) {
+      // 💡 [시스템 연동] system 시트의 max_weekly_boss 설정값을 동적으로 읽어옵니다.
+      let maxBossSetting = 3;
+      const sysSheet = ss.getSheetByName("system");
+      if (sysSheet) {
+        const sysData = sysSheet.getDataRange().getValues();
+        for (let s = 0; s < sysData.length; s++) {
+          if (String(sysData[s][0]).trim() === "max_weekly_boss") {
+            maxBossSetting = Number(sysData[s][1]) || 3;
+            break;
+          }
+        }
+      }
+
+      bossIdx = sheet.getLastColumn();
+      sheet.getRange(1, bossIdx + 1).setValue("weekly_boss");
+
+      for (let r = 1; r < data.length; r++) {
+        sheet.getRange(r + 1, bossIdx + 1).setValue(maxBossSetting);
+      }
+    }
+
+    const ticketName = String(bossGrade || "하급").trim() + " 보스 도전권";
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
+        let currentBossChance = Number(sheet.getRange(i + 1, bossIdx + 1).getValue());
+        if (isNaN(currentBossChance)) currentBossChance = 3;
+
+        if (currentBossChance <= 0) {
+          return {
+            success: false,
+            error: "이번 주 보스 도전 기회를 모두 소진했습니다.<br><br>상점에서 <b style='color:var(--Highlight);'>보스 도전기회 추가 티켓</b>을 구매해 사용하면 1회 회복할 수 있습니다."
+          };
+        }
+
+        const rawInv = String(sheet.getRange(i + 1, invIdx + 1).getValue() || "");
+        let items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
+        const ticketIdx = items.indexOf(ticketName);
+
+        if (ticketIdx === -1) {
+          return {
+            success: false,
+            error: "가방에 <b style='color:var(--Red);'>" + ticketName + "</b>이(가) 없습니다."
+          };
+        }
+
+        items.splice(ticketIdx, 1);
+
+        const newBossChance = Math.max(0, currentBossChance - 1);
+        const newInventory = items.join(',');
+
+        sheet.getRange(i + 1, bossIdx + 1).setValue(newBossChance);
+        sheet.getRange(i + 1, invIdx + 1).setValue(newInventory);
+
+        return {
+          success: true,
+          weekly_boss: newBossChance,
+          inventory: newInventory
+        };
+      }
+    }
+
+    return { success: false, error: "학생 정보를 찾을 수 없습니다." };
+
+  } catch (e) {
+    return { success: false, error: "보스 입장 처리 중 오류 발생: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+// ==========================================
+// 🎫 보스 도전기회 추가 티켓 사용 처리
+// 조건: 인벤토리에 '보스 도전기회 추가 티켓' 보유
+// 처리: 티켓 -1, weekly_boss +1
+// ==========================================
+function useBossChanceTicket(studentName) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("students");
+    if (!sheet) return { success: false, error: "students 시트를 찾을 수 없습니다." };
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+
+    const nameIdx = headers.indexOf("name");
+    const invIdx = headers.indexOf("inventory");
+    let bossIdx = headers.indexOf("weekly_boss");
+
+    if (nameIdx === -1) return { success: false, error: "students 시트에 name 열이 없습니다." };
+    if (invIdx === -1) return { success: false, error: "students 시트에 inventory 열이 없습니다." };
+
+    if (bossIdx === -1) {
+      // 💡 [시스템 연동] system 시트의 max_weekly_boss 설정값을 동적으로 읽어옵니다.
+      let maxBossSetting = 3;
+      const sysSheet = ss.getSheetByName("system");
+      if (sysSheet) {
+        const sysData = sysSheet.getDataRange().getValues();
+        for (let s = 0; s < sysData.length; s++) {
+          if (String(sysData[s][0]).trim() === "max_weekly_boss") {
+            maxBossSetting = Number(sysData[s][1]) || 3;
+            break;
+          }
+        }
+      }
+
+      bossIdx = sheet.getLastColumn();
+      sheet.getRange(1, bossIdx + 1).setValue("weekly_boss");
+
+      for (let r = 1; r < data.length; r++) {
+        sheet.getRange(r + 1, bossIdx + 1).setValue(maxBossSetting);
+      }
+    }
+
+    const ticketName = "보스 도전기회 추가 티켓";
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
+        const rawInv = String(sheet.getRange(i + 1, invIdx + 1).getValue() || "");
+        let items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
+        const ticketIdx = items.indexOf(ticketName);
+
+        if (ticketIdx === -1) {
+          return {
+            success: false,
+            error: "가방에 <b style='color:var(--Red);'>보스 도전기회 추가 티켓</b>이 없습니다."
+          };
+        }
+
+        items.splice(ticketIdx, 1);
+
+        let currentBossChance = Number(sheet.getRange(i + 1, bossIdx + 1).getValue());
+        if (isNaN(currentBossChance)) currentBossChance = 0;
+
+        const newBossChance = currentBossChance + 1;
+        const newInventory = items.join(',');
+
+        sheet.getRange(i + 1, bossIdx + 1).setValue(newBossChance);
+        sheet.getRange(i + 1, invIdx + 1).setValue(newInventory);
+
+        logItemUsage(studentName, ticketName);
+
+        return {
+          success: true,
+          weekly_boss: newBossChance,
+          inventory: newInventory
+        };
+      }
+    }
+
+    return { success: false, error: "학생 정보를 찾을 수 없습니다." };
+
+  } catch (e) {
+    return { success: false, error: "티켓 사용 처리 중 오류 발생: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 💡 [신규] 보유 동료(용병) 목록 업데이트
+function updateUnlockedMercenaries(studentName, mercStr) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
+  if (!sheet) return "Error";
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const colIdx = headers.indexOf('unlocked_mercenaries') + 1;
+
+  if (colIdx === 0) return "Error: unlocked_mercenaries 열을 찾을 수 없음";
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === String(studentName).trim()) {
+      sheet.getRange(i + 1, colIdx).setValue(mercStr);
+      return "Success";
+    }
+  }
+  return "Error: 학생을 찾을 수 없음";
+}
+
+// 💡 [신규] 동료(용병) 가챠 뽑기 및 자동 승급 처리 함수
+function drawMercenaryServer(studentName) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // 1. system 시트에서 동료 뽑기 가격 및 등급별 확률 로드
+    let mercPrice = 100;
+    let probC = 50, probB = 35, probA = 12, probS = 3;
+
+    const sysSheet = ss.getSheetByName("system");
+    if (sysSheet) {
+      const sysData = sysSheet.getDataRange().getValues();
+      for (let i = 0; i < sysData.length; i++) {
+        const key = String(sysData[i][0]).trim();
+        const val = sysData[i][1];
+        if (key === "merc_price") mercPrice = Number(val) || 100;
+        if (key === "merc_prob_c") probC = Number(val) || 50;
+        if (key === "merc_prob_b") probB = Number(val) || 35;
+        if (key === "merc_prob_a") probA = Number(val) || 12;
+        if (key === "merc_prob_s") probS = Number(val) || 3;
+      }
+    }
+
+    // 2. mercenaries 시트 데이터 로드
+    const mercSheet = ss.getSheetByName("mercenaries");
+    if (!mercSheet) return { error: "mercenaries 시트가 없습니다." };
+    const mercData = mercSheet.getDataRange().getValues();
+    const mercHeaders = mercData[0].map(h => String(h).trim());
+    const idIdx = mercHeaders.indexOf("merc_id");
+    const tierIdx = mercHeaders.indexOf("tier");
+
+    if (idIdx === -1 || tierIdx === -1) return { error: "mercenaries 시트 헤더가 올바르지 않습니다." };
+
+    let allMercs = [];
+    for (let i = 1; i < mercData.length; i++) {
+      if (mercData[i][idIdx]) {
+        let obj = {};
+        mercHeaders.forEach((h, idx) => obj[h] = mercData[i][idx]);
+        allMercs.push(obj);
+      }
+    }
+
+    // 3. 학생 데이터 로드
+    const stSheet = ss.getSheetByName("students");
+    const stData = stSheet.getDataRange().getValues();
+    const stHeaders = stData[0].map(h => String(h).trim());
+    const nameIdx = stHeaders.indexOf("name");
+    const moneyIdx = stHeaders.indexOf("game_money");
+    const mercColIdx = stHeaders.indexOf("unlocked_mercenaries");
+
+    if (nameIdx === -1 || moneyIdx === -1 || mercColIdx === -1) {
+      return { error: "students 시트에 필수 열이 없습니다." };
+    }
+
+    let stRow = -1;
+    let currentMoney = 0;
+    let currentUnlockedStr = "";
+
+    for (let i = 1; i < stData.length; i++) {
+      if (String(stData[i][nameIdx]).trim() === String(studentName).trim()) {
+        stRow = i + 1;
+        currentMoney = Number(stData[i][moneyIdx]) || 0;
+        currentUnlockedStr = String(stData[i][mercColIdx] || "").replace(/!/g, "");
+        break;
+      }
+    }
+
+    if (stRow === -1) return { error: "학생 정보를 찾을 수 없습니다." };
+    if (currentMoney < mercPrice) return { error: "골드가 부족합니다." };
+
+    // 4. 보유 용병 목록 파싱
+    let unlockedIds = currentUnlockedStr ? currentUnlockedStr.split(",").map(x => x.trim()).filter(Boolean) : [];
+
+    // 5. 등급별 미보유 용병 분류
+    let unownedByTier = { C: [], B: [], A: [], S: [] };
+    allMercs.forEach(m => {
+      const mId = String(m.merc_id).trim();
+      const mTier = String(m.tier || "C").trim().toUpperCase();
+      if (!unlockedIds.includes(mId)) {
+        if (unownedByTier[mTier]) unownedByTier[mTier].push(m);
+        else unownedByTier['C'].push(m);
+      }
+    });
+
+    const totalUnowned = unownedByTier.C.length + unownedByTier.B.length + unownedByTier.A.length + unownedByTier.S.length;
+    if (totalUnowned === 0) {
+      return { allCleared: true, error: "이미 모든 용병을 영입하셨습니다!<br>재화는 차감되지 않습니다." };
+    }
+
+    // 6. system 시트 수치 기준 동적 등급 확률 추첨
+    let rolledTier = "C";
+    const totalProb = probC + probB + probA + probS;
+    const rand = Math.random() * (totalProb || 100);
+
+    if (rand <= probS) {
+      rolledTier = "S";
+    } else if (rand <= probS + probA) {
+      rolledTier = "A";
+    } else if (rand <= probS + probA + probB) {
+      rolledTier = "B";
+    } else {
+      rolledTier = "C";
+    }
+
+    // 7. 자동 승급 (해당 등급 올클리어 시 상위 등급으로 자동 업그레이드)
+    const tierOrder = ["C", "B", "A", "S"];
+    let startIdx = tierOrder.indexOf(rolledTier);
+    let finalPickedMerc = null;
+
+    for (let t = startIdx; t < tierOrder.length; t++) {
+      let tName = tierOrder[t];
+      if (unownedByTier[tName] && unownedByTier[tName].length > 0) {
+        let pool = unownedByTier[tName];
+        finalPickedMerc = pool[Math.floor(Math.random() * pool.length)];
+        break;
+      }
+    }
+
+    // 상위 등급에도 없으면 하위 등급 탐색
+    if (!finalPickedMerc) {
+      for (let t = startIdx - 1; t >= 0; t--) {
+        let tName = tierOrder[t];
+        if (unownedByTier[tName] && unownedByTier[tName].length > 0) {
+          let pool = unownedByTier[tName];
+          finalPickedMerc = pool[Math.floor(Math.random() * pool.length)];
+          break;
+        }
+      }
+    }
+
+    if (!finalPickedMerc) return { error: "추첨 가능한 용병이 없습니다." };
+
+    // 8. 재화 차감 및 신규 용병 unlocked_mercenaries 저장
+    let newMoney = currentMoney - mercPrice;
+    unlockedIds.push(String(finalPickedMerc.merc_id).trim());
+    let newUnlockedStr = "!" + unlockedIds.join(",");
+
+    stSheet.getRange(stRow, moneyIdx + 1).setValue(newMoney);
+    stSheet.getRange(stRow, mercColIdx + 1).setValue(newUnlockedStr);
+
+    logItemUsage(studentName, `용병 뽑기: ${finalPickedMerc.name} [${finalPickedMerc.tier}급] (${mercPrice}골드 소모)`);
+
+    return {
+      success: true,
+      merc: finalPickedMerc,
+      newMoney: newMoney,
+      unlockedStr: newUnlockedStr
+    };
+
+  } catch (e) {
+    return { error: "용병 뽑기 처리 중 오류 발생: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 💡 [신규] 파티 배치(동료1, 동료2, 동료1스킬, 동료2스킬) 저장 함수
+function savePartySetup(studentName, partyData) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('students');
+  if (!sheet) return { success: false, message: "students 시트를 찾을 수 없습니다." };
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+
+  const nameIdx = headers.indexOf('name');
+  const m1Idx = headers.indexOf('party_m1');
+  const m2Idx = headers.indexOf('party_m2');
+  const s1Idx = headers.indexOf('party_s1');
+  const s2Idx = headers.indexOf('party_s2');
+
+  if (nameIdx === -1 || m1Idx === -1 || m2Idx === -1 || s1Idx === -1 || s2Idx === -1) {
+    return { success: false, message: "파티 관련 컬럼 헤더가 시트에 존재하지 않습니다." };
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
+      const rowNum = i + 1;
+      sheet.getRange(rowNum, m1Idx + 1).setValue(partyData.party_m1 || "");
+      sheet.getRange(rowNum, m2Idx + 1).setValue(partyData.party_m2 || "");
+      sheet.getRange(rowNum, s1Idx + 1).setValue(partyData.party_s1 || "");
+      sheet.getRange(rowNum, s2Idx + 1).setValue(partyData.party_s2 || "");
+      return { success: true, message: "파티 배치가 성공적으로 저장되었습니다." };
+    }
+  }
+  return { success: false, message: "학생을 찾을 수 없습니다." };
+}
+
+// 💡 [신규] 상점 아이템 구매 처리 함수 (슬롯 확장권 및 일반 아이템)
+function buyShopItem(studentName, itemName, cost) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("students");
+    if (!sheet) return { success: false, message: "students 시트가 없습니다." };
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const nameIdx = headers.indexOf("name");
+    const moneyIdx = headers.indexOf("game_money");
+
+    if (nameIdx === -1 || moneyIdx === -1) return { success: false, message: "필수 열이 없습니다." };
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
+        let currentMoney = Number(data[i][moneyIdx]) || 0;
+        if (currentMoney < cost) {
+          return { success: false, message: "골드가 부족합니다." };
+        }
+
+        // 재화 차감
+        sheet.getRange(i + 1, moneyIdx + 1).setValue(currentMoney - cost);
+
+        // 💡 [패치] 가방에서 수동으로 사용하도록 모든 상점 아이템을 일괄 인벤토리에 지급합니다.
+        addItemToInventoryBackend(studentName, itemName);
+
+        logItemUsage(studentName, `상점 구매: ${itemName} (${cost}골드 소모)`);
+        return { success: true, newMoney: currentMoney - cost };
+      }
+    }
+    return { success: false, message: "학생을 찾을 수 없습니다." };
+  } catch (e) {
+    return { success: false, message: "구매 처리 중 오류: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 💡 파이어베이스 전송 함수
+// 💡 [완벽 스마트 탭 분리 연동] 선생님의 탭별 시트 편집 + 학생 스탯 100% 보호 코드
+function syncToFirebase(e) {
+  var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData";
+  
+  if (e && e.range) {
+    var sheet = e.range.getSheet();
+    var sheetName = sheet.getName();
+    
+    // 1. 학생(students) 시트를 고쳤을 때 -> 해당 학생 해당 셀만 핀포인트 업데이트
+    if (sheetName === "students") {
+      var row = e.range.getRow();
+      var col = e.range.getColumn();
+      if (row > 1) {
+        var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return String(h).trim(); });
+        var colName = headers[col - 1];
+        var studentName = String(sheet.getRange(row, 1).getValue()).trim();
+        var newValue = e.range.getValue();
+
+        var res = UrlFetchApp.fetch(baseUrl + ".json");
+        var data = JSON.parse(res.getContentText()) || {};
+        if (data.students) {
+          var idx = data.students.findIndex(function(s) { return s && String(s.name).trim() === studentName; });
+          
+          // 1. 기존 학생 수정 시 -> 해당 셀만 핀포인트 즉시 업데이트
+          if (idx !== -1 && colName) {
+            UrlFetchApp.fetch(baseUrl + "/students/" + idx + "/" + colName + ".json", {
+              method: "put",
+              contentType: "application/json",
+              payload: JSON.stringify(newValue)
+            });
+            Logger.log("✅ [학생 시트 수정] [" + studentName + "]의 " + colName + " = " + newValue);
+            return;
+          }
+          
+          // 2. 💡 [신규 학생 추가 시] -> 파이어베이스 학생 목록 맨 끝에 기본 데이터 즉시 생성!
+          if (idx === -1 && studentName) {
+            var newStudentObj = {
+              name: studentName,
+              level: 1, exp: 0, level_points: 0,
+              reading_count: 0, bonus_points: 0, game_money: 0,
+              hp_points: 5, atk_points: 5, def_points: 5, luk_points: 5,
+              weapon_lv: 0, head_lv: 0, body_lv: 0, accessory_lv: 0,
+              weapon_fail: 0, head_fail: 0, body_fail: 0, accessory_fail: 0,
+              equipped_skin: "HD001",
+              unlocked_skins: "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008",
+              weekly_battles: 2, weekly_boss: 3, weekly_raid: 1, weekly_tower: 1,
+              max_tower_floor: 0, flee_count: 0, relic_pull_count: 0, quest_count: 0, total_forge_fail: 0,
+              merc_slot2_unlocked: "FALSE", wb_total_damage: 0
+            };
+            var newIdx = data.students.length;
+            UrlFetchApp.fetch(baseUrl + "/students/" + newIdx + ".json", {
+              method: "put",
+              contentType: "application/json",
+              payload: JSON.stringify(newStudentObj)
+            });
+            Logger.log("🎉 [신규 학생 시트 입력] [" + studentName + "] 파이어베이스 즉시 등록 완료!");
+            return;
+          }
+        }
+      }
+    }
+
+    // 2. 다른 기획/설정 시트를 고쳤을 때 -> 해당 탭만 파이어베이스로 스마트 업데이트 (학생 스탯 100% 보호!)
+    var gameData = getGameData();
+    var tabKeyMap = {
+      "system": "system",
+      "skills": "skills",
+      "relics": "relics",
+      "skins": "skins",
+      "monsters": "monsters",
+      "monster_skills": "monsterSkills",
+      "bosses": "bosses",
+      "dungeons": "dungeons",
+      "loot_boxes": "lootBoxes",
+      "shop": "shopItems",
+      "mercenaries": "mercenaries",
+      "world_bosses": "worldBosses",
+      "Quests": "quests",
+      "Notices": "notices"
+    };
+
+    var targetKey = tabKeyMap[sheetName];
+    if (targetKey && gameData[targetKey]) {
+      UrlFetchApp.fetch(baseUrl + "/" + targetKey + ".json", {
+        method: "put",
+        contentType: "application/json",
+        payload: JSON.stringify(gameData[targetKey])
+      });
+      Logger.log("✅ [" + sheetName + " 시트 수정] 파이어베이스 " + targetKey + " 탭 업데이트 완료!");
+      return;
+    }
+  }
+
+  // 3. 전체 수동 실행 시: 학생 최신 스탯 보존 후 전체 안전 전송
+  var fullData = getGameData();
+  try {
+    var fbRes = UrlFetchApp.fetch(baseUrl + ".json");
+    var fbData = JSON.parse(fbRes.getContentText()) || {};
+    if (fbData.students && fullData.students) {
+      var preserveFields = ["hp_points", "atk_points", "def_points", "luk_points", "password", "inventory", "equipped_1", "equipped_2", "relic_1", "relic_2", "equipped_skin", "equipped_title", "party_m1", "party_m2", "party_s1", "party_s2", "unlocked_skills", "unlocked_relics", "unlocked_skins", "unlocked_mercenaries", "weekly_battles", "weekly_boss", "weekly_raid", "weekly_tower", "max_tower_floor"];
+      fullData.students.forEach(function(s, idx) {
+        var fbS = fbData.students[idx];
+        if (fbS && fbS.name === s.name) {
+          preserveFields.forEach(function(f) { if (fbS[f] !== undefined) s[f] = fbS[f]; });
+        }
+      });
+    }
+  } catch(err) {}
+
+  UrlFetchApp.fetch(baseUrl + ".json", {
+    method: "put",
+    contentType: "application/json",
+    payload: JSON.stringify(fullData)
+  });
+  Logger.log("✅ 학생 스탯 보존 + 전체 데이터 파이어베이스 수동 동기화 완료!");
+}
+
+// 💡 [통합 백업] 학생 데이터, 퀘스트, 성찰일지, 공지사항 시트 자동 연동 함수
+// 💡 [시간 제한 해제] 24시간 언제든 파이어베이스 최신 데이터를 시트로 0.1초 일괄 백업
+function syncFromFirebase() {
+  var firebaseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData.json";
+  var res = UrlFetchApp.fetch(firebaseUrl);
+  var data = JSON.parse(res.getContentText());
+
+  if (!data) return;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. 학생(students) 탭 0.1초 일괄 백업 (setValues 활용)
+  if (data.students && Array.isArray(data.students)) {
+    var stSheet = ss.getSheetByName("students");
+    if (stSheet) {
+      var range = stSheet.getDataRange();
+      var values = range.getValues(); // 시트 전체 데이터 2D 배열로 읽기
+      var headers = values[0].map(function(h) { return String(h).trim(); });
+
+      // 선생님 전담 영역 (보존할 컬럼 인덱스 추출)
+      var teacherFields = ["reading_count", "bonus_points", "custom_titles"];
+      var teacherColIndices = teacherFields.map(function(f) { return headers.indexOf(f); });
+
+      // 메모리(RAM) 상에서 0.001초 만에 최신 학생 데이터 병합 (시트 호출 0회)
+      data.students.forEach(function(student) {
+        if (!student || !student.name) return;
+
+        for (var r = 1; r < values.length; r++) {
+          if (String(values[r][headers.indexOf("name")]).trim() === String(student.name).trim()) {
+            headers.forEach(function(h, c) {
+              // 선생님 전담 컬럼이 아니고, 파이어베이스에 값이 존재하는 경우만 메모리 표 업데이트
+              if (c !== -1 && !teacherColIndices.includes(c) && student[h] !== undefined) {
+                values[r][c] = student[h];
+              }
+            });
+            break;
+          }
+        }
+      });
+
+      // 단 1번의 시트 명령으로 0.1초 만에 완성된 표 데이터를 도장 쾅!
+      stSheet.getRange(1, 1, values.length, values[0].length).setValues(values);
+    }
+  }
+
+  // 2. 퀘스트(Quests) 탭 일괄 백업
+  if (data.quests && Array.isArray(data.quests)) {
+    var qSheet = ss.getSheetByName("Quests");
+    if (qSheet) {
+      var qRows = [["quest_id", "title", "description", "require_text", "reward_gold", "reward_exp", "reward_point", "is_active", "is_auto_approve", "repeat_cycle"]];
+      data.quests.forEach(function(q) {
+        if (q && q.quest_id) {
+          qRows.push([q.quest_id, q.title, q.description, q.require_text, q.reward_gold, q.reward_exp, q.reward_point, q.is_active, q.is_auto_approve, q.repeat_cycle]);
+        }
+      });
+      qSheet.clearContents();
+      qSheet.getRange(1, 1, qRows.length, qRows[0].length).setValues(qRows);
+    }
+  }
+
+  // 3. 성찰일지 제출물(Submissions) 탭 일괄 백업
+  if (data.submissions && Array.isArray(data.submissions)) {
+    var subSheet = ss.getSheetByName("Submissions");
+    if (subSheet) {
+      var subRows = [["quest_id", "student_name", "status", "answer_text", "submitted_at"]];
+      data.submissions.forEach(function(sub) {
+        if (sub && sub.quest_id) {
+          subRows.push([sub.quest_id, sub.student_name, sub.status, sub.answer_text, sub.submitted_at]);
+        }
+      });
+      subSheet.clearContents();
+      subSheet.getRange(1, 1, subRows.length, subRows[0].length).setValues(subRows);
+    }
+  }
+
+  // 4. 공지사항(Notices) 탭 일괄 백업
+  if (data.notices && Array.isArray(data.notices)) {
+    var nSheet = ss.getSheetByName("Notices");
+    if (nSheet) {
+      var nRows = [["notice_id", "date", "category", "title", "content", "is_active"]];
+      data.notices.forEach(function(n) {
+        if (n && n.notice_id) {
+          nRows.push([n.notice_id, n.date, n.category, n.title, n.content, n.is_active]);
+        }
+      });
+      nSheet.clearContents();
+      nSheet.getRange(1, 1, nRows.length, nRows[0].length).setValues(nRows);
+    }
+  }
+
+  Logger.log("✅ 0.1초 초고속 배치(setValues) 통합 시트 백업 완료!");
+}
