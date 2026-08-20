@@ -189,7 +189,7 @@ function renderButtons(students) {
     students.forEach(s => {
         if (!s.name) return;
 
-        // 💡 [신규] 전학생/신규 계정 자동 기본값 보정 (이름만 있어도 오류 없이 자동 세팅)
+        // 💡 [빈칸일 때만 채우기] 비어있는 항목만 기본값 채우고, 기존 데이터는 100% 보존
         if (s.level === undefined || s.level === "" || Number(s.level) === 0) s.level = 1;
         if (s.hp_points === undefined || s.hp_points === "") s.hp_points = 5;
         if (s.atk_points === undefined || s.atk_points === "") s.atk_points = 5;
@@ -199,6 +199,8 @@ function renderButtons(students) {
         if (s.weekly_boss === undefined || s.weekly_boss === "") s.weekly_boss = Number(sysConfig.max_weekly_boss) || 3;
         if (s.weekly_raid === undefined || s.weekly_raid === "") s.weekly_raid = Number(sysConfig.max_weekly_raid) || 1;
         if (s.weekly_tower === undefined || s.weekly_tower === "") s.weekly_tower = Number(sysConfig.max_weekly_tower) || 1;
+        if (!s.equipped_skin || s.equipped_skin === "") s.equipped_skin = "HD001";
+        if (!s.unlocked_skins || s.unlocked_skins === "") s.unlocked_skins = "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008";
 
         const btn = document.createElement('button');
         btn.className = 'student-btn ' + (s.blessing ? 'btn-' + s.blessing : '');
@@ -353,35 +355,30 @@ function saveBlessing(bId) {
     document.getElementById('modalBody').innerHTML = '<h3 style="margin-top: 50px; color:var(--Highlight);">각성 진행 중...</h3>';
 
     currentStudent.blessing = bId;
-    currentStudent.password = currentStudent.password || '!1234';
-    currentStudent.hp_points = 5;
-    currentStudent.atk_points = 5;
-    currentStudent.def_points = 5;
-    currentStudent.luk_points = 5;
-    currentStudent.level = 1;
-    currentStudent.exp = 0;
-    currentStudent.level_points = 0;
-    currentStudent.reading_count = 0;
-    currentStudent.bonus_points = 0;
-    currentStudent.game_money = 0;
 
-    currentStudent.weapon_lv = 0;
-    currentStudent.head_lv = 0;
-    currentStudent.body_lv = 0;
-    currentStudent.accessory_lv = 0;
-    currentStudent.weapon_fail = 0;
-    currentStudent.head_fail = 0;
-    currentStudent.body_fail = 0;
-    currentStudent.accessory_fail = 0;
+    // 💡 [빈칸일 때만 채우기] 이미 값이 있는 스탯, 골드, 레벨, 스킨 등은 절대 건드리지 않음
+    if (!currentStudent.password || currentStudent.password === "") currentStudent.password = '!1234';
+    if (currentStudent.hp_points === undefined || currentStudent.hp_points === "") currentStudent.hp_points = 5;
+    if (currentStudent.atk_points === undefined || currentStudent.atk_points === "") currentStudent.atk_points = 5;
+    if (currentStudent.def_points === undefined || currentStudent.def_points === "") currentStudent.def_points = 5;
+    if (currentStudent.luk_points === undefined || currentStudent.luk_points === "") currentStudent.luk_points = 5;
+    
+    if (currentStudent.level === undefined || currentStudent.level === "") currentStudent.level = 1;
+    if (currentStudent.exp === undefined || currentStudent.exp === "") currentStudent.exp = 0;
+    if (currentStudent.level_points === undefined || currentStudent.level_points === "") currentStudent.level_points = 0;
+    if (currentStudent.bonus_points === undefined || currentStudent.bonus_points === "") currentStudent.bonus_points = 0;
+    if (currentStudent.game_money === undefined || currentStudent.game_money === "") currentStudent.game_money = 0;
 
-    currentStudent.weekly_battles = Number(sysConfig.max_weekly_battles) || 2;
-    currentStudent.weekly_boss = Number(sysConfig.max_weekly_boss) || 3;
-    currentStudent.weekly_raid = Number(sysConfig.max_weekly_raid) || 1;
-    currentStudent.weekly_tower = Number(sysConfig.max_weekly_tower) || 1;
-    currentStudent.max_tower_floor = 0;
+    if (!currentStudent.equipped_skin || currentStudent.equipped_skin === "") currentStudent.equipped_skin = "HD001";
 
-    currentStudent.unlocked_skins = "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008";
-    currentStudent.equipped_skin = "HD001";
+    // 💡 기존 보유 스킨이 있으면 그대로 두고, 비어있을 때만 기본 8종 추가
+    const rawSkins = String(currentStudent.unlocked_skins || "").replace(/!/g, '');
+    let mySkins = rawSkins ? rawSkins.split(',').map(x => x.trim()).filter(Boolean) : [];
+    const defaultSkins = ['HD001', 'HD002', 'HD003', 'HD004', 'HD005', 'HD006', 'HD007', 'HD008'];
+    defaultSkins.forEach(ds => {
+        if (!mySkins.includes(ds)) mySkins.push(ds);
+    });
+    currentStudent.unlocked_skins = "!" + mySkins.join(',');
 
     renderDashboard();
     updateFastFirebaseStudent(currentStudent);
