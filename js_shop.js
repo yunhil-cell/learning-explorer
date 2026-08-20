@@ -597,6 +597,25 @@ function processUseItem(itemName) {
         content: itemName
     });
 
+    // 🧪 [신규] 망각의 물약 사용 처리 (스탯 초기화, 포인트 전액 환급, 가호 재선택)
+    if (itemName.includes('망각의 물약') || itemName.includes('망각')) {
+        currentStudent.hp_points = 5;
+        currentStudent.atk_points = 5;
+        currentStudent.def_points = 5;
+        currentStudent.luk_points = 5;
+        currentStudent.blessing = ""; // 가호 초기화 (재각성 가능)
+
+        updateFastFirebaseStudent(currentStudent);
+        showUiAlert(
+            "🧪 망각의 물약 사용 완료!",
+            "정신이 맑아지며 영혼이 초기 상태로 정화되었습니다.<br><br>" +
+            "▪ <b>투자한 모든 스탯 포인트가 반환되었습니다.</b><br>" +
+            "▪ <b>새로운 가호(속성)를 다시 선택할 수 있습니다.</b>",
+            "closeModal(); openStudentDetail();"
+        );
+        return;
+    }
+
     if (itemName === '보스 도전기회 추가 티켓') {
         currentStudent.weekly_boss = (Number(currentStudent.weekly_boss) || 0) + 1;
         updateFastFirebaseStudent(currentStudent);
