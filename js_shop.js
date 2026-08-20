@@ -486,7 +486,7 @@ function openInventory() {
 }
 
 function promptUseItem(itemName) {
-    // 💡 [신규] 전리품 상자 개봉 로직 연결
+    // 💡 1. 전리품 상자 개봉 로직 연결
     const boxData = lootBoxesData.find(b => b.box_name === itemName);
     if (boxData) {
         showUiConfirm(
@@ -497,16 +497,47 @@ function promptUseItem(itemName) {
         return;
     }
 
+    // 💡 2. 보스 도전권 안내
     if (itemName.includes('보스 도전권')) {
         showUiAlert('⚠️ 안내', '보스 도전권은 혼자서 도전하는 <b style="color:var(--Red);">1대1 보스전</b> 입장 시 사용됩니다.<br><br><span style="font-size:0.85em; color:var(--TextSub);">(가방에서는 직접 사용할 수 없으며, 메인 화면의 보스 도전을 이용하세요.)</span>', '');
         return;
     }
 
-    showUiConfirm(
-        "🎟️ 아이템 사용",
-        "[<b style='color:var(--Highlight);'>" + itemName + "</b>]을(를) 사용하시겠습니까?<br><br><span style='font-size:0.85em; color:var(--Red);'>(선생님께 확인을 받고 나서 [확인]을 눌러주세요!)</span>",
-        "processUseItem('" + itemName + "')"
-    );
+    // 💡 3. 현재 가방 내 동일 아이템 보유 개수 파악
+    const rawInv = String(currentStudent.inventory || "");
+    const items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
+    const count = items.filter(x => x === itemName).length;
+
+    // 💡 단일 수량일 때
+    if (count <= 1) {
+        showUiConfirm(
+            "🎟️ 아이템 사용",
+            "[<b style='color:var(--Highlight);'>" + itemName + "</b>]을(를) 사용하시겠습니까?<br><br><span style='font-size:0.85em; color:var(--Red);'>(선생님께 확인을 받고 나서 [확인]을 눌러주세요!)</span>",
+            "processUseItem('" + itemName + "', 1)"
+        );
+        return;
+    }
+
+    // 💡 4. 복수 수량일 때: 수량 선택(묶음 사용) 팝업 제공
+    document.getElementById('uiPopupTitle').innerHTML = '🎟️ 아이템 묶음 사용';
+    document.getElementById('uiPopupMessage').innerHTML =
+        '<b style="color:var(--Highlight); font-size:1.15em;">[' + itemName + ']</b><br>' +
+        '<span style="color:var(--TextSub); font-size:0.9em;">(보유 수량: <b>' + count + '개</b>)</span><br><br>' +
+        '<div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:10px;">' +
+        '  <button class="small-btn" style="width:36px; height:36px; font-size:1.2em; background:var(--BtnShop);" onclick="let el=document.getElementById(\'batchUseInput\'); el.value=Math.max(1, Number(el.value)-1);">-</button>' +
+        '  <input type="number" id="batchUseInput" class="num-input" value="' + count + '" min="1" max="' + count + '" style="width:80px; text-align:center; font-size:1.3em;">' +
+        '  <button class="small-btn" style="width:36px; height:36px; font-size:1.2em; background:var(--BtnShop);" onclick="let el=document.getElementById(\'batchUseInput\'); el.value=Math.min(' + count + ', Number(el.value)+1);">+</button>' +
+        '</div>' +
+        '<button class="small-btn" style="background:#475569; padding:4px 10px; font-size:0.8em; margin-bottom:10px;" onclick="document.getElementById(\'batchUseInput\').value=' + count + ';">최대 수량(' + count + '개) 선택</button><br>' +
+        '<span style="font-size:0.85em; color:var(--Red);">(선생님께 보여드리기 직전에 눌러주세요!)</span>';
+
+    const confirmCode = "let qty = Math.min(" + count + ", Math.max(1, Number(document.getElementById('batchUseInput').value) || 1)); processUseItem('" + itemName + "', qty);";
+
+    document.getElementById('uiPopupButtons').innerHTML =
+        '<button style="flex:1; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1.1em; cursor:pointer;" onclick="closeUiPopup()">취소</button>' +
+        '<button style="flex:1; padding:12px; border-radius:10px; border:none; background:var(--Highlight); color:white; font-weight:bold; font-size:1.1em; cursor:pointer;" onclick="closeUiPopup(); ' + confirmCode + '">사용하기</button>';
+
+    document.getElementById('uiPopup').style.display = 'flex';
 }
 
 // 💡 [신규] 전리품 상자 개봉 애니메이션 및 결과 출력
@@ -579,13 +610,19 @@ function openLootBox(itemName, boxId) {
     }, 1000);
 }
 
-function processUseItem(itemName) {
+function processUseItem(itemName, count = 1) {
+    const useCount = Math.max(1, Number(count) || 1);
     const rawInv = String(currentStudent.inventory || "");
     let items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
 
-    const index = items.indexOf(itemName);
-    if (index > -1) {
-        items.splice(index, 1);
+    // 💡 지정한 수량(useCount)만큼 인벤토리에서 순차 제거
+    let removedCount = 0;
+    for (let i = 0; i < useCount; i++) {
+        const index = items.indexOf(itemName);
+        if (index > -1) {
+            items.splice(index, 1);
+            removedCount++;
+        }
     }
     currentStudent.inventory = items.join(',');
 
@@ -594,7 +631,7 @@ function processUseItem(itemName) {
         time: new Date().toISOString(),
         name: currentStudent.name,
         category: "아이템 사용",
-        content: itemName
+        content: itemName + (removedCount > 1 ? " x" + removedCount : "")
     });
 
     // 🧪 [신규] 망각의 물약 사용 처리 (스탯 초기화, 포인트 전액 환급, 가호 재선택)
@@ -617,9 +654,9 @@ function processUseItem(itemName) {
     }
 
     if (itemName === '보스 도전기회 추가 티켓') {
-        currentStudent.weekly_boss = (Number(currentStudent.weekly_boss) || 0) + 1;
+        currentStudent.weekly_boss = (Number(currentStudent.weekly_boss) || 0) + removedCount;
         updateFastFirebaseStudent(currentStudent);
-        showUiAlert("🎫 사용 완료!", "[보스 도전기회 추가 티켓]을 사용했습니다.<br><br><span style='color:var(--Red); font-weight:bold;'>보스 도전 기회가 1회 회복되었습니다.</span>", "openInventory()");
+        showUiAlert("🎫 사용 완료!", "[보스 도전기회 추가 티켓] <b>" + removedCount + "장</b>을 사용했습니다.<br><br><span style='color:var(--Red); font-weight:bold;'>보스 도전 기회가 " + removedCount + "회 회복되었습니다.</span>", "openInventory()");
         return;
     }
 
@@ -644,8 +681,22 @@ function processUseItem(itemName) {
         updateFastFirebaseStudent(currentStudent);
         showUiAlert("🩹 치료 완료!", "[" + itemName + "]을(를) 사용하여 부상을 완치했습니다!<br><span style='color:var(--Green); font-weight:bold;'>이제 다시 사냥터에 입장할 수 있습니다.</span>", "renderDashboard()");
     } else {
+        // 💡 [신규] 현실 재화(티) 교환권일 경우 총 합산 티(Ticket) 계산 출력
+        const rmMatch = itemName.match(/\[현실 재화\]\s*(\d+)(.*?)\s*교환권/);
+        let totalNotice = "";
+        if (rmMatch) {
+            const singleVal = Number(rmMatch[1]) || 0;
+            const currencyUnit = rmMatch[2] || sysConfig.currency_name || '티';
+            const totalVal = singleVal * removedCount;
+            totalNotice = "<br><br><span style='font-size:1.25em; color:var(--TextGold); font-weight:bold;'>총 지급액: " + totalVal + currencyUnit + "</span>";
+        }
+
         updateFastFirebaseStudent(currentStudent);
-        showUiAlert("🎉 사용 완료!", "[" + itemName + "]을(를) 성공적으로 사용했습니다!<br><span style='font-size:0.9em; color:var(--Highlight);'>선생님께 말씀드려 보상을 받으세요.</span>", "openInventory()");
+        showUiAlert(
+            "🎉 사용 완료!",
+            "<b>[" + itemName + "] " + removedCount + "개</b>를 사용했습니다!" + totalNotice + "<br><br><span style='font-size:0.95em; color:var(--Highlight); font-weight:bold;'>선생님께 이 화면을 보여드리고 보상을 받으세요.</span>",
+            "openInventory()"
+        );
     }
 }
 

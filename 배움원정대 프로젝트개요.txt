@@ -729,7 +729,7 @@ is_active
   * `turn_limit`: 1회 도전 시 서바이벌 제한 턴수 (기본: `10`)
   * `daily_gold`: 일일 출전 기본 참여 보상 골드
   * `daily_exp`: 일일 출전 기본 참여 보상 경험치
-  * `gimmick_type`: 보스 특수 기믹 (`time_attack`, `shield`, `berserk`, `lifesteal`, `none`)
+  * `gimmick_type`: 보스 특수 기믹 (`time_attack`, `shield`, `berserk`, `lifesteal`, `reflect`, `none`)
   * `gimmick_value`: 기믹 발동 기준 수치 (턴수, 체력 비율, 흡혈 비율 등)
   * `icon_url`: 보스 일러스트 이미지 URL
   * `is_active`: 현재 시즌 활성화 여부 (`TRUE`/`FALSE`)

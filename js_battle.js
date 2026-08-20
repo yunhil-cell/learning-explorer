@@ -855,7 +855,7 @@ function playAnim(elementId, animClass, duration) {
     }, duration);
 }
 
-// --- 플레이어 데미지 몬스터에게 적용 (피격 애니메이션 추가) ---
+// --- 플레이어 데미지 몬스터에게 적용 (피격 애니메이션 및 반사 방패 기믹 연동) ---
 function applyDamageToMonster(baseDmg, finalDef, prefixText) {
     // 다단히트 중 이미 몬스터가 죽었다면 추가 타격 생략
     if (battleState.monsterCurrentHp <= 0) return;
@@ -863,15 +863,43 @@ function applyDamageToMonster(baseDmg, finalDef, prefixText) {
     let finalDmg = Math.floor(baseDmg * (100 / (100 + finalDef)));
     if (finalDmg < 1) finalDmg = 1;
 
+    // 💡 [신규 기믹] reflect (반사 방패): 지정 턴 주기마다 피해의 30%를 플레이어에게 반사
+    let isReflectTurn = false;
+    let reflectDmg = 0;
+    if (battleState.isBoss && (battleState.gimmick_type === 'reflect' || battleState.gimmick_type === '반사')) {
+        const interval = Math.max(1, battleState.gimmick_value || 3);
+        if (battleState.turnCount % interval === 0) {
+            isReflectTurn = true;
+            reflectDmg = Math.max(1, Math.floor(finalDmg * 0.3));
+        }
+    }
+
     battleState.monsterCurrentHp -= finalDmg;
     if (battleState.monsterCurrentHp < 0) battleState.monsterCurrentHp = 0;
 
     let hitMsg = prefixText ? prefixText : "";
     logBattle(hitMsg + '적에게 ' + finalDmg + '의 피해!');
-    updateHpBars();
 
-    // 다단히트 시 애니메이션이 겹치지 않게 재생 시간을 250ms로 단축
+    // 💡 반사 데미지 적용 및 로그
+    if (isReflectTurn && reflectDmg > 0) {
+        battleState.playerCurrentHp = Math.max(0, battleState.playerCurrentHp - reflectDmg);
+        logBattle('⚡ <b style="color:#F59E0B;">[반사 방패] 보스의 가시 방패가 피해의 30%(' + reflectDmg + ')를 플레이어에게 반사했습니다!</b>');
+        playAnim('battlePlayerImg', 'anim-damage-p', 250);
+    }
+
+    updateHpBars();
     playAnim('battleMonsterImg', 'anim-damage', 250);
+
+    // 반사 피해로 플레이어가 먼저 쓰러졌는지 체크
+    if (battleState.playerCurrentHp <= 0) {
+        logBattle('☠️ <b style="color:#ff4d4d;">보스의 반사 피해를 버티지 못하고 쓰러졌습니다...</b>');
+        battleState.isAutoRunning = false;
+        setTimeout(function () {
+            if (battleState.isTower) handleTowerPlayerDefeat();
+            else showBattleResult(false);
+        }, 1500);
+        return;
+    }
 
     if (battleState.monsterCurrentHp === 0) {
         logBattle('🏆 <b style="color:#ffd700;">' + battleState.monster.name + ' 처치 성공!</b>');
