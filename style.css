@@ -159,16 +159,29 @@ margin: 0;
 padding: 25px;
 width: 90%;
 max-width: 900px;
+height: 85vh; /* 💡 높이 완전 고정 */
+min-height: 580px;
 max-height: 85vh;
 overflow-y: auto;
 border-radius: 25px;
 border: none;
 box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
 position: relative;
+box-sizing: border-box;
+display: flex;
+flex-direction: column;
 }
 
 .sub-modal-content {
 background: var(--Bg); /* 시스템 팝업은 빈티지 화이트 유지 */
+width: 90%;
+max-width: 850px;
+height: 85vh; /* 💡 서브 모달 높이 들쑥날쑥 방지 완전 고정 */
+min-height: 580px;
+max-height: 85vh;
+box-sizing: border-box;
+display: flex;
+flex-direction: column;
 }
 
 .close-btn {
@@ -203,7 +216,8 @@ text-align: left;
 
 @media (max-width: 768px) {
 html { font-size: 15px; }
-.modal-content { padding: 15px; width: 95%; max-height: 90vh; }
+.modal-content { padding: 15px; width: 95%; height: 90vh; min-height: auto; max-height: 90vh; }
+.sub-modal-content { width: 95%; height: 90vh; min-height: auto; max-height: 90vh; }
 .db-grid { grid-template-columns: 1fr; gap: 12px; }
 .stat-row { white-space: normal; word-break: keep-all; line-height: 1.4; }
 #battlePlayerImg { width: 100px !important; height: 100px !important; }
