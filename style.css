@@ -890,36 +890,6 @@ animation: attackM2P 0.3s ease-in-out;
 animation: damageShake 0.4s ease-in-out;
 }
 
-/* 💡 신규 추가: 피격 시 흔들림 (플레이어용 - 거울 모드 반전 유지) */
-@keyframes damageShakeP {
-0% {
-transform: translateX(0) scaleX(-1);
-filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5));
-}
-
-20% {
-transform: translateX(-15px) scaleX(-1);
-filter: brightness(2) drop-shadow(0 0 20px red);
-}
-
-40% {
-transform: translateX(15px) scaleX(-1);
-}
-
-60% {
-transform: translateX(-15px) scaleX(-1);
-}
-
-80% {
-transform: translateX(15px) scaleX(-1);
-}
-
-100% {
-transform: translateX(0) scaleX(-1);
-filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5));
-}
-}
-
 .anim-damage-p {
 animation: damageShakeP 0.4s ease-in-out;
 }

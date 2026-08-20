@@ -278,6 +278,12 @@ function fleeBattle() {
         return;
     }
 
+    // 💡 [신규] 월드 보스전 도망 시 일반 사냥 패널티 없이 안전하게 월드보스 결과 정산으로 연결
+    if (battleState.isWorldBoss) {
+        finishWorldBossSession(false);
+        return;
+    }
+
     document.getElementById('battleModal').style.display = 'none';
 
     if (battleState.isRaid) {

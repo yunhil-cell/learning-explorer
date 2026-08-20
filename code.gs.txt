@@ -160,6 +160,10 @@ function getGameData() {
     result.quests = getQuestsData() || [];
     result.submissions = getSubmissionsData() || [];
 
+    // 💡 12. 시트에 백업된 대장간 강화 로그 및 활동 로그 로드 (웹 로그 보존용)
+    result.forgeLogs = getForgeLogData() || [];
+    result.logs = getCommonLogData() || [];
+
     // 💡 [파이어베이스 연동 필수] 몬스터, 보스, 던전, 몬스터 스킬 데이터 묶음 포함
     result.monsters = getMonsterData() || [];
     result.monsterSkills = getMonsterSkillData() || [];
@@ -382,7 +386,7 @@ function updateEquippedRelic(name, slotNum, relicId) {
   }
 }
 
-// 1. 가호 선택 결과 업데이트 함수
+// 1. 가호 선택 결과 업데이트 함수 (빈칸일 때만 기본값 채우기)
 function updateStudentBlessing(name, blessing) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
   const data = sheet.getDataRange().getValues();
@@ -403,14 +407,17 @@ function updateStudentBlessing(name, blessing) {
       let rowData = data[i];
       rowData[colIdx - 1] = blessing;
 
-      if (hpIdx > 0) rowData[hpIdx - 1] = 5;
-      if (atkIdx > 0) rowData[atkIdx - 1] = 5;
-      if (defIdx > 0) rowData[defIdx - 1] = 5;
-      if (lukIdx > 0) rowData[lukIdx - 1] = 5;
+      // 💡 [빈칸일 때만 채우기] 이미 스탯이 적혀있으면 그대로 유지
+      if (hpIdx > 0 && (rowData[hpIdx - 1] === "" || rowData[hpIdx - 1] === undefined)) rowData[hpIdx - 1] = 5;
+      if (atkIdx > 0 && (rowData[atkIdx - 1] === "" || rowData[atkIdx - 1] === undefined)) rowData[atkIdx - 1] = 5;
+      if (defIdx > 0 && (rowData[defIdx - 1] === "" || rowData[defIdx - 1] === undefined)) rowData[defIdx - 1] = 5;
+      if (lukIdx > 0 && (rowData[lukIdx - 1] === "" || rowData[lukIdx - 1] === undefined)) rowData[lukIdx - 1] = 5;
 
       if (unlSkinsIdx > 0 && (!rowData[unlSkinsIdx - 1] || rowData[unlSkinsIdx - 1] === "")) {
         rowData[unlSkinsIdx - 1] = "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008";
-        if (eqSkinIdx > 0) rowData[eqSkinIdx - 1] = "HD001";
+      }
+      if (eqSkinIdx > 0 && (!rowData[eqSkinIdx - 1] || rowData[eqSkinIdx - 1] === "")) {
+        rowData[eqSkinIdx - 1] = "HD001";
       }
 
       sheet.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
@@ -1359,6 +1366,7 @@ function updateSubmissionStatus(questId, studentName, newStatus, rewardPoint, re
 
   let leveledUp = false;
   let newLv = 0;
+  let newLP = 0; // 💡 newLP 변수 선언 누락 방어
 
   var stuSheet = ss.getSheetByName('students');
   if (stuSheet) {
@@ -1412,6 +1420,7 @@ function updateSubmissionStatus(questId, studentName, newStatus, rewardPoint, re
     if (expResult && expResult.leveledUp) {
       leveledUp = true;
       newLv = expResult.newLv;
+      newLP = expResult.newLP; // 💡 레벨업 포인트 할당
     }
   } else if (newStatus === '제출완료' && rewardExp && Number(rewardExp) > 0) {
     gainExpAndCheckLevelUp(studentName, -Number(rewardExp));
@@ -1971,7 +1980,7 @@ function gainExpAndCheckLevelUp(studentName, expAmount) {
 
     // 시스템 설정에서 최대 경험치와 레벨당 포인트 로드
     const sysData = ss.getSheetByName('system').getDataRange().getValues();
-    let expMax = 100; 
+    let expMax = 200; // 💡 프론트엔드와 동일하게 기본값 200으로 통일
     let pointsPerLevel = 3; // 💡 기본값 3
     for(let i=0; i<sysData.length; i++) {
       const key = String(sysData[i][0]).trim();
@@ -2793,35 +2802,57 @@ function buyShopItem(studentName, itemName, cost) {
   }
 }
 
-// 💡 [완벽 마스터 권한] 구글 시트에 보이는 데이터 전체(100%)를 Firebase에 그대로 덮어쓰는 직관적인 동기화 함수
+// 💡 [완벽 마스터 권한 + 데이터 증발 방어] 시트 수정본을 반영하되, 시트의 빈칸이 학생 인벤토리/스킨/스킬을 지우지 않도록 안전 병합
 function syncToFirebase() {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData";
   
   try {
-    // 1. 구글 시트의 전체 데이터(학생 54개 컬럼, 퀘스트, 몬스터, 상점 등) 로드
     var fullData = getGameData();
     if (typeof fullData === 'string' && fullData.startsWith("Error")) {
       Logger.log("❌ 데이터 로드 실패: " + fullData);
       return;
     }
 
-    // 2. 월드 보스 레이드 진행 상태만 기존 파이어베이스에서 보존 (실시간 체력 유지용)
-    try {
-      var fbWbRes = UrlFetchApp.fetch(baseUrl + "/worldBoss.json");
-      var fbWbData = JSON.parse(fbWbRes.getContentText());
-      if (fbWbData) {
-        fullData.worldBoss = fbWbData;
-      }
-    } catch(wbErr) {}
+    // 1. 기존 Firebase 데이터 가져오기 (스킨/가방/스킬 보존용)
+    var fbRes = UrlFetchApp.fetch(baseUrl + ".json");
+    var fbData = JSON.parse(fbRes.getContentText()) || {};
 
-    // 3. 구글 시트의 모든 데이터를 파이어베이스에 100% 완벽 동기화 (Full PUT)
+    // 2. 🛡️ [핵심 방어] 시트에 빈칸으로 있는 인게임 데이터는 Firebase의 기존 보유 데이터를 유지
+    if (fbData.students && Array.isArray(fbData.students) && fullData.students) {
+      var protectFields = [
+        "unlocked_skins", "equipped_skin", "unlocked_skills", "equipped_1", "equipped_2",
+        "unlocked_relics", "relic_1", "relic_2", "unlocked_mercenaries", "party_m1", "party_m2",
+        "party_s1", "party_s2", "inventory", "password", "equipped_title"
+      ];
+
+      fullData.students.forEach(function(s) {
+        if (!s || !s.name) return;
+        var fbS = fbData.students.find(function(item) { return item && String(item.name).trim() === String(s.name).trim(); });
+        if (fbS) {
+          protectFields.forEach(function(field) {
+            // 시트에 값이 비어있거나 8종 기본값만 있는데 Firebase에 더 많은 스킨/아이템이 있다면 Firebase 데이터 보존!
+            if ((!s[field] || s[field] === "" || s[field] === "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008") && fbS[field]) {
+              s[field] = fbS[field];
+            }
+          });
+        }
+      });
+    }
+
+    // 3. 월드보스 및 제출물 보존
+    if (fbData.worldBoss) fullData.worldBoss = fbData.worldBoss;
+    if (fbData.submissions && (!fullData.submissions || fullData.submissions.length === 0)) {
+      fullData.submissions = fbData.submissions;
+    }
+
+    // 4. Firebase 전송
     UrlFetchApp.fetch(baseUrl + ".json", {
       method: "put",
       contentType: "application/json",
       payload: JSON.stringify(fullData)
     });
 
-    Logger.log("🎉 [시트 100% 전체 동기화 완료] 구글 시트의 모든 학생 데이터와 기획 설정이 웹(Firebase)에 완벽히 적용되었습니다!");
+    Logger.log("🎉 [안전 동기화 완료] 선생님의 시트 수정값이 반영되었으며, 학생들의 보유 스킨/가방 아이템은 100% 안전하게 보존되었습니다!");
   } catch (e) {
     Logger.log("❌ 동기화 중 오류 발생: " + e.toString());
   }
@@ -2991,6 +3022,51 @@ function syncFromFirebase() {
   }
 
   Logger.log("✅ [완전 백업 완료] 학생 스탯, 퀘스트, 공지, 제출물, 강화로그(ForgeLog), 활동로그(logs) 전체 시트 동기화 완료!");
+}
+
+// 💡 [신규] 시트의 ForgeLog 데이터를 객체 배열로 가져오는 함수
+function getForgeLogData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('ForgeLog');
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const equipReverseMap = { '무기': 'weapon', '투구': 'head', '갑옷': 'body', '장신구': 'accessory' };
+  const logs = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][1]) {
+      logs.push({
+        time: data[i][0] ? new Date(data[i][0]).toISOString() : new Date().toISOString(),
+        name: String(data[i][1]).trim(),
+        equip: equipReverseMap[data[i][2]] || data[i][2] || 'weapon',
+        level: String(data[i][3] || ''),
+        result: String(data[i][4] || ''),
+        fail: String(data[i][5] || '-')
+      });
+    }
+  }
+  return logs;
+}
+
+// 💡 [신규] 시트의 logs 데이터를 객체 배열로 가져오는 함수
+function getCommonLogData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('logs');
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const logs = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][1]) {
+      logs.push({
+        time: data[i][0] ? new Date(data[i][0]).toISOString() : new Date().toISOString(),
+        name: String(data[i][1]).trim(),
+        category: String(data[i][2] || '활동'),
+        content: String(data[i][3] || '')
+      });
+    }
+  }
+  return logs;
 }
 
 // 📝 [신규] 대장간 강화 로그 실시간 기록 함수

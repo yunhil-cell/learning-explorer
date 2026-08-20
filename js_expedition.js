@@ -373,20 +373,17 @@ function showSkillDetail(skillId) {
 }
 
 function equipSkill(skillId) {
-    // 아이템을 장착하려는 경우(비우는 게 아닌 경우) 중복 검사
+    // 💡 [개편] 대표 스킬 장착 시 동료 스킬(party_s1, party_s2)과의 중복 검사 및 자동 해제
     if (skillId !== '') {
-        if (currentTargetSlot === 1 && String(currentStudent.equipped_2) === String(skillId)) {
-            showUiAlert("⚠️ 장착 실패", "이미 두 번째 슬롯에 장착 중인 스킬입니다.", "");
-            return; // 진행 중단
+        if (String(currentStudent.party_s1) === String(skillId)) {
+            currentStudent.party_s1 = ''; // 동료 1 슬롯에서 자동 해제
         }
-        if (currentTargetSlot === 2 && String(currentStudent.equipped_1) === String(skillId)) {
-            showUiAlert("⚠️ 장착 실패", "이미 첫 번째 슬롯에 장착 중인 스킬입니다.", "");
-            return; // 진행 중단
+        if (String(currentStudent.party_s2) === String(skillId)) {
+            currentStudent.party_s2 = ''; // 동료 2 슬롯에서 자동 해제
         }
     }
 
-    if (currentTargetSlot === 1) currentStudent.equipped_1 = skillId;
-    else currentStudent.equipped_2 = skillId;
+    currentStudent.equipped_1 = skillId;
 
     renderDashboard();
     updateFastFirebaseStudent(currentStudent);
