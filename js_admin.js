@@ -81,7 +81,13 @@ function renderClassroomDashboard(tab = 'overview') {
     const avgLevel = levels.length > 0 ? (levels.reduce((a, b) => a + b, 0) / levels.length).toFixed(1) : 1;
 
     const totalGold = students.reduce((sum, s) => sum + (Number(s.game_money) || 0), 0);
-    const unapprovedSubs = subs.filter(s => s.status === '제출완료');
+
+    // 💡 [개선] 현재 '진행 중(활성화)'인 퀘스트의 ID만 추출하여 해당 퀘스트의 미채점 건수만 정확히 집계
+    const activeQuestIds = (window.questsData || [])
+        .filter(q => q && String(q.is_active).toLowerCase() === 'true')
+        .map(q => String(q.quest_id));
+
+    const unapprovedSubs = subs.filter(s => s && s.status === '제출완료' && activeQuestIds.includes(String(s.quest_id)));
     const unapprovedCount = unapprovedSubs.length;
 
     // 미환전 현실 재화(RM) 교환권 수량 집계
@@ -576,6 +582,20 @@ function renderQuestAdmin(tab, selectedQuestId = null, selectedStudent = null) {
             const activeBtnColor = isQActive ? '#EF4444' : '#34D399';
 
             const subs = safeSubmissions.filter(s => String(s.quest_id) === String(q.quest_id));
+            const pendingSubs = subs.filter(s => s.status === '제출완료');
+
+            // 💡 [신규] 일괄 승인 제어 툴바 HTML
+            let batchBarHtml = '';
+            if (pendingSubs.length > 0) {
+                batchBarHtml =
+                    '<div style="background:#1E293B; border:1px solid #8B5CF6; border-radius:8px; padding:10px 15px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">' +
+                    '  <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:white; font-size:0.9em; font-weight:bold;">' +
+                    '    <input type="checkbox" id="masterQuestChk" style="width:18px; height:18px; accent-color:#8B5CF6; cursor:pointer;" onchange="toggleAllQuestSubs(this)">' +
+                    '    대기 중인 학생 전체 선택 (' + pendingSubs.length + '명)' +
+                    '  </label>' +
+                    '  <button id="batchApproveBtn" class="small-btn" style="background:#8B5CF6; color:white; padding:8px 16px; font-size:0.95em; font-weight:bold; opacity:0.5;" disabled onclick="batchApproveSelectedSubs(\'' + q.quest_id + '\')">🚀 선택한 0명 일괄 승인</button>' +
+                    '</div>';
+            }
 
             let subHtml = '';
             if (subs.length === 0) {
@@ -584,15 +604,24 @@ function renderQuestAdmin(tab, selectedQuestId = null, selectedStudent = null) {
                 subHtml = subs.map(s => {
                     const isApproved = s.status === '승인완료';
                     const badgeColor = isApproved ? 'var(--Highlight)' : 'var(--Yellow)';
-                    const btnText = isApproved ? '승인 취소' : '승인 및 보상지급';
+                    const btnText = isApproved ? '승인 취소' : '개별 승인';
                     const btnColor = isApproved ? '#444' : '#8B5CF6';
                     const nextStatus = isApproved ? '제출완료' : '승인완료';
+
+                    // 미승인 학생일 때만 체크박스 노출
+                    const chkHtml = !isApproved
+                        ? '<input type="checkbox" class="quest-sub-chk" data-name="' + s.student_name + '" style="width:18px; height:18px; accent-color:#8B5CF6; cursor:pointer; margin-right:8px;" onchange="updateQuestBatchCount()">'
+                        : '';
 
                     const ansText = String(s.answer_text || '(텍스트 없음)').replace(/[\n\r]/g, '<br>');
 
                     return '<div style="background:#0F172A; border:1px solid #334155; border-radius:8px; padding:15px; margin-top:10px; text-align:left;">' +
                         '  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' +
-                        '    <div><b style="color:white; font-size:1.1em;">' + s.student_name + '</b> <span style="background:' + badgeColor + '; color:black; padding:2px 8px; border-radius:10px; font-size:0.7em; font-weight:bold; margin-left:5px;">' + s.status + '</span></div>' +
+                        '    <div style="display:flex; align-items:center;">' +
+                        '      ' + chkHtml +
+                        '      <b style="color:white; font-size:1.1em;">' + s.student_name + '</b>' +
+                        '      <span style="background:' + badgeColor + '; color:black; padding:2px 8px; border-radius:10px; font-size:0.7em; font-weight:bold; margin-left:8px;">' + s.status + '</span>' +
+                        '    </div>' +
                         '    <button class="small-btn" style="background:' + btnColor + '; padding:8px 12px; font-size:0.9em; border:none;" onclick="updateSubStatus(\'' + q.quest_id + '\', \'' + s.student_name + '\', \'' + nextStatus + '\', ' + q.reward_gold + ', ' + q.reward_point + ')">' + btnText + '</button>' +
                         '  </div>' +
                         '  <div style="color:#CBD5E1; font-size:0.95em; line-height:1.5; background:#1E293B; padding:10px; border-radius:5px;">' + ansText + '</div>' +
@@ -603,16 +632,18 @@ function renderQuestAdmin(tab, selectedQuestId = null, selectedStudent = null) {
             contentHtml =
                 '<div style="text-align:left;">' +
                 '  <button class="small-btn" style="background:#334155; margin-bottom:15px;" onclick="renderQuestAdmin(\'list\')">⬅ 목록으로 돌아가기</button>' +
-                '  <div style="background:#1E293B; padding:20px; border-radius:10px; border-left:4px solid #A78BFA; margin-bottom:20px;">' +
+                '  <div style="background:#1E293B; padding:20px; border-radius:10px; border-left:4px solid #A78BFA; margin-bottom:15px;">' +
                 '    <h3 style="color:white; margin:0 0 10px 0;">' + q.title + '</h3>' +
                 '    <p style="color:#CBD5E1; margin:0 0 15px 0; font-size:0.9em;">' + String(q.description).replace(/[\n\r]/g, '<br>') + '</p>' +
                 '    <div style="display:flex; gap:10px;">' +
                 '      <span style="color:#FBBF24; font-weight:bold; font-size:0.9em;">💰 ' + q.reward_gold + ' ' + (sysConfig.game_money_currency || '골드') + '</span>' +
                 '      <span style="color:#34D399; font-weight:bold; font-size:0.9em;">⭐ ' + q.reward_point + ' pt</span>' +
+                '      <span style="color:#60A5FA; font-weight:bold; font-size:0.9em;">✨ ' + (q.reward_exp || 0) + ' EXP</span>' +
                 '    </div>' +
                 '    <button style="margin-top:15px; background:' + activeBtnColor + '; color:white; border:none; padding:8px 15px; border-radius:5px; cursor:pointer; font-weight:bold;" onclick="' + activeAction + '">' + activeBtnText + '</button>' +
                 '  </div>' +
-                '  <h4 style="color:#A78BFA; margin-bottom:10px;">제출 현황</h4>' +
+                '  ' + batchBarHtml +
+                '  <h4 style="color:#A78BFA; margin:10px 0;">제출 현황</h4>' +
                 '  <div style="max-height:300px; overflow-y:auto; padding-right:5px;">' + subHtml + '</div>' +
                 '</div>';
         }
@@ -790,6 +821,99 @@ function updateSubStatus(questId, studentName, newStatus, rewardGold, rewardPoin
         if (leveledUp) {
             showUiAlert("🎉 승인 및 레벨업 완료", studentName + " 학생이 의뢰 보상을 받고 <b>Lv." + targetStudent.level + "</b>(으)로 레벨 업 했습니다!", "");
         }
+    });
+}
+
+// 💡 [신규] 퀘스트 제출물 전체 선택/해제 토글
+function toggleAllQuestSubs(masterChk) {
+    const chks = document.querySelectorAll('.quest-sub-chk');
+    chks.forEach(c => c.checked = masterChk.checked);
+    updateQuestBatchCount();
+}
+
+// 💡 [신규] 일괄 승인 버튼 상태 및 인원수 실시간 업데이트
+function updateQuestBatchCount() {
+    const checked = document.querySelectorAll('.quest-sub-chk:checked').length;
+    const btn = document.getElementById('batchApproveBtn');
+    if (btn) {
+        btn.innerText = '🚀 선택한 ' + checked + '명 일괄 승인';
+        btn.disabled = (checked === 0);
+        btn.style.opacity = (checked === 0 ? '0.5' : '1');
+    }
+}
+
+// 💡 [신규] 선택한 학생들 원클릭 초고속 일괄 승인 & 보상 지급
+function batchApproveSelectedSubs(questId) {
+    const chks = document.querySelectorAll('.quest-sub-chk:checked');
+    if (chks.length === 0) return;
+
+    const targetNames = Array.from(chks).map(c => c.getAttribute('data-name'));
+    const q = questsData.find(x => String(x.quest_id) === String(questId));
+    if (!q) return;
+
+    showGlobalLoading('📜 ' + targetNames.length + '명의 의뢰 일괄 승인 중...');
+
+    const rewardGold = Number(q.reward_gold) || 0;
+    const rewardPoint = Number(q.reward_point) || 0;
+    const rewardExp = Number(q.reward_exp) || 0;
+    const expMax = Number(sysConfig.exp_max) || 200;
+    const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
+
+    let leveledUpNames = [];
+
+    targetNames.forEach(sName => {
+        // 1. 제출물 상태 변경
+        const sub = (submissionsData || []).find(s => String(s.quest_id) === String(questId) && String(s.student_name) === String(sName));
+        if (sub) sub.status = '승인완료';
+
+        // 2. 학생 데이터 보상 반영
+        const targetStudent = (window.allStudentsData || []).find(x => x.name === sName);
+        if (targetStudent) {
+            targetStudent.bonus_points = (Number(targetStudent.bonus_points) || 0) + rewardPoint;
+            targetStudent.game_money = (Number(targetStudent.game_money) || 0) + rewardGold;
+            targetStudent.exp = (Number(targetStudent.exp) || 0) + rewardExp;
+            targetStudent.quest_count = (Number(targetStudent.quest_count) || 0) + 1;
+
+            let leveled = false;
+            while (targetStudent.exp >= expMax) {
+                targetStudent.exp -= expMax;
+                targetStudent.level = (Number(targetStudent.level) || 1) + 1;
+                targetStudent.level_points = (Number(targetStudent.level_points) || 0) + pointsPerLevel;
+                leveled = true;
+            }
+            if (leveled) leveledUpNames.push(sName + '(Lv.' + targetStudent.level + ')');
+
+            if (currentStudent && currentStudent.name === sName) {
+                currentStudent.bonus_points = targetStudent.bonus_points;
+                currentStudent.game_money = targetStudent.game_money;
+                currentStudent.exp = targetStudent.exp;
+                currentStudent.level = targetStudent.level;
+                currentStudent.level_points = targetStudent.level_points;
+                currentStudent.quest_count = targetStudent.quest_count;
+            }
+        }
+    });
+
+    // 3. Firebase 일괄 동기화 (초고속 배치 저장)
+    Promise.all([
+        fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(window.allStudentsData)
+        }),
+        fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(window.submissionsData)
+        })
+    ]).then(() => {
+        hideGlobalLoading();
+        renderQuestAdmin('list', questId);
+        let lvMsg = leveledUpNames.length > 0 ? '<br><br>🎊 <b>레벨업 달성 모험가:</b> ' + leveledUpNames.join(', ') : '';
+        showUiAlert('🎉 일괄 승인 완료!', '총 <b>' + targetNames.length + '명</b>의 의뢰를 일괄 승인하고 보상을 지급했습니다!' + lvMsg, '');
+    }).catch(err => {
+        hideGlobalLoading();
+        showUiAlert('❌ 일괄 승인 실패', err, '');
     });
 }
 
