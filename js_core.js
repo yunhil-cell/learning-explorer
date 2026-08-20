@@ -1519,3 +1519,134 @@ function checkFeatureLock(featureKey, featureName, requiredPhase) {
     );
     return false;
 }
+
+// ==========================================
+// 📜 인게임 모험 가이드 모달 시스템
+// ==========================================
+function openGameGuideModal(tab = 'growth') {
+    const subModal = document.getElementById('subModal');
+    const subBody = document.getElementById('subModalBody');
+
+    subModal.querySelector('.modal-content').style.background = '#0F172A';
+    subModal.querySelector('.modal-content').style.borderColor = '#42B3A4';
+
+    const getTabStyle = (t) => {
+        const isActive = (tab === t);
+        return `flex:1; padding:10px 5px; text-align:center; cursor:pointer; font-weight:bold; font-size:0.95em; color:${isActive ? '#2DD4BF' : '#94A3B8'}; border-bottom:${isActive ? '3px solid #2DD4BF' : 'none'}; background:${isActive ? 'rgba(45, 212, 191, 0.1)' : 'transparent'}; border-radius:6px 6px 0 0; transition:0.2s; white-space:nowrap;`;
+    };
+
+    const tabsHtml = `
+        <div style="display:flex; border-bottom:1px solid #334155; margin-bottom:15px; overflow-x:auto;">
+            <div style="${getTabStyle('growth')}" onclick="openGameGuideModal('growth')">📚 독서 & 성장</div>
+            <div style="${getTabStyle('battle')}" onclick="openGameGuideModal('battle')">⚔️ 전투 & 던전</div>
+            <div style="${getTabStyle('equip')}" onclick="openGameGuideModal('equip')">🛡️ 장비 & 원정대</div>
+            <div style="${getTabStyle('reward')}" onclick="openGameGuideModal('reward')">🎁 의뢰 & 보상</div>
+        </div>
+    `;
+
+    let contentHtml = '';
+
+    if (tab === 'growth') {
+        contentHtml = `
+            <div style="text-align:left; color:#CBD5E1; font-size:0.95em; line-height:1.7;">
+                <div style="background:#1E293B; border-left:4px solid #38BDF8; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
+                    <b style="color:#38BDF8; font-size:1.05em;">📖 독서록과 스탯 성장</b><br>
+                    • 작성한 독서록 편수만큼 <b>스탯 포인트</b>를 얻습니다. (1편당 4pt)<br>
+                    • 주차별 최대 인정 편수 상한선(주당 3편)이 적용됩니다.
+                </div>
+                <div style="background:#1E293B; border-left:4px solid #FBBF24; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
+                    <b style="color:#FBBF24; font-size:1.05em;">📊 4대 기본 능력치 안내</b><br>
+                    • <b style="color:#34D399;">체력(HP)</b>: 전투 중 생명력 (1pt당 HP 10 상승)<br>
+                    • <b style="color:#F87171;">공격력(ATK)</b>: 기본 공격 및 스킬 데미지 증가<br>
+                    • <b style="color:#A78BFA;">방어력(DEF)</b>: 적에게 받는 피해량 감소<br>
+                    • <b style="color:#FBBF24;">행운(LUK)</b>: 스킬 발동률, 치명타율, 회피율, 상자 골드 보상 증가
+                </div>
+                <div style="background:#1E293B; border-left:4px solid #EC4899; padding:12px 15px; border-radius:6px;">
+                    <b style="color:#EC4899; font-size:1.05em;">✨ 5대 영혼의 가호</b><br>
+                    • <b>Red(용기)</b>: 공격력 1.1배 보정<br>
+                    • <b>Blue(지혜)</b>: 방어력 1.1배 보정<br>
+                    • <b>Green(끈기)</b>: 최대 체력 1.1배 보정<br>
+                    • <b>Yellow(행운)</b>: 행운 1.1배 보정<br>
+                    • <b>Purple(희망)</b>: 전투 첫 타격 1회 피격 데미지 0 (무효화)
+                </div>
+            </div>
+        `;
+    } else if (tab === 'battle') {
+        contentHtml = `
+            <div style="text-align:left; color:#CBD5E1; font-size:0.95em; line-height:1.7;">
+                <div style="background:#1E293B; border-left:4px solid #F97316; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
+                    <b style="color:#F97316; font-size:1.05em;">⚔️ 일반 사냥 (주 2회)</b><br>
+                    • 턴제 자동 전투로 진행되며, 승리 시 골드, 경험치, 전리품 상자 획득!<br>
+                    • 패배 시 8시간, 도망치기 시 2시간 동안 재정비(치료) 시간이 적용됩니다.
+                </div>
+                <div style="background:#1E293B; border-left:4px solid #A855F7; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
+                    <b style="color:#A855F7; font-size:1.05em;">💀 1:1 보스 도전 (주 3회)</b><br>
+                    • 주간 보스 도전 기회와 [보스 도전권]을 함께 소모하여 도전합니다.<br>
+                    • 보스 격파 시 최대 3줄 다중 전리품 카드 선택 기회가 주어집니다.
+                </div>
+                <div style="background:#1E293B; border-left:4px solid #FBBF24; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
+                    <b style="color:#FBBF24; font-size:1.05em;">🏰 3인 파티 던전 (주 1회)</b><br>
+                    • 친구 2명과 3인 파티를 결성하여 3계층 서바이벌 던전에 도전합니다.<br>
+                    • 풀클리어 성공 시 참여자 전원에게 경험치와 최고급 전리품 상자가 지급됩니다.
+                </div>
+                <div style="background:#1E293B; border-left:4px solid #10B981; padding:12px 15px; border-radius:6px;">
+                    <b style="color:#10B981; font-size:1.05em;">🗼 도전의 탑 (주 1회) & 🐲 월드 보스</b><br>
+                    • <b>도전의 탑</b>: 23층 서바이벌, 돌파한 층수에 비례해 [현실 재화 교환권] 정산!<br>
+                    • <b>월드 보스</b>: 학급 전체가 체력을 공유하는 10턴 생존 레이드 (매일 1회 무료)
+                </div>
+            </div>
+        `;
+    } else if (tab === 'equip') {
+        contentHtml = `
+            <div style="text-align:left; color:#CBD5E1; font-size:0.95em; line-height:1.7;">
+                <div style="background:#1E293B; border-left:4px solid #D97706; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
+                    <b style="color:#D97706; font-size:1.05em;">🔨 대장간 강화 (+0 ~ +9강)</b><br>
+                    • 골드를 소모하여 무기(ATK), 투구(HP), 갑옷(DEF), 장신구(LUK)를 강화합니다.<br>
+                    • 실패할 때마다 성공 확률이 +5%씩 영구 누적 보정(천장)됩니다.
+                </div>
+                <div style="background:#1E293B; border-left:4px solid #8B5CF6; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
+                    <b style="color:#8B5CF6; font-size:1.05em;">⚔️ 원정대 & 동료(용병) 시스템</b><br>
+                    • 용병 길드에서 C~S급 148명의 다양한 동료를 영입할 수 있습니다.<br>
+                    • 원정대에 동료를 배치하면 패시브 능력치 보너스를 받고 전투 중 지원 스킬을 발동합니다.
+                </div>
+                <div style="background:#1E293B; border-left:4px solid #3B82F6; padding:12px 15px; border-radius:6px;">
+                    <b style="color:#3B82F6; font-size:1.05em;">🏺 유물 & 👗 옷장(스킨)</b><br>
+                    • <b>유물</b>: 고유 지속 효과(피해증가, 흡혈, 치명타, 회피 등)를 장착합니다.<br>
+                    • <b>옷장</b>: 다양한 개성의 아바타 외형으로 캐릭터를 꾸밀 수 있습니다.
+                </div>
+            </div>
+        `;
+    } else if (tab === 'reward') {
+        contentHtml = `
+            <div style="text-align:left; color:#CBD5E1; font-size:0.95em; line-height:1.7;">
+                <div style="background:#1E293B; border-left:4px solid #8B5CF6; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
+                    <b style="color:#8B5CF6; font-size:1.05em;">📜 길드 의뢰 (퀘스트 & 성찰일지)</b><br>
+                    • 의뢰소에서 퀘스트를 확인하고 답변(성찰일지)을 작성하여 보고합니다.<br>
+                    • 선생님이 승인하면 골드, 경험치, 스탯 보너스 포인트가 즉시 지급됩니다!
+                </div>
+                <div style="background:#1E293B; border-left:4px solid #10B981; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
+                    <b style="color:#10B981; font-size:1.05em;">🎟️ 오프라인 보상 (현실 재화 교환권)</b><br>
+                    • 가방에 보관된 <b>[현실 재화 교환권]</b>이나 간식 쿠폰을 사용합니다.<br>
+                    • 여러 장을 한 번에 묶어서 사용한 뒤, 완료 화면을 선생님께 보여드리고 오프라인 보상을 받으세요!
+                </div>
+                <div style="background:#1E293B; border-left:4px solid #F59E0B; padding:12px 15px; border-radius:6px;">
+                    <b style="color:#F59E0B; font-size:1.05em;">👑 명예의 전당</b><br>
+                    • <b>독서왕</b>: 독서록 편수 순위 시상대 렌더링<br>
+                    • <b>모험왕</b>: 도전의 탑 층수 및 장비 강화 점수 순위 시상대 렌더링
+                </div>
+            </div>
+        `;
+    }
+
+    subBody.innerHTML = `
+        <h2 style="color:#2DD4BF; margin-bottom: 5px;">📜 배움 원정대 모험 가이드</h2>
+        <p style="color:#94A3B8; font-size:0.85em; margin-bottom:15px;">배움 원정대의 핵심 성장 규칙과 모험 안내서입니다.</p>
+        ${tabsHtml}
+        <div style="flex:1; max-height:420px; overflow-y:auto; padding-right:5px;">
+            ${contentHtml}
+        </div>
+        <button style="margin-top:15px; width:100%; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1.1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>
+    `;
+
+    subModal.style.display = 'flex';
+}
