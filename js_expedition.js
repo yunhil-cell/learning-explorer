@@ -360,7 +360,7 @@ function showSkillDetail(skillId) {
         '<div style="background:#222; padding:20px; border-radius:10px; margin-bottom:20px; border:1px solid #444; text-align:left;">' +
         '<p><b>설명:</b> ' + sk.description + '</p>' +
         '<p><b>대상:</b> ' + sk.target_type + ' | <b>타입:</b> ' + sk.effect_type + '</p>' +
-        '<p><b>기본위력:</b> ' + sk.base_value + ' | <b>계수:</b> ' + sk.scaling_stat + ' x' + sk.muliplier + '</p>' +
+        '<p><b>기본위력:</b> ' + sk.base_value + ' | <b>계수:</b> ' + sk.scaling_stat + ' x' + (sk.multiplier ?? sk.muliplier ?? 1.0) + '</p>' +
         '<p><b>특수효과:</b> ' + sk.special_effect + ' (' + sk.duration + '턴)</p>' +
         '<p style="color:#ff4d4d;"><b>쿨타임:</b> ' + sk.cooldown + '턴</p>' +
         '</div>' +

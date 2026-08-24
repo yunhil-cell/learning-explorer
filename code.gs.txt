@@ -318,19 +318,16 @@ function updateUnlockedSkills(name, skillStr) {
   return "Error: 학생을 찾을 수 없음";
 }
 
-// 💡 [수정] 장착한 스킬 업데이트 (안전장치 추가)
-function updateEquippedSkill(name, slot, skillId) {
+// 💡 [수정] 대표 스킬(equipped_1) 장착 정보 업데이트 (구 equipped_2 슬롯 제거)
+function updateEquippedSkill(name, skillId) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('students');
   if (!sheet) return "Error: students 시트를 찾을 수 없음";
   
   const data = sheet.getDataRange().getValues();
   const headers = data[0].map(h => String(h).trim());
+  const colIdx = headers.indexOf('equipped_1') + 1;
   
-  const colName = slot === 1 ? 'equipped_1' : 'equipped_2';
-  const colIdx = headers.indexOf(colName) + 1;
-  
-  // 시트에 해당 열이 없을 경우 에러 처리
-  if (colIdx === 0) return "Error: " + colName + " 열을 찾을 수 없음";
+  if (colIdx === 0) return "Error: equipped_1 열을 찾을 수 없음";
   
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === name) {
@@ -456,9 +453,8 @@ function updateSlotUnlock(name, type, isUnlocked) {
   let targetColName = '';
 
   if (type === 'relic') {
-    colIdx = headers.indexOf('relic_slot2_unlocked') + 1;
-    if (colIdx === 0) colIdx = headers.indexOf('relic_slot_2_unlocked') + 1;
-    targetColName = 'relic_slot2_unlocked';
+    colIdx = headers.indexOf('relic_slot_2_unlocked') + 1;
+    targetColName = 'relic_slot_2_unlocked';
   } else if (type === 'merc') {
     colIdx = headers.indexOf('merc_slot2_unlocked') + 1;
     targetColName = 'merc_slot2_unlocked';
@@ -1986,11 +1982,11 @@ function gainExpAndCheckLevelUp(studentName, expAmount) {
 
     // 시스템 설정에서 최대 경험치와 레벨당 포인트 로드
     const sysData = ss.getSheetByName('system').getDataRange().getValues();
-    let expMax = 200; // 💡 프론트엔드와 동일하게 기본값 200으로 통일
-    let pointsPerLevel = 3; // 💡 기본값 3
+    let expMax = 200;
+    let pointsPerLevel = 3;
     for(let i=0; i<sysData.length; i++) {
       const key = String(sysData[i][0]).trim();
-      if(key === 'exp_max') expMax = Number(sysData[i][1]) || 100;
+      if(key === 'exp_max') expMax = Number(sysData[i][1]) || 200;
       if(key === 'points_per_level') pointsPerLevel = Number(sysData[i][1]) || 3;
     }
 
@@ -2832,7 +2828,7 @@ function syncToFirebase() {
     // 3. 🛡️ 학생 인게임 실시간 데이터(스킨, 가방, 동료, 칭호 등) 절대 보존 병합
     if (fbStudentsList.length > 0 && fullData.students) {
       var protectFields = [
-        "unlocked_skins", "equipped_skin", "unlocked_skills", "equipped_1", "equipped_2",
+        "unlocked_skins", "equipped_skin", "unlocked_skills", "equipped_1",
         "unlocked_relics", "relic_1", "relic_2", "relic_slot_2_unlocked",
         "unlocked_mercenaries", "party_m1", "party_m2", "party_s1", "party_s2", "merc_slot2_unlocked",
         "inventory", "password", "equipped_title", "custom_titles", "monster_data",

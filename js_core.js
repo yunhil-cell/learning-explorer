@@ -612,7 +612,23 @@ function renderDashboard() {
     };
     const displayBlessing = blessingMap[s.blessing] || s.blessing;
 
-    const expMax = Number(sysConfig.exp_max) || 100;
+    // 💡 [수정] 기본 경험치 200 통일 및 로그인/대시보드 진입 시 자동 레벨업 검증
+    const expMax = Number(sysConfig.exp_max) || 200;
+    const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
+    let autoLeveled = false;
+
+    while ((Number(s.exp) || 0) >= expMax) {
+        s.exp = (Number(s.exp) || 0) - expMax;
+        s.level = (Number(s.level) || 1) + 1;
+        s.level_points = (Number(s.level_points) || 0) + pointsPerLevel;
+        autoLeveled = true;
+    }
+
+    if (autoLeveled) {
+        updateFastFirebaseStudent(s);
+        console.log(`🎉 [자동 승급] ${s.name} 모험가가 Lv.${s.level}(으)로 레벨업되었습니다.`);
+    }
+
     const expPercent = Math.min(100, ((Number(s.exp) || 0) / expMax) * 100);
 
     const remainStats = totalPoints + (Number(s.level_points) || 0) - used;
@@ -1411,20 +1427,23 @@ async function initWorldBossState() {
         return;
     }
 
+    const sheetMaxHp = Number(activeBoss.max_hp) || 150000;
+
     try {
         const res = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/worldBoss/${activeBoss.wb_id}.json`);
         const fbWb = await res.json();
         
-        const defaultMaxHp = Number(activeBoss.max_hp) || 150000;
         if (fbWb) {
             worldBossState = fbWb;
+            // 💡 [개선] 시트의 max_hp가 변경되었을 경우 실시간 동기화
+            worldBossState.max_hp = sheetMaxHp;
         } else {
-            // 파이어베이스에 초기 노드가 없으면 생성
+            // 파이어베이스에 초기 노드가 없으면 시트 기획 데이터 기준으로 생성
             worldBossState = {
                 wb_id: activeBoss.wb_id,
                 name: activeBoss.name,
-                max_hp: defaultMaxHp,
-                current_hp: defaultMaxHp,
+                max_hp: sheetMaxHp,
+                current_hp: sheetMaxHp,
                 contributions: {},
                 is_cleared: false
             };
@@ -1558,7 +1577,8 @@ function openWorldBossModal() {
 function isFeatureUnlocked(featureKey) {
     if (isTeacherMode) return true; // 교사 모드는 모든 잠금 프리패스!
 
-    const currentPhase = Number(sysConfig.season_phase) || 3; // 기본값 3분기
+    // 💡 [수정] system 시트 설정이 없을 때의 안전 기본값을 1분기로 정상화
+    const currentPhase = Number(sysConfig.season_phase) || 1;
     
     // 💡 분기별 콘텐츠 매핑 (1~4분기)
     const featurePhaseMap = {

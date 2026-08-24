@@ -275,7 +275,7 @@ function showEncyclopediaDetail(type, id, isBoss = false) {
                 '<div style="background:#111; padding:15px; border-radius:10px; border:1px solid #444; text-align:left; font-size:0.95em; line-height:1.6; color:#ddd;">' +
                 '  <div style="margin-bottom:10px; padding-bottom:10px; border-bottom:1px dashed #444;">' + safeDesc + '</div>' +
                 '  <div><span style="color:#4d94ff;">▪ 대상:</span> ' + (sk.target_type || '-') + ' &nbsp;|&nbsp; <span style="color:#4d94ff;">▪ 타입:</span> ' + (sk.effect_type || '-') + '</div>' +
-                '  <div style="margin-top:5px;"><span style="color:#4dff88;">▪ 기본위력:</span> ' + (sk.base_value || 0) + ' &nbsp;|&nbsp; <span style="color:#4dff88;">▪ 계수:</span> ' + (sk.scaling_stat || '-') + ' x' + (sk.muliplier || sk.multiplier || 1) + '</div>' +
+                '  <div style="margin-top:5px;"><span style="color:#4dff88;">▪ 기본위력:</span> ' + (sk.base_value || 0) + ' &nbsp;|&nbsp; <span style="color:#4dff88;">▪ 계수:</span> ' + (sk.scaling_stat || '-') + ' x' + (sk.multiplier ?? sk.muliplier ?? 1.0) + '</div>' +
                 '  <div style="margin-top:5px;"><span style="color:#ffd700;">▪ 특수효과:</span> ' + (sk.special_effect || '없음') + ' (' + (sk.duration || 0) + '턴)</div>' +
                 '  <div style="color:#ff4d4d; font-weight:bold; margin-top:10px; text-align:center; background:rgba(255,77,77,0.1); padding:5px; border-radius:5px;">⏳ 쿨타임: ' + (sk.cooldown || 0) + '턴</div>' +
                 '</div>';

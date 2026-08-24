@@ -708,7 +708,7 @@ function playerTurnAuto() {
         effectType = effectTranslator[String(usedSkill.special_effect).toLowerCase().trim()] || usedSkill.special_effect;
         mainSkillType = String(usedSkill.effect_type).toLowerCase().trim(); // 'heal', 'damage', 'buff' 등
         const effectDuration = Number(usedSkill.duration) || 0;
-        multiplier = Number(usedSkill.muliplier) || Number(usedSkill.multiplier) || 1.0;
+        multiplier = Number(usedSkill.multiplier ?? usedSkill.muliplier ?? 1.0);
 
         // 🚨 스킬 이펙트 재생 및 딜레이 설정
         if (usedSkill.effect_url && String(usedSkill.effect_url).trim() !== '') {
@@ -2778,6 +2778,8 @@ function startWorldBossRaid(wbId) {
 
     const pStats = getPlayerTotalStats();
 
+    const bossMaxHp = Number(activeBoss.max_hp) || Number(worldBossState.max_hp) || 150000;
+
     battleState = {
         isWorldBoss: true,
         wbBossData: activeBoss,
@@ -2785,8 +2787,8 @@ function startWorldBossRaid(wbId) {
         wbMaxTurns: Number(activeBoss.turn_limit) || 10,
         wbDamageTotal: 0,
         monster: activeBoss,
-        monsterMaxHp: Number(activeBoss.max_hp) || 150000,
-        monsterCurrentHp: Math.max(1, Number(worldBossState.current_hp) || 150000),
+        monsterMaxHp: bossMaxHp,
+        monsterCurrentHp: Math.max(1, Number(worldBossState.current_hp) || bossMaxHp),
         playerMaxHp: pStats.hp * (Number(sysConfig.hp_per_point) || 10),
         playerCurrentHp: pStats.hp * (Number(sysConfig.hp_per_point) || 10),
         playerAtk: pStats.atk,
