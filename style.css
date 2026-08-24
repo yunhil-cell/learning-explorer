@@ -1,14 +1,21 @@
-/* 💡 1. 타이틀 전용 폰트: 던파 연단된 칼날 로드 */
+/* 💡 1. 타이틀 전용 폰트: 넥슨 던파 연단된 칼날(DnfTemperedBlade) 로드 */
 @font-face {
-font-family: 'DNFBlade';
-src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2304-2@1.0/DNFBlade-Medium.woff2') format('woff2');
+font-family: 'DnfTemperedBlade';
+src: url('https://cdn.df.nexon.com/img/common/font/DNFForgedBlade-Light.otf') format('opentype');
+font-weight: 300;
+font-display: swap;
+}
+
+@font-face {
+font-family: 'DnfTemperedBlade';
+src: url('https://cdn.df.nexon.com/img/common/font/DNFForgedBlade-Medium.otf') format('opentype');
 font-weight: 500;
 font-display: swap;
 }
 
 @font-face {
-font-family: 'DNFBladeBold';
-src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2304-2@1.0/DNFBlade-Bold.woff2') format('woff2');
+font-family: 'DnfTemperedBlade';
+src: url('https://cdn.df.nexon.com/img/common/font/DNFForgedBlade-Bold.otf') format('opentype');
 font-weight: 700;
 font-display: swap;
 }
@@ -33,9 +40,10 @@ font-display: swap;
 font-family: 'NanumSquareNeoBold', 'NanumSquareNeo', sans-serif;
 }
 
-/* 💡 4. 대형 타이틀, 모달 대제목, 전투 돌입 타이틀에만 '연단된 칼날' 포인트 적용 */
+/* 💡 4. 대형 타이틀, 모달 대제목, 전투 돌입 타이틀에 연단된 칼날 굵게 적용 */
 h1, h2, #battleTitle, #uiPopupTitle, .battle-vs, #wbBannerTitle {
-font-family: 'DNFBladeBold', 'DNFBlade', 'NanumSquareNeoBold', sans-serif !important;
+font-family: 'DnfTemperedBlade', 'NanumSquareNeoBold', sans-serif !important;
+font-weight: 700 !important;
 letter-spacing: 0.5px;
 }
 
