@@ -2341,18 +2341,48 @@ function finishRaid(isSuccess) {
     }
 
     let sharedRaidExp = Math.max(1, Math.floor(totalRaidReward / (raidParty.length || 3)));
+    const expMax = Number(sysConfig.exp_max) || 200;
+    const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
+    let leveledUpMembers = [];
 
     battleState.party.forEach(p => {
         let stObj = window.allStudentsData.find(s => s.name === p.name);
         if (!stObj) return;
 
+        // 1. 경험치 지급 및 누적
         stObj.exp = (Number(stObj.exp) || 0) + sharedRaidExp;
+
+        // 2. 💡 [핵심 버그 수정] 파티원 각각 레벨업 및 포인트 지급 체크
+        let memberLeveled = false;
+        while (stObj.exp >= expMax) {
+            stObj.exp -= expMax;
+            stObj.level = (Number(stObj.level) || 1) + 1;
+            stObj.level_points = (Number(stObj.level_points) || 0) + pointsPerLevel;
+            memberLeveled = true;
+        }
+        if (memberLeveled) {
+            leveledUpMembers.push(`${stObj.name}(Lv.${stObj.level})`);
+        }
+
+        // 3. 전리품 상자 지급
         if (boxToGive) {
             let items = stObj.inventory ? String(stObj.inventory).split(',') : [];
             items.push(boxToGive);
             stObj.inventory = items.join(',');
         }
+
+        // 4. 현재 로그인한 본인(currentStudent) 상태 즉시 동기화
+        if (currentStudent && currentStudent.name === stObj.name) {
+            currentStudent.exp = stObj.exp;
+            currentStudent.level = stObj.level;
+            currentStudent.level_points = stObj.level_points;
+            currentStudent.inventory = stObj.inventory;
+        }
     });
+
+    if (leveledUpMembers.length > 0) {
+        msg += `<br><br>🎊 <b>레벨업 달성:</b> <span style="color:var(--Highlight); font-weight:bold;">${leveledUpMembers.join(', ')}</span>`;
+    }
 
     fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json', {
         method: 'PUT',

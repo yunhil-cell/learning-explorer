@@ -348,7 +348,58 @@ function renderClassroomDashboard(tab = 'overview') {
         summaryCardsHtml +
         tabsHtml +
         contentHtml +
-        '<button style="margin-top:20px; width:100%; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1.1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>';
+        '<div style="display:flex; gap:10px; margin-top:20px;">' +
+        '  <button style="flex:1; padding:12px; border-radius:10px; border:none; background:#EF4444; color:white; font-weight:bold; font-size:1em; cursor:pointer;" onclick="forceResetWeeklyBattlesAdmin()">🔄 주간 횟수 강제 초기화</button>' +
+        '  <button style="flex:1; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>' +
+        '</div>';
+}
+
+// 💡 [교사 전용] 주간 횟수 수동 강제 초기화 실행 함수
+function forceResetWeeklyBattlesAdmin() {
+    showUiConfirm(
+        "🔄 주간 횟수 초기화",
+        "학급 전체 학생의 <b>사냥, 보스, 레이드, 도전의 탑 주간 횟수</b>를<br>설정된 최대치로 강제 초기화하시겠습니까?",
+        "executeForceResetWeekly()"
+    );
+}
+
+async function executeForceResetWeekly() {
+    showGlobalLoading("🔄 주간 횟수 초기화 처리 중...");
+
+    const maxBattles = Number(sysConfig.max_weekly_battles) || 2;
+    const maxBoss = Number(sysConfig.max_weekly_boss) || 3;
+    const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
+    const maxTower = Number(sysConfig.max_weekly_tower) || 1;
+
+    const students = window.allStudentsData || [];
+    students.forEach(s => {
+        if (!s || !s.name) return;
+        s.weekly_battles = maxBattles;
+        s.weekly_boss = maxBoss;
+        s.weekly_raid = maxRaid;
+        s.weekly_tower = maxTower;
+    });
+
+    if (currentStudent) {
+        currentStudent.weekly_battles = maxBattles;
+        currentStudent.weekly_boss = maxBoss;
+        currentStudent.weekly_raid = maxRaid;
+        currentStudent.weekly_tower = maxTower;
+    }
+
+    try {
+        await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(students)
+        });
+        hideGlobalLoading();
+        showUiAlert("🎉 초기화 완료", "전체 학생의 주간 횟수가 성공적으로 초기화되었습니다!", "renderClassroomDashboard('overview')");
+        renderButtons(students);
+    } catch(e) {
+        hideGlobalLoading();
+        showUiAlert("❌ 오류", "초기화 실패: " + e, "");
+    }
 }
 
 // ==========================================

@@ -153,7 +153,69 @@ function initGameData(data) {
     if (data.bosses) bossList = data.bosses;
 
     initWorldBossState();
+    checkAndPerformWeeklyReset(data);
     renderButtons(data.students);
+}
+
+// 💡 [신규] Firebase 기반 주간 횟수 자동 초기화 엔진 (한국 시간 월요일 자정 기준)
+async function checkAndPerformWeeklyReset(data) {
+    if (!data || !data.students) return;
+
+    // 한국 시간(UTC+9) 기준 이번 주 월요일 날짜(YYYY-MM-DD) 계산
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const kstDate = new Date(utc + (9 * 60 * 60 * 1000));
+    
+    const day = kstDate.getDay(); // 0: 일, 1: 월, ..., 6: 토
+    const diffToMonday = (day === 0 ? -6 : 1) - day;
+    const mondayDate = new Date(kstDate);
+    mondayDate.setDate(kstDate.getDate() + diffToMonday);
+    
+    const year = mondayDate.getFullYear();
+    const month = String(mondayDate.getMonth() + 1).padStart(2, '0');
+    const date = String(mondayDate.getDate()).padStart(2, '0');
+    const currentMondayKey = `${year}-${month}-${date}`;
+
+    const lastReset = sysConfig.last_weekly_reset || '';
+
+    // 이미 이번 주 월요일에 초기화가 완료된 상태면 통과
+    if (lastReset === currentMondayKey) return;
+
+    console.log(`🔄 주간 초기화 감지 (이전: ${lastReset} -> 이번 주: ${currentMondayKey})`);
+
+    const maxBattles = Number(sysConfig.max_weekly_battles) || 2;
+    const maxBoss = Number(sysConfig.max_weekly_boss) || 3;
+    const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
+    const maxTower = Number(sysConfig.max_weekly_tower) || 1;
+
+    let studentsList = Array.isArray(data.students) ? data.students : Object.values(data.students);
+    studentsList.forEach(s => {
+        if (!s || !s.name) return;
+        s.weekly_battles = maxBattles;
+        s.weekly_boss = maxBoss;
+        s.weekly_raid = maxRaid;
+        s.weekly_tower = maxTower;
+    });
+
+    sysConfig.last_weekly_reset = currentMondayKey;
+
+    try {
+        await Promise.all([
+            fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(studentsList)
+            }),
+            fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(currentMondayKey)
+            })
+        ]);
+        console.log("✅ Firebase 주간 횟수 일괄 초기화 및 동기화 완료!");
+    } catch (e) {
+        console.error("❌ 주간 초기화 Firebase 저장 실패:", e);
+    }
 }
 
 // 💡 백그라운드 이미지 캐싱 함수 (화면에는 보이지 않음)

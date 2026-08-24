@@ -959,6 +959,13 @@ function resetWeeklyBattles() {
     if (bossIdx > -1) stSheet.getRange(i + 1, bossIdx + 1).setValue(maxBoss);
     stSheet.getRange(i + 1, towerIdx + 1).setValue(maxTower);
   }
+
+  // 💡 [핵심] 시트 초기화 후 Firebase로 즉시 푸시하여 웹앱에 100% 반영
+  try {
+    syncToFirebase();
+  } catch (e) {
+    Logger.log("주간 초기화 후 Firebase 동기화 실패: " + e.toString());
+  }
 }
 
 // 💡 [신규] 도전의 탑 결과 저장 (골드 지급 없음, RM 교환권 인벤토리행)
@@ -2802,7 +2809,7 @@ function buyShopItem(studentName, itemName, cost) {
   }
 }
 
-// 💡 [완벽 마스터 권한 + 데이터 증발 방어] 시트 수정본을 반영하되, 시트의 빈칸이 학생 인벤토리/스킨/스킬을 지우지 않도록 안전 병합
+// 💡 [완벽 마스터 권한 + 데이터 증발 원천 차단] 파이어베이스의 객체/배열 구조를 완벽 호환하여 학생 스킨/가방/스탯 100% 영구 보존
 function syncToFirebase() {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData";
   
@@ -2813,25 +2820,50 @@ function syncToFirebase() {
       return;
     }
 
-    // 1. 기존 Firebase 데이터 가져오기 (스킨/가방/스킬 보존용)
+    // 1. 기존 Firebase 데이터 가져오기
     var fbRes = UrlFetchApp.fetch(baseUrl + ".json");
     var fbData = JSON.parse(fbRes.getContentText()) || {};
 
-    // 2. 🛡️ [핵심 방어] 시트에 빈칸으로 있는 인게임 데이터는 Firebase의 기존 보유 데이터를 유지
-    if (fbData.students && Array.isArray(fbData.students) && fullData.students) {
+    // 2. 🛡️ [핵심 버그 수정] Firebase가 배열이든 객체든 무조건 안전한 배열(Array)로 변환
+    var fbStudentsList = [];
+    if (fbData.students) {
+      fbStudentsList = Array.isArray(fbData.students) ? fbData.students : Object.values(fbData.students);
+    }
+
+    // 3. 🛡️ 학생 인게임 실시간 데이터(스킨, 가방, 동료, 칭호 등) 절대 보존 병합
+    if (fbStudentsList.length > 0 && fullData.students) {
       var protectFields = [
         "unlocked_skins", "equipped_skin", "unlocked_skills", "equipped_1", "equipped_2",
-        "unlocked_relics", "relic_1", "relic_2", "unlocked_mercenaries", "party_m1", "party_m2",
-        "party_s1", "party_s2", "inventory", "password", "equipped_title"
+        "unlocked_relics", "relic_1", "relic_2", "relic_slot_2_unlocked",
+        "unlocked_mercenaries", "party_m1", "party_m2", "party_s1", "party_s2", "merc_slot2_unlocked",
+        "inventory", "password", "equipped_title", "custom_titles", "monster_data",
+        "last_defeat", "penalty_end_time", "flee_count", "relic_pull_count", "total_forge_fail",
+        "weekly_battles", "weekly_boss", "weekly_raid", "weekly_tower", "max_tower_floor",
+        "last_wb_date", "wb_total_damage"
       ];
 
       fullData.students.forEach(function(s) {
         if (!s || !s.name) return;
-        var fbS = fbData.students.find(function(item) { return item && String(item.name).trim() === String(s.name).trim(); });
+        var sName = String(s.name).trim();
+        var fbS = fbStudentsList.find(function(item) { return item && String(item.name).trim() === sName; });
+        
         if (fbS) {
           protectFields.forEach(function(field) {
-            // 시트에 값이 비어있거나 8종 기본값만 있는데 Firebase에 더 많은 스킨/아이템이 있다면 Firebase 데이터 보존!
-            if ((!s[field] || s[field] === "" || s[field] === "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008") && fbS[field]) {
+            var sheetVal = s[field] !== undefined ? String(s[field]).trim() : "";
+            var fbVal = fbS[field] !== undefined ? String(fbS[field]).trim() : "";
+
+            // 스킨 보존 특수 로직: Firebase에 더 많은 스킨이 있거나 시트가 기본값/빈칸이면 무조건 Firebase 데이터 유지!
+            if (field === "unlocked_skins") {
+              var sheetSkinCount = sheetVal ? sheetVal.split(',').length : 0;
+              var fbSkinCount = fbVal ? fbVal.split(',').length : 0;
+              if (fbSkinCount >= sheetSkinCount && fbVal !== "") {
+                s[field] = fbS[field];
+              }
+            }
+            // 일반 보호 필드: 시트가 비어있거나 Firebase에 실제 데이터가 존재하면 Firebase 값 보존
+            else if ((sheetVal === "" || sheetVal === "undefined" || sheetVal === "null") && fbVal !== "") {
+              s[field] = fbS[field];
+            } else if (fbS[field] !== undefined && sheetVal === "") {
               s[field] = fbS[field];
             }
           });
@@ -2839,20 +2871,22 @@ function syncToFirebase() {
       });
     }
 
-    // 3. 월드보스 및 제출물 보존
+    // 4. 월드보스 및 제출물, 로그 보존
     if (fbData.worldBoss) fullData.worldBoss = fbData.worldBoss;
     if (fbData.submissions && (!fullData.submissions || fullData.submissions.length === 0)) {
       fullData.submissions = fbData.submissions;
     }
+    if (fbData.forgeLogs) fullData.forgeLogs = fbData.forgeLogs;
+    if (fbData.logs) fullData.logs = fbData.logs;
 
-    // 4. Firebase 전송
+    // 5. Firebase로 덮어쓰기 전송
     UrlFetchApp.fetch(baseUrl + ".json", {
       method: "put",
       contentType: "application/json",
       payload: JSON.stringify(fullData)
     });
 
-    Logger.log("🎉 [안전 동기화 완료] 선생님의 시트 수정값이 반영되었으며, 학생들의 보유 스킨/가방 아이템은 100% 안전하게 보존되었습니다!");
+    Logger.log("🎉 [절대 보존 동기화 완료] Firebase 객체 인식 오류가 해결되었으며, 학생들의 스킨과 인벤토리가 완벽하게 보존되었습니다!");
   } catch (e) {
     Logger.log("❌ 동기화 중 오류 발생: " + e.toString());
   }
