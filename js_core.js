@@ -458,11 +458,8 @@ function renderDashboard() {
     const modalContent = document.querySelector('#detailModal .modal-content');
     if (modalContent) modalContent.style.maxWidth = '900px';
 
-    const currentWeek = Number(sysConfig.current_week) || 1;
-    const maxPerWeek = Number(sysConfig.max_weekly_books) || 3;
-    const maxReadingLimit = currentWeek * maxPerWeek;
     const actualReading = Number(s.reading_count) || 0;
-    const appliedReading = Math.min(actualReading, maxReadingLimit);
+    const appliedReading = actualReading; // 💡 주간 제한 해제: 작성한 독서록 전체 즉시 인정
 
     const ppb = Number(sysConfig.point_per_book) || 4;
     const totalPoints = appliedReading * ppb + (Number(s.bonus_points) || 0);
@@ -639,10 +636,15 @@ function renderDashboard() {
 
     let tabContent = '';
     if (tabState === 'info') {
+        const goalCount = Number(sysConfig.goal_count) || 20;
+        const goalBadge = actualReading >= goalCount 
+            ? '<span style="font-size:0.8em; color:#059669; font-weight:bold; margin-left:4px;">(🎯목표 달성!)</span>' 
+            : '<span style="font-size:0.8em; color:var(--TextSub); margin-left:4px;">(목표: ' + goalCount + '편)</span>';
+
         tabContent =
             '<div style="text-align:center; color:var(--' + s.blessing + '); font-weight:bold; font-size:1.1em; margin-bottom: 10px;">' + displayBlessing + '의 가호 적용 중</div>' +
             '<div class="stat-row" style="font-size:1.05em; padding-bottom:4px; margin-bottom:6px;"><span style="color:var(--TextSub);">💰 소지 자금</span> <div><b style="color:var(--TextGold);">' + (Number(s.game_money) || 0) + '</b> ' + (sysConfig.game_money_currency || '골드') + '</div></div>' +
-            '<div class="stat-row" style="font-size:1.05em; padding-bottom:4px; margin-bottom:6px;"><span style="color:var(--TextSub);">📚 독서록</span> <div><b style="color:var(--TextMain);">' + actualReading + '</b> 편 <span style="font-size:0.85em; font-weight:bold; color:' + (actualReading >= maxReadingLimit ? 'var(--Red)' : 'var(--Blue)') + ';">(적용: ' + appliedReading + '/' + maxReadingLimit + ')</span> <button class="small-btn" style="background:var(--TextSub); border:none; padding:2px 6px;" onclick="openReadingCountEdit()">수정</button></div></div>' +
+            '<div class="stat-row" style="font-size:1.05em; padding-bottom:4px; margin-bottom:6px;"><span style="color:var(--TextSub);">📚 독서록</span> <div><b style="color:var(--TextMain);">' + actualReading + '</b> 편 ' + goalBadge + ' <button class="small-btn" style="background:var(--TextSub); border:none; padding:2px 6px;" onclick="openReadingCountEdit()">수정</button></div></div>' +
             '<div class="stat-row" style="font-size:1.05em; padding-bottom:4px; margin-bottom:6px;"><span style="color:var(--TextSub);">⚔️ 사냥 기회</span> <b style="color:var(--TextGold);">' + (s.weekly_battles !== undefined ? s.weekly_battles : (Number(sysConfig.max_weekly_battles) || 2)) + ' / ' + (Number(sysConfig.max_weekly_battles) || 2) + '</b></div>' +
             '<div class="stat-row" style="font-size:1.05em; padding-bottom:4px; margin-bottom:6px;"><span style="color:var(--TextSub);">💀 보스 도전 기회</span> <b style="color:var(--TextGold);">' + (s.weekly_boss !== undefined ? s.weekly_boss : (Number(sysConfig.max_weekly_boss) || 3)) + ' / ' + (Number(sysConfig.max_weekly_boss) || 3) + '</b></div>' +
             '<div class="stat-row" style="font-size:1.05em; padding-bottom:4px; margin-bottom:6px;"><span style="color:var(--TextSub);">🏰 던전 탐험 기회</span> <b style="color:var(--TextGold);">' + (s.weekly_raid !== undefined ? s.weekly_raid : (Number(sysConfig.max_weekly_raid) || 1)) + ' / ' + (Number(sysConfig.max_weekly_raid) || 1) + '</b></div>' +

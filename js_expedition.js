@@ -5,12 +5,8 @@
 function openStatAllocation() {
     const s = currentStudent;
 
-    // 💡 주간 최대치 필터링 적용
-    const currentWeek = Number(sysConfig.current_week) || 1;
-    const maxPerWeek = Number(sysConfig.max_weekly_books) || 3;
-    const maxReadingLimit = currentWeek * maxPerWeek;
     const actualReading = Number(s.reading_count) || 0;
-    const appliedReading = Math.min(actualReading, maxReadingLimit);
+    const appliedReading = actualReading; // 💡 독서록 전체 포인트 적용
 
     const ppb = Number(sysConfig.point_per_book) || 4;
     const totalPoints = (appliedReading * ppb) + (Number(s.bonus_points) || 0) + (Number(s.level_points) || 0);

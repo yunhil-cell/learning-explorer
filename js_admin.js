@@ -70,10 +70,12 @@ function renderClassroomDashboard(tab = 'overview') {
     const totalStudents = students.filter(s => s && s.name).length;
     const totalBooks = students.reduce((sum, s) => sum + (Number(s.reading_count) || 0), 0);
     const avgBooks = totalStudents > 0 ? (totalBooks / totalStudents).toFixed(1) : 0;
-    const currentWeek = Number(sys.current_week) || 1;
-    const maxWeeklyBooks = Number(sys.max_weekly_books) || 3;
-    const targetBooksTotal = currentWeek * maxWeeklyBooks * totalStudents;
-    const bookProgressPct = targetBooksTotal > 0 ? Math.min(100, Math.round((totalBooks / targetBooksTotal) * 100)) : 0;
+    
+    // 🎯 목표 권수(goal_count) 달성 학생 집계
+    const goalCount = Number(sys.goal_count) || 20;
+    const achievedStudents = students.filter(s => s && s.name && (Number(s.reading_count) || 0) >= goalCount);
+    const achievedCount = achievedStudents.length;
+    const achievedPct = totalStudents > 0 ? Math.round((achievedCount / totalStudents) * 100) : 0;
 
     const levels = students.map(s => Number(s.level) || 1);
     const maxLevel = levels.length > 0 ? Math.max(...levels) : 1;
@@ -107,14 +109,14 @@ function renderClassroomDashboard(tab = 'overview') {
         }
     });
 
-    // 💡 2. 상단 4종 요약 카드 HTML
+    // 💡 2. 상단 4종 요약 카드 HTML (목표 권수 달성 비율 표기)
     const summaryCardsHtml =
         '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:15px;">' +
         '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:12px; text-align:center;">' +
         '    <div style="font-size:0.8em; color:#94A3B8;">📚 누적 독서 편수</div>' +
         '    <div style="font-size:1.4em; font-weight:bold; color:#38BDF8; margin:4px 0;">' + totalBooks + '<span style="font-size:0.6em; color:#94A3B8;">편</span></div>' +
-        '    <div style="font-size:0.75em; color:#CBD5E1;">평균 ' + avgBooks + '편 (목표 ' + bookProgressPct + '%)</div>' +
-        '    <div style="width:100%; background:#334155; height:5px; border-radius:3px; margin-top:6px; overflow:hidden;"><div style="width:' + bookProgressPct + '%; background:#38BDF8; height:100%;"></div></div>' +
+        '    <div style="font-size:0.75em; color:#CBD5E1;">목표(' + goalCount + '권) 달성: <b style="color:#34D399;">' + achievedCount + '/' + totalStudents + '명 (' + achievedPct + '%)</b></div>' +
+        '    <div style="width:100%; background:#334155; height:5px; border-radius:3px; margin-top:6px; overflow:hidden;"><div style="width:' + achievedPct + '%; background:#34D399; height:100%;"></div></div>' +
         '  </div>' +
         '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:12px; text-align:center;">' +
         '    <div style="font-size:0.8em; color:#94A3B8;">⚔️ 학급 평균 레벨</div>' +

@@ -223,10 +223,9 @@ function updateStudentStats(name, hp, atk, def, luk) {
         return "Error: 이미 투자한 능력치는 회수할 수 없습니다.";
       }
 
-      // 🛡️ 2차 방어 (해킹 차단): 학생이 가질 수 있는 "총 최대 포인트"를 서버가 직접 재계산
+      // 🛡️ 2차 방어 (해킹 차단): 학생이 가질 수 있는 "총 최대 포인트"를 서버가 직접 재계산 (독서록 전액 인정)
       const actualReading = Number(rowData[readCol - 1]) || 0;
-      const maxReadingLimit = currentWeek * maxPerWeek;
-      const appliedReading = Math.min(actualReading, maxReadingLimit);
+      const appliedReading = actualReading;
       const bonusP = Number(rowData[bonusCol - 1]) || 0;
       const levelP = Number(rowData[lpCol - 1]) || 0;
       
