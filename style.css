@@ -1,16 +1,21 @@
-/* 넥슨 워헤이븐 폰트 로드 */
+/* 💡 던파 공식 UI 폰트: 나눔스퀘어 네오 로드 */
 @font-face {
-font-family: 'NexonWarhaven';
-src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2312-1@1.1/WarhavenR.woff2') format('woff2');
-font-weight: 400;
+font-family: 'NanumSquareNeoBold';
+src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_11-01@1.0/NanumSquareNeo-cBd.woff2') format('woff2');
+font-weight: 700;
 font-display: swap;
 }
 
 @font-face {
-font-family: 'NexonWarhaven';
-src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2312-1@1.1/WarhavenB.woff2') format('woff2');
-font-weight: 700;
+font-family: 'NanumSquareNeo';
+src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_11-01@1.0/NanumSquareNeo-bRg.woff2') format('woff2');
+font-weight: 400;
 font-display: swap;
+}
+
+/* 💡 전체 텍스트 및 버튼/입력창 폰트 통합 적용 */
+*, button, input, select, textarea {
+font-family: 'NanumSquareNeoBold', 'NanumSquareNeo', sans-serif;
 }
 
 :root {
@@ -49,7 +54,7 @@ font-display: swap;
 }
 
 body {
-font-family: 'NexonWarhaven', sans-serif;
+font-family: 'NanumSquareNeoBold', 'NanumSquareNeo', sans-serif;
 background-color: #FDFBF7;
 /* 💡 라그나로크풍 광장 대성채 배경 + 화이트 틴트 오버레이 */
 background-image: 
@@ -67,13 +72,21 @@ word-break: keep-all;
 overflow-wrap: break-word;
 }
 
+/* 💡 배경과 자연스럽게 녹아드는 반투명 글래스모피즘 헤더 */
 .header {
-padding: 30px 10px;
-background: #3B82F6;
+padding: 22px 10px;
+background: rgba(15, 23, 42, 0.45); /* 은은한 반투명 다크네이비 */
+backdrop-filter: blur(8px); /* 뒷배경을 부드럽게 흐림 처리 */
+-webkit-backdrop-filter: blur(8px);
 color: white;
-margin-bottom: 20px;
-border-bottom: 4px solid #2563EB;
-box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+margin-bottom: 25px;
+border-bottom: 1.5px solid rgba(255, 255, 255, 0.2);
+box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.header h1 {
+text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+letter-spacing: 1px;
 }
 
 .grid-container {

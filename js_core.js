@@ -1494,10 +1494,14 @@ function openWorldBossModal() {
 
     if (!rankingHtml) rankingHtml = '<div style="color:#64748B; font-size:0.85em; padding:10px 0;">아직 참전한 모험가가 없습니다.</div>';
 
-    // 오늘 참여 여부 체크 (YYYY-MM-DD)
-    const todayStr = new Date().toISOString().split('T')[0];
+    // 오늘 참여 여부 체크 (한국 시간 KST YYYY-MM-DD 기준)
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const kstDate = new Date(utc + (9 * 60 * 60 * 1000));
+    const todayStr = `${kstDate.getFullYear()}-${String(kstDate.getMonth() + 1).padStart(2, '0')}-${String(kstDate.getDate()).padStart(2, '0')}`;
+
     let isFoughtToday = false;
-    if (currentStudent && currentStudent.last_wb_date === todayStr) {
+    if (currentStudent && String(currentStudent.last_wb_date).trim() === todayStr) {
         isFoughtToday = true;
     }
 
