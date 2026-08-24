@@ -268,7 +268,20 @@ function renderButtons(students) {
         btn.className = 'student-btn ' + (s.blessing ? 'btn-' + s.blessing : '');
         if (!s.blessing) btn.style.backgroundColor = '#E2E8F0';
 
-        btn.innerHTML = '<div style="width:100%; line-height:1.2; white-space:normal;">' + getTitleHtml(s) + '</div><div style="font-size: 0.88em; font-weight:bold; color:var(--TextSub); margin-top:5px; white-space:nowrap;">📚 ' + (s.reading_count || 0) + '편</div>';
+        // 🩹 [신규] 실시간 부상/도주 패널티 타이머 계산
+        let injuryHtml = '';
+        if (s.penalty_end_time) {
+            const now = new Date().getTime();
+            const remainMs = Number(s.penalty_end_time) - now;
+            if (remainMs > 0) {
+                const remainH = Math.floor(remainMs / (1000 * 60 * 60));
+                const remainM = Math.floor((remainMs % (1000 * 60 * 60)) / (1000 * 60));
+                const timeText = remainH > 0 ? `${remainH}h ${remainM}m` : `${remainM}m`;
+                injuryHtml = `<div class="injury-badge">🩹 ${timeText}</div>`;
+            }
+        }
+
+        btn.innerHTML = injuryHtml + '<div style="width:100%; line-height:1.2; white-space:normal;">' + getTitleHtml(s) + '</div><div style="font-size: 0.88em; font-weight:bold; color:var(--TextSub); margin-top:5px; white-space:nowrap;">📚 ' + (s.reading_count || 0) + '편</div>';
 
         // 💡 학생 클릭 로직: 레이드 선택 분기를 없애고 바로 학생 정보 열기
         btn.onclick = () => {
@@ -747,17 +760,42 @@ function renderDashboard() {
             '  </div>' +
             '</div>';
     } else if (tabState === 'bag') {
+        window.currentBagFilter = window.currentBagFilter || 'all';
+
         const rawInv = String(currentStudent.inventory || "");
         const items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
         const itemCount = {};
         items.forEach(item => { itemCount[item] = (itemCount[item] || 0) + 1; });
 
+        // 💡 [신규] 카테고리 필터 판별 헬퍼
+        const matchCategory = (name, cat) => {
+            if (cat === 'all') return true;
+            const isBox = name.includes('상자') || name.includes('박스');
+            const isTicket = name.includes('교환권') || name.includes('티켓') || name.includes('도전권') || name.includes('신청권') || name.includes('우선권') || name.includes('추첨권') || name.includes('[현실 재화]');
+            const isConsume = name.includes('물약') || name.includes('치료제') || name.includes('회복약') || name.includes('비타민') || name.includes('밀크츄') || name.includes('베베토') || name.includes('확장권') || name.includes('해금권');
+
+            if (cat === 'box') return isBox;
+            if (cat === 'ticket') return isTicket && !isBox;
+            if (cat === 'consume') return isConsume || (!isBox && !isTicket);
+            return true;
+        };
+
+        const filterBtnsHtml =
+            '<div style="display:flex; gap:6px; margin-bottom:12px; overflow-x:auto; padding-bottom:4px;">' +
+            '  <button class="bag-filter-btn ' + (window.currentBagFilter === 'all' ? 'active' : '') + '" onclick="window.currentBagFilter=\'all\'; renderDashboard();">전체</button>' +
+            '  <button class="bag-filter-btn ' + (window.currentBagFilter === 'box' ? 'active' : '') + '" onclick="window.currentBagFilter=\'box\'; renderDashboard();">🎁 상자</button>' +
+            '  <button class="bag-filter-btn ' + (window.currentBagFilter === 'ticket' ? 'active' : '') + '" onclick="window.currentBagFilter=\'ticket\'; renderDashboard();">🎟️ 교환권/티켓</button>' +
+            '  <button class="bag-filter-btn ' + (window.currentBagFilter === 'consume' ? 'active' : '') + '" onclick="window.currentBagFilter=\'consume\'; renderDashboard();">🧪 소비/물약</button>' +
+            '</div>';
+
         let bagHtml = '';
-        if (Object.keys(itemCount).length === 0) {
-            bagHtml = '<div style="padding:30px 10px; color:var(--TextLock); font-size:1em; text-align:center; background:var(--BgEmpty); border-radius:10px;">가방이 텅 비어있습니다.</div>';
+        const filteredEntries = Object.entries(itemCount).filter(([itemName]) => matchCategory(itemName, window.currentBagFilter));
+
+        if (filteredEntries.length === 0) {
+            bagHtml = '<div style="padding:30px 10px; color:var(--TextLock); font-size:0.95em; text-align:center; background:var(--BgEmpty); border-radius:10px;">해당 분류의 아이템이 없습니다.</div>';
         } else {
-            bagHtml = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px; max-height:300px; overflow-y:auto; padding-right:5px;">';
-            for (const [itemName, count] of Object.entries(itemCount)) {
+            bagHtml = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(115px, 1fr)); gap:8px; max-height:260px; overflow-y:auto; padding-right:4px;">';
+            for (const [itemName, count] of filteredEntries) {
                 let itemIcon = '🎟️';
                 let glowStyle = '';
                 if (itemName.includes('상자') || itemName.includes('급')) {
@@ -767,20 +805,25 @@ function renderDashboard() {
                     else if (itemName.includes('은') || itemName.includes('A급')) glowStyle = 'filter: drop-shadow(0 0 12px #8B5CF6);';
                     else if (itemName.includes('금') || itemName.includes('S급')) glowStyle = 'filter: drop-shadow(0 0 15px #F59E0B);';
                     else if (itemName.includes('전설') || itemName.includes('SS급')) glowStyle = 'filter: drop-shadow(0 0 20px #EF4444);';
+                } else if (itemName.includes('물약') || itemName.includes('치료제') || itemName.includes('회복약')) {
+                    itemIcon = '🧪';
+                } else if (itemName.includes('비타민') || itemName.includes('밀크츄') || itemName.includes('베베토') || itemName.includes('간식')) {
+                    itemIcon = '🍬';
                 }
 
                 bagHtml +=
-                    '<div style="background:#FFFFFF; border:1px solid var(--BorderColor); border-radius:10px; padding:10px; box-shadow:0 2px 4px rgba(0,0,0,0.05); text-align:center;">' +
-                    '  <div style="font-size:30px; margin-bottom:5px; ' + glowStyle + '">' + itemIcon + '</div>' +
-                    '  <div style="font-weight:bold; color:var(--TextMain); font-size:0.9em; margin-bottom:5px; word-break:keep-all;">' + itemName + '</div>' +
-                    '  <div style="color:#10B981; font-weight:bold; font-size:1em; margin-bottom:10px;">' + count + '개</div>' +
-                    '  <button class="small-btn" style="width:100%; background:#10B981; color:white; padding:6px; border:none;" onclick="promptUseItem(\'' + itemName + '\')">사용</button>' +
+                    '<div style="background:#FFFFFF; border:1px solid var(--BorderColor); border-radius:10px; padding:8px 6px; box-shadow:0 2px 4px rgba(0,0,0,0.04); text-align:center; display:flex; flex-direction:column; justify-content:space-between;">' +
+                    '  <div style="font-size:26px; margin-bottom:3px; ' + glowStyle + '">' + itemIcon + '</div>' +
+                    '  <div style="font-weight:bold; color:var(--TextMain); font-size:0.85em; margin-bottom:4px; word-break:keep-all; line-height:1.2;">' + itemName + '</div>' +
+                    '  <div style="color:#10B981; font-weight:bold; font-size:0.95em; margin-bottom:6px;">' + count + '개</div>' +
+                    '  <button class="small-btn" style="width:100%; background:#10B981; color:white; padding:5px 0; border:none; font-size:0.85em;" onclick="promptUseItem(\'' + itemName + '\')">사용</button>' +
                     '</div>';
             }
             bagHtml += '</div>';
         }
         tabContent =
-            '<div style="font-size:1.1em; font-weight:bold; color:var(--TextMain); margin-bottom:15px;">🎒 전리품 목록</div>' +
+            '<div style="font-size:1.05em; font-weight:bold; color:var(--TextMain); margin-bottom:8px;">🎒 전리품 목록</div>' +
+            filterBtnsHtml +
             bagHtml;
     }
 

@@ -1,4 +1,19 @@
-/* 💡 던파 공식 UI 폰트: 나눔스퀘어 네오 로드 */
+/* 💡 1. 타이틀 전용 폰트: 던파 연단된 칼날 로드 */
+@font-face {
+font-family: 'DNFBlade';
+src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2304-2@1.0/DNFBlade-Medium.woff2') format('woff2');
+font-weight: 500;
+font-display: swap;
+}
+
+@font-face {
+font-family: 'DNFBladeBold';
+src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2304-2@1.0/DNFBlade-Bold.woff2') format('woff2');
+font-weight: 700;
+font-display: swap;
+}
+
+/* 💡 2. 본문 및 UI 가독성 전용 폰트: 나눔스퀘어 네오 로드 */
 @font-face {
 font-family: 'NanumSquareNeoBold';
 src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_11-01@1.0/NanumSquareNeo-cBd.woff2') format('woff2');
@@ -13,9 +28,15 @@ font-weight: 400;
 font-display: swap;
 }
 
-/* 💡 전체 텍스트 및 버튼/입력창 폰트 통합 적용 */
-*, button, input, select, textarea {
+/* 💡 3. 기본 전체 본문, 버튼, 입력창, 학생 카드는 나눔스퀘어 네오 유지 */
+*, body, button, input, select, textarea, .stat-row, .student-btn {
 font-family: 'NanumSquareNeoBold', 'NanumSquareNeo', sans-serif;
+}
+
+/* 💡 4. 대형 타이틀, 모달 대제목, 전투 돌입 타이틀에만 '연단된 칼날' 포인트 적용 */
+h1, h2, #battleTitle, #uiPopupTitle, .battle-vs, #wbBannerTitle {
+font-family: 'DNFBladeBold', 'DNFBlade', 'NanumSquareNeoBold', sans-serif !important;
+letter-spacing: 0.5px;
 }
 
 :root {
@@ -1149,6 +1170,46 @@ border-radius: 50%;
 box-shadow: 0 2px 5px rgba(239, 68, 68, 0.5);
 z-index: 10;
 animation: cardPop 0.3s ease-out;
+}
+
+/* 🩹 신규: 메인 카드 부상/치료중 뱃지 스타일 */
+.injury-badge {
+position: absolute;
+top: 6px;
+right: 6px;
+background: linear-gradient(135deg, #EF4444, #991B1B);
+color: #FFFFFF;
+font-size: 0.55em;
+font-weight: bold;
+padding: 3px 6px;
+border-radius: 8px;
+box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4);
+z-index: 5;
+display: flex;
+align-items: center;
+gap: 3px;
+letter-spacing: 0.5px;
+border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* 🎒 신규: 가방 서브 카테고리 필터 탭 버튼 */
+.bag-filter-btn {
+padding: 5px 10px;
+border-radius: 15px;
+border: 1.5px solid var(--BorderColor);
+background: #FFFFFF;
+color: var(--TextSub);
+font-size: 0.82em;
+font-weight: bold;
+cursor: pointer;
+transition: 0.2s;
+white-space: nowrap;
+}
+.bag-filter-btn.active {
+background: var(--Highlight);
+color: #FFFFFF;
+border-color: var(--Highlight);
+box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
 }
 
 /* 💡 신규: 대시보드 탭 UI 스타일 */
