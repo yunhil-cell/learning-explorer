@@ -50,7 +50,15 @@ font-display: swap;
 
 body {
 font-family: 'NexonWarhaven', sans-serif;
-background: var(--BgDashboard);
+background-color: #FDFBF7;
+/* 💡 라그나로크풍 광장 대성채 배경 + 화이트 틴트 오버레이 */
+background-image: 
+    linear-gradient(rgba(253, 251, 247, 0.82), rgba(253, 251, 247, 0.82)),
+    url('images/background.png');
+background-size: cover;
+background-position: center bottom;
+background-attachment: fixed;
+background-repeat: no-repeat;
 color: var(--TextSub);
 text-align: center;
 margin: 0;
