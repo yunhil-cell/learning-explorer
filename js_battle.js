@@ -2384,11 +2384,11 @@ function finishRaid(isSuccess) {
         msg += `<br><br>🎊 <b>레벨업 달성:</b> <span style="color:var(--Highlight); font-weight:bold;">${leveledUpMembers.join(', ')}</span>`;
     }
 
-    fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(window.allStudentsData)
-    }).then(() => {
+    // 💡 [안정화 패치] 전체 학생 DB 덮어쓰기를 제거하고, 실제 파티에 참여한 3명만 개별 안전 업데이트
+    Promise.all(battleState.party.map(p => {
+        let stObj = window.allStudentsData.find(s => s.name === p.name);
+        return stObj ? updateFastFirebaseStudent(stObj) : Promise.resolve();
+    })).then(() => {
         showUiAlert("🏆 던전 탐험 보상 획득", msg, "renderDashboard()");
     });
 }

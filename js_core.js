@@ -21,27 +21,25 @@ function pushFirebaseLog(type, logData) {
     }).catch(err => console.error("로그 전송 실패:", err));
 }
 
-// 💡 파이어베이스 학생 데이터 실시간 동기화 헬퍼 함수 (신규 학생 자동 생성 지원)
+// 💡 [영구 격리 패치] 학생 이름을 고유 Key로 하는 독립 방 다이렉트 1:1 저장 (남의 데이터 간섭 0%)
 async function updateFastFirebaseStudent(student) {
     if (!student || !student.name) return;
-    if (!window.allStudentsData) window.allStudentsData = [];
-
-    let idx = window.allStudentsData.findIndex(s => s && s.name === student.name);
-    
-    // 신규 학생이면 배열 맨 끝에 추가
-    if (idx === -1) {
-        idx = window.allStudentsData.length;
-        window.allStudentsData.push(student);
-    } else {
-        window.allStudentsData[idx] = student;
-    }
+    const sName = encodeURIComponent(String(student.name).trim());
 
     try {
-        await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${idx}.json`, {
+        // 1. 서버의 내 독립 방에 1:1 다이렉트 저장
+        await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(student)
         });
+
+        // 2. 서버 저장이 성공했을 때만 내 화면 캐시 갱신
+        if (window.allStudentsData) {
+            const idx = window.allStudentsData.findIndex(s => s && String(s.name).trim() === String(student.name).trim());
+            if (idx > -1) window.allStudentsData[idx] = student;
+            else window.allStudentsData.push(student);
+        }
     } catch (e) {
         console.error("파이어베이스 학생 데이터 저장 실패:", e);
     }
@@ -153,8 +151,15 @@ function initGameData(data) {
     if (data.bosses) bossList = data.bosses;
 
     initWorldBossState();
-    checkAndPerformWeeklyReset(data);
-    renderButtons(data.students);
+    
+    // 💡 학생 개별 방 객체(Object Map)를 화면 렌더링용 배열(Array)로 안전 변환
+    let studentsArray = [];
+    if (data.students) {
+        studentsArray = Array.isArray(data.students) ? data.students : Object.values(data.students);
+        studentsArray = studentsArray.filter(s => s && s.name && String(s.name).trim() !== "");
+    }
+
+    renderButtons(studentsArray);
 }
 
 // 💡 [신규] Firebase 기반 주간 횟수 자동 초기화 엔진 (한국 시간 월요일 자정 기준)
@@ -316,7 +321,8 @@ function openStudentDetail() {
 function openStudentDetailAfterAuth() {
     const modal = document.getElementById('detailModal');
     modal.style.display = 'flex';
-    if (!currentStudent.blessing) showBlessingSelection();
+    // 💡 [임시 가호 지원] 미각성("")이거나 재선택 대기("TEMP") 상태면 가호 선택창 오픈
+    if (!currentStudent.blessing || currentStudent.blessing === 'TEMP') showBlessingSelection();
     else renderDashboard();
 
     // 💡 최신 공지사항 점검 및 강제 알림 팝업 (교사 모드가 아닐 때만 실행!)
@@ -429,31 +435,33 @@ function showBlessingSelection() {
 function saveBlessing(bId) {
     document.getElementById('modalBody').innerHTML = '<h3 style="margin-top: 50px; color:var(--Highlight);">각성 진행 중...</h3>';
 
+    const isReSelect = (currentStudent.blessing === 'TEMP');
     currentStudent.blessing = bId;
 
-    // 💡 [빈칸일 때만 채우기] 이미 값이 있는 스탯, 골드, 레벨, 스킨 등은 절대 건드리지 않음
-    if (!currentStudent.password || currentStudent.password === "") currentStudent.password = '!1234';
-    if (currentStudent.hp_points === undefined || currentStudent.hp_points === "") currentStudent.hp_points = 5;
-    if (currentStudent.atk_points === undefined || currentStudent.atk_points === "") currentStudent.atk_points = 5;
-    if (currentStudent.def_points === undefined || currentStudent.def_points === "") currentStudent.def_points = 5;
-    if (currentStudent.luk_points === undefined || currentStudent.luk_points === "") currentStudent.luk_points = 5;
-    
-    if (currentStudent.level === undefined || currentStudent.level === "") currentStudent.level = 1;
-    if (currentStudent.exp === undefined || currentStudent.exp === "") currentStudent.exp = 0;
-    if (currentStudent.level_points === undefined || currentStudent.level_points === "") currentStudent.level_points = 0;
-    if (currentStudent.bonus_points === undefined || currentStudent.bonus_points === "") currentStudent.bonus_points = 0;
-    if (currentStudent.game_money === undefined || currentStudent.game_money === "") currentStudent.game_money = 0;
+    // 💡 신규 유저일 때만 초기 스탯 5/5/5/5 부여, 임시 가호(재선택)일 때는 기존 스탯 100% 유지
+    if (!isReSelect) {
+        if (!currentStudent.password || currentStudent.password === "") currentStudent.password = '!1234';
+        if (currentStudent.hp_points === undefined || currentStudent.hp_points === "") currentStudent.hp_points = 5;
+        if (currentStudent.atk_points === undefined || currentStudent.atk_points === "") currentStudent.atk_points = 5;
+        if (currentStudent.def_points === undefined || currentStudent.def_points === "") currentStudent.def_points = 5;
+        if (currentStudent.luk_points === undefined || currentStudent.luk_points === "") currentStudent.luk_points = 5;
+        
+        if (currentStudent.level === undefined || currentStudent.level === "") currentStudent.level = 1;
+        if (currentStudent.exp === undefined || currentStudent.exp === "") currentStudent.exp = 0;
+        if (currentStudent.level_points === undefined || currentStudent.level_points === "") currentStudent.level_points = 0;
+        if (currentStudent.bonus_points === undefined || currentStudent.bonus_points === "") currentStudent.bonus_points = 0;
+        if (currentStudent.game_money === undefined || currentStudent.game_money === "") currentStudent.game_money = 0;
 
-    if (!currentStudent.equipped_skin || currentStudent.equipped_skin === "") currentStudent.equipped_skin = "HD001";
+        if (!currentStudent.equipped_skin || currentStudent.equipped_skin === "") currentStudent.equipped_skin = "HD001";
 
-    // 💡 기존 보유 스킨이 있으면 그대로 두고, 비어있을 때만 기본 8종 추가
-    const rawSkins = String(currentStudent.unlocked_skins || "").replace(/!/g, '');
-    let mySkins = rawSkins ? rawSkins.split(',').map(x => x.trim()).filter(Boolean) : [];
-    const defaultSkins = ['HD001', 'HD002', 'HD003', 'HD004', 'HD005', 'HD006', 'HD007', 'HD008'];
-    defaultSkins.forEach(ds => {
-        if (!mySkins.includes(ds)) mySkins.push(ds);
-    });
-    currentStudent.unlocked_skins = "!" + mySkins.join(',');
+        const rawSkins = String(currentStudent.unlocked_skins || "").replace(/!/g, '');
+        let mySkins = rawSkins ? rawSkins.split(',').map(x => x.trim()).filter(Boolean) : [];
+        const defaultSkins = ['HD001', 'HD002', 'HD003', 'HD004', 'HD005', 'HD006', 'HD007', 'HD008'];
+        defaultSkins.forEach(ds => {
+            if (!mySkins.includes(ds)) mySkins.push(ds);
+        });
+        currentStudent.unlocked_skins = "!" + mySkins.join(',');
+    }
 
     renderDashboard();
     updateFastFirebaseStudent(currentStudent);

@@ -2804,7 +2804,44 @@ function buyShopItem(studentName, itemName, cost) {
   }
 }
 
-// 💡 [완벽 마스터 권한 + 데이터 증발 원천 차단] 파이어베이스의 객체/배열 구조를 완벽 호환하여 학생 스킨/가방/스탯 100% 영구 보존
+// 💡 [신규] 특정 학생 1명만 핀포인트로 독립 방에 동기화
+function syncStudentToFirebase(studentName) {
+  var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData/students";
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var stSheet = ss.getSheetByName('students');
+    if (!stSheet) return "Error: students 시트 없음";
+
+    var data = stSheet.getDataRange().getValues();
+    var headers = data[0].map(function(h) { return String(h).trim(); });
+    var nameIdx = headers.indexOf('name');
+    if (nameIdx === -1) return "Error: name 열 없음";
+
+    var targetStudent = null;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
+        targetStudent = {};
+        headers.forEach(function(h, idx) { targetStudent[h] = data[i][idx]; });
+        break;
+      }
+    }
+    if (!targetStudent) return "Error: 해당 학생을 찾을 수 없음";
+
+    var sName = encodeURIComponent(String(studentName).trim());
+    UrlFetchApp.fetch(baseUrl + "/" + sName + ".json", {
+      method: "PUT",
+      contentType: "application/json",
+      payload: JSON.stringify(targetStudent)
+    });
+
+    Logger.log("✅ [" + studentName + "] 학생 독립 방 다이렉트 동기화 완료");
+    return "Success";
+  } catch (e) {
+    return "Error: " + e.toString();
+  }
+}
+
+// 💡 [완벽 마스터 동기화] Firebase를 이름 기반 독립 방(Object Map) 구조로 전면 동기화
 function syncToFirebase() {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData";
   
@@ -2818,76 +2855,71 @@ function syncToFirebase() {
     // 1. 기존 Firebase 데이터 가져오기
     var fbRes = UrlFetchApp.fetch(baseUrl + ".json");
     var fbData = JSON.parse(fbRes.getContentText()) || {};
+    var fbStudentsMap = fbData.students || {};
 
-    // 2. 🛡️ [핵심 버그 수정] Firebase가 배열이든 객체든 무조건 안전한 배열(Array)로 변환
-    var fbStudentsList = [];
-    if (fbData.students) {
-      fbStudentsList = Array.isArray(fbData.students) ? fbData.students : Object.values(fbData.students);
-    }
+    // 2. 학생 데이터를 이름(Key) 기반 독립 방 객체로 변환 및 실시간 플레이 데이터 완벽 보존 병합
+    var newStudentsMap = {};
+    var protectFields = [
+      "password", "blessing", "level", "exp", "level_points", "bonus_points",
+      "hp_points", "atk_points", "def_points", "luk_points", "game_money",
+      "weapon_lv", "head_lv", "body_lv", "accessory_lv",
+      "weapon_fail", "head_fail", "body_fail", "accessory_fail",
+      "unlocked_skins", "equipped_skin", "unlocked_skills", "equipped_1",
+      "unlocked_relics", "relic_1", "relic_2", "relic_slot_2_unlocked",
+      "unlocked_mercenaries", "party_m1", "party_m2", "party_s1", "party_s2", "merc_slot2_unlocked",
+      "inventory", "equipped_title", "custom_titles", "monster_data",
+      "last_defeat", "penalty_end_time", "flee_count", "relic_pull_count", "total_forge_fail",
+      "weekly_battles", "weekly_boss", "weekly_raid", "weekly_tower", "max_tower_floor",
+      "last_wb_date", "wb_total_damage"
+    ];
 
-    // 3. 🛡️ 학생 인게임 실시간 데이터(스킨, 가방, 동료, 칭호 등) 절대 보존 병합
-    if (fbStudentsList.length > 0 && fullData.students) {
-      var protectFields = [
-        "unlocked_skins", "equipped_skin", "unlocked_skills", "equipped_1",
-        "unlocked_relics", "relic_1", "relic_2", "relic_slot_2_unlocked",
-        "unlocked_mercenaries", "party_m1", "party_m2", "party_s1", "party_s2", "merc_slot2_unlocked",
-        "inventory", "password", "equipped_title", "custom_titles", "monster_data",
-        "last_defeat", "penalty_end_time", "flee_count", "relic_pull_count", "total_forge_fail",
-        "weekly_battles", "weekly_boss", "weekly_raid", "weekly_tower", "max_tower_floor",
-        "last_wb_date", "wb_total_damage"
-      ];
-
+    if (fullData.students) {
       fullData.students.forEach(function(s) {
         if (!s || !s.name) return;
         var sName = String(s.name).trim();
-        var fbS = fbStudentsList.find(function(item) { return item && String(item.name).trim() === sName; });
-        
+        var fbS = fbStudentsMap[sName];
+
+        // Firebase에 기존 플레이 기록이 있다면 빈 시트 데이터로 덮어쓰지 않도록 보호
         if (fbS) {
           protectFields.forEach(function(field) {
             var sheetVal = s[field] !== undefined ? String(s[field]).trim() : "";
             var fbVal = fbS[field] !== undefined ? String(fbS[field]).trim() : "";
 
-            // 스킨 보존 특수 로직: Firebase에 더 많은 스킨이 있거나 시트가 기본값/빈칸이면 무조건 Firebase 데이터 유지!
             if (field === "unlocked_skins") {
               var sheetSkinCount = sheetVal ? sheetVal.split(',').length : 0;
               var fbSkinCount = fbVal ? fbVal.split(',').length : 0;
-              if (fbSkinCount >= sheetSkinCount && fbVal !== "") {
-                s[field] = fbS[field];
-              }
-            }
-            // 일반 보호 필드: 시트가 비어있거나 Firebase에 실제 데이터가 존재하면 Firebase 값 보존
-            else if ((sheetVal === "" || sheetVal === "undefined" || sheetVal === "null") && fbVal !== "") {
-              s[field] = fbS[field];
-            } else if (fbS[field] !== undefined && sheetVal === "") {
+              if (fbSkinCount >= sheetSkinCount && fbVal !== "") s[field] = fbS[field];
+            } else if ((sheetVal === "" || sheetVal === "undefined" || sheetVal === "null") && fbVal !== "") {
               s[field] = fbS[field];
             }
           });
         }
+        newStudentsMap[sName] = s;
       });
     }
 
-    // 4. 월드보스 및 제출물, 로그 보존
+    fullData.students = newStudentsMap;
+
+    // 3. 월드보스 및 제출물, 로그 보존
     if (fbData.worldBoss) fullData.worldBoss = fbData.worldBoss;
-    if (fbData.submissions && (!fullData.submissions || fullData.submissions.length === 0)) {
-      fullData.submissions = fbData.submissions;
-    }
+    if (fbData.submissions && (!fullData.submissions || fullData.submissions.length === 0)) fullData.submissions = fbData.submissions;
     if (fbData.forgeLogs) fullData.forgeLogs = fbData.forgeLogs;
     if (fbData.logs) fullData.logs = fbData.logs;
 
-    // 5. Firebase로 덮어쓰기 전송
+    // 4. Firebase 전송
     UrlFetchApp.fetch(baseUrl + ".json", {
       method: "put",
       contentType: "application/json",
       payload: JSON.stringify(fullData)
     });
 
-    Logger.log("🎉 [절대 보존 동기화 완료] Firebase 객체 인식 오류가 해결되었으며, 학생들의 스킨과 인벤토리가 완벽하게 보존되었습니다!");
+    Logger.log("🎉 [개별 독립 방 체제 전환 완료] 모든 학생이 이름 기반 독립 주택으로 격리되어 충돌이 영구 차단되었습니다!");
   } catch (e) {
     Logger.log("❌ 동기화 중 오류 발생: " + e.toString());
   }
 }
 
-// 💡 [완전 백업] 웹사이트에서 작성한 퀘스트, 공지, 학생 스탯, 성찰일지 제출물 4개 탭 전체 시트 자동 백업
+// 💡 [완전 백업] 학생(students) 탭 실시간 플레이 데이터 백업 (독립 방 Object Map 완벽 지원)
 function syncFromFirebase() {
   var firebaseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData.json";
   var res = UrlFetchApp.fetch(firebaseUrl);
@@ -2897,32 +2929,31 @@ function syncFromFirebase() {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 1. 학생(students) 탭 실시간 플레이 데이터 백업
+  // 1. 학생(students) 탭 실시간 플레이 데이터 백업 (독립 방 Object Map 완벽 지원)
   if (data.students) {
-    var stList = Array.isArray(data.students) ? data.students : Object.values(data.students);
+    var stMap = data.students;
     var stSheet = ss.getSheetByName("students");
     if (stSheet) {
       var range = stSheet.getDataRange();
       var values = range.getValues();
       var headers = values[0].map(function(h) { return String(h).trim(); });
+      var nameIdx = headers.indexOf("name");
 
       var teacherFields = ["reading_count", "custom_titles"];
       var teacherColIndices = teacherFields.map(function(f) { return headers.indexOf(f); });
 
-      stList.forEach(function(student) {
-        if (!student || !student.name) return;
+      for (var r = 1; r < values.length; r++) {
+        var sName = String(values[r][nameIdx]).trim();
+        var student = stMap[sName];
 
-        for (var r = 1; r < values.length; r++) {
-          if (String(values[r][headers.indexOf("name")]).trim() === String(student.name).trim()) {
-            headers.forEach(function(h, c) {
-              if (c !== -1 && !teacherColIndices.includes(c) && student[h] !== undefined) {
-                values[r][c] = student[h];
-              }
-            });
-            break;
-          }
+        if (student) {
+          headers.forEach(function(h, c) {
+            if (c !== -1 && !teacherColIndices.includes(c) && student[h] !== undefined) {
+              values[r][c] = student[h];
+            }
+          });
         }
-      });
+      }
 
       stSheet.getRange(1, 1, values.length, values[0].length).setValues(values);
     }
