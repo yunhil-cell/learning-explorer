@@ -1360,11 +1360,11 @@ function claimReward(rowIdx, colIdx) {
             leveledUp = true;
         }
 
-        // 📝 [Firebase 전투 승리 로그 전송]
+        // 📝 [Firebase 일반 사냥 / 보스 도전 로그 분기 전송]
         pushFirebaseLog('common', {
             time: new Date().toISOString(),
             name: currentStudent.name,
-            category: "전투 승리",
+            category: battleState.isBoss ? "보스 도전" : "일반 사냥",
             content: mName + " 처치 -> " + combinedRewardStr + (leveledUp ? " (Lv." + currentStudent.level + " 레벨업)" : "")
         });
 
@@ -2384,6 +2384,14 @@ function finishRaid(isSuccess) {
         msg += `<br><br>🎊 <b>레벨업 달성:</b> <span style="color:var(--Highlight); font-weight:bold;">${leveledUpMembers.join(', ')}</span>`;
     }
 
+    // 📝 [Firebase 파티 던전 로그 전송]
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: "파티 던전",
+        content: `${d.dungeon_name} (${raidParty.join(', ')}) -> 전원 ${totalRaidReward} EXP` + (boxToGive ? ` / [${boxToGive}] 지급` : '')
+    });
+
     // 💡 [안정화 패치] 전체 학생 DB 덮어쓰기를 제거하고, 실제 파티에 참여한 3명만 개별 안전 업데이트
     Promise.all(battleState.party.map(p => {
         let stObj = window.allStudentsData.find(s => s.name === p.name);
@@ -2761,6 +2769,14 @@ function endTowerAndReward(isMaxClear = false) {
     let curTower = (currentStudent.weekly_tower !== undefined && currentStudent.weekly_tower !== "") ? Number(currentStudent.weekly_tower) : maxTower;
     currentStudent.weekly_tower = Math.max(0, curTower - 1);
 
+    // 📝 [Firebase 도전의 탑 로그 전송]
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: "도전의 탑",
+        content: `${clearedFloors}층 정복 -> ` + (rmAmount > 0 ? `[현실 재화] ${rmAmount}${realCurrency} 교환권` : '보상 없음')
+    });
+
     updateFastFirebaseStudent(currentStudent);
 }
 
@@ -3044,6 +3060,14 @@ async function finishWorldBossSession(isSurvived) {
         worldBossState.current_hp = curHp;
         worldBossState.contributions = currentContribs;
         worldBossState.is_cleared = isCleared;
+
+        // 📝 [Firebase 월드 보스 로그 전송]
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "월드 보스",
+            content: `${activeBoss.name} 참전 -> 피해량 ${finalDamage.toLocaleString()} 딜 (+${rewardGold}골드 / +${rewardExp}EXP)`
+        });
 
         await Promise.all([
             updateFastFirebaseStudent(currentStudent),

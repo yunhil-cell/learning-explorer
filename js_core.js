@@ -140,18 +140,26 @@ function initGameData(data) {
     noticesData = data.notices || [];
     lootBoxesData = data.lootBoxes || [];
     shopData = data.shopItems || [];
-    mercenariesData = data.mercenaries || [];
-    worldBossesData = data.worldBosses || [];
+    // 💡 [안정화] 용병 및 월드보스 데이터가 Object로 들어와도 Array로 완벽 변환
+    if (data.mercenaries) mercenariesData = Array.isArray(data.mercenaries) ? data.mercenaries : Object.values(data.mercenaries);
+    else mercenariesData = [];
+
+    if (data.worldBosses) worldBossesData = Array.isArray(data.worldBosses) ? data.worldBosses : Object.values(data.worldBosses);
+    else worldBossesData = [];
+
     // 💡 [핵심] 웹페이지에서 작성/조회하는 퀘스트 및 제출물 데이터 정상 바인딩
     if (data.quests) window.questsData = Array.isArray(data.quests) ? data.quests : Object.values(data.quests);
     if (data.submissions) window.submissionsData = Array.isArray(data.submissions) ? data.submissions : Object.values(data.submissions);
-    if (data.monsters) monsterList = data.monsters;
-    if (data.monsterSkills) monsterSkillsData = data.monsterSkills;
-    if (data.dungeons) dungeonsData = data.dungeons;
-    if (data.bosses) bossList = data.bosses;
+    if (data.monsters) monsterList = Array.isArray(data.monsters) ? data.monsters : Object.values(data.monsters);
+    if (data.monsterSkills) monsterSkillsData = Array.isArray(data.monsterSkills) ? data.monsterSkills : Object.values(data.monsterSkills);
+    if (data.dungeons) dungeonsData = Array.isArray(data.dungeons) ? data.dungeons : Object.values(data.dungeons);
+    if (data.bosses) bossList = Array.isArray(data.bosses) ? data.bosses : Object.values(data.bosses);
 
     initWorldBossState();
     
+    // 💡 [필수 호출] 매주 월요일 자정 주간 횟수 자동 초기화 검사 및 실행
+    checkAndPerformWeeklyReset(data);
+
     // 💡 학생 개별 방 객체(Object Map)를 화면 렌더링용 배열(Array)로 안전 변환
     let studentsArray = [];
     if (data.students) {
@@ -194,22 +202,26 @@ async function checkAndPerformWeeklyReset(data) {
     const maxTower = Number(sysConfig.max_weekly_tower) || 1;
 
     let studentsList = Array.isArray(data.students) ? data.students : Object.values(data.students);
+    let studentsMap = {};
+
     studentsList.forEach(s => {
         if (!s || !s.name) return;
         s.weekly_battles = maxBattles;
         s.weekly_boss = maxBoss;
         s.weekly_raid = maxRaid;
         s.weekly_tower = maxTower;
+        studentsMap[String(s.name).trim()] = s;
     });
 
     sysConfig.last_weekly_reset = currentMondayKey;
 
     try {
+        // 💡 [구조 보존] 학생 독립 방 객체(Object Map) 형태로 저장하여 용병 데이터 유실 원천 차단
         await Promise.all([
             fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(studentsList)
+                body: JSON.stringify(studentsMap)
             }),
             fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
                 method: 'PUT',
