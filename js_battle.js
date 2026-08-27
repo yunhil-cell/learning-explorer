@@ -79,11 +79,13 @@ function enterBattle(monsterId, isBoss = false) {
 
     const pStats = getPlayerTotalStats();
 
-    // 💡 [신규] 보스전 기믹 설정 추가
+    // 💡 [신규] 보스전 기믹 설정 및 서든데스 플래그 초기화
     battleState.isBoss = isBoss;
     battleState.gimmick_type = isBoss ? String(targetMonster.gimmick_type || '없음').trim().toLowerCase() : '없음';
     battleState.gimmick_value = isBoss ? Number(targetMonster.gimmick_value) || 0 : 0;
     battleState.turnCount = 1;
+    battleState.sd1Logged = false;
+    battleState.sd2Logged = false;
 
     battleState.isFleeing = false;
     battleState.monster = targetMonster;
@@ -288,9 +290,15 @@ function fleeBattle() {
 
     if (battleState.isRaid) {
         const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
-        let curRaid = (currentStudent.weekly_raid !== undefined && currentStudent.weekly_raid !== "") ? Number(currentStudent.weekly_raid) : maxRaid;
-        currentStudent.weekly_raid = Math.max(0, curRaid - 1);
-        updateFastFirebaseStudent(currentStudent);
+        
+        // 💡 [버그 해결] 도망 시에도 파티원 전원의 탐험 횟수 공평하게 1 차감 및 저장
+        battleState.party.forEach(p => {
+            let stObj = window.allStudentsData.find(s => s.name === p.name);
+            if (!stObj) return;
+            let curRaid = (stObj.weekly_raid !== undefined && stObj.weekly_raid !== "") ? Number(stObj.weekly_raid) : maxRaid;
+            stObj.weekly_raid = Math.max(0, curRaid - 1);
+            updateFastFirebaseStudent(stObj);
+        });
 
         showUiAlert("🏃 레이드 포기", "파티 레이드에서 후퇴했습니다.<br><span style='color:#ff4d4d; font-size:0.9em;'>(파티원 전원의 탐험 기회가 1 차감됩니다.)</span>", "renderDashboard()");
         return;

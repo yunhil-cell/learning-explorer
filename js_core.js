@@ -373,8 +373,9 @@ async function openStudentDetail() {
 function openStudentDetailAfterAuth() {
     const modal = document.getElementById('detailModal');
     modal.style.display = 'flex';
-    // 💡 [임시 가호 지원] 미각성("")이거나 재선택 대기("TEMP") 상태면 가호 선택창 오픈
-    if (!currentStudent.blessing || currentStudent.blessing === 'TEMP') showBlessingSelection();
+    // 💡 [대소문자 완벽 방어] 미각성("")이거나 temp/TEMP 등 대소문자 무관하게 가호 선택창 오픈
+    const isTempBlessing = String(currentStudent.blessing || '').trim().toUpperCase() === 'TEMP';
+    if (!currentStudent.blessing || isTempBlessing) showBlessingSelection();
     else renderDashboard();
 
     // 💡 최신 공지사항 점검 및 강제 알림 팝업 (교사 모드가 아닐 때만 실행!)
@@ -487,8 +488,9 @@ function showBlessingSelection() {
 function saveBlessing(bId) {
     document.getElementById('modalBody').innerHTML = '<h3 style="margin-top: 50px; color:var(--Highlight);">각성 진행 중...</h3>';
 
-    // 💡 기존 데이터가 존재하는지 엄격히 검증하여 레벨/골드 증발 원천 차단
-    const hasExistingData = (currentStudent.blessing === 'TEMP') || (Number(currentStudent.level) > 1) || (Number(currentStudent.game_money) > 0) || (Number(currentStudent.reading_count) > 0);
+    // 💡 [대소문자 완벽 방어] temp/TEMP 대소문자 무관 + 기존 레벨/재화 검증으로 증발 원천 차단
+    const isTempBlessing = String(currentStudent.blessing || '').trim().toUpperCase() === 'TEMP';
+    const hasExistingData = isTempBlessing || (Number(currentStudent.level) > 1) || (Number(currentStudent.game_money) > 0) || (Number(currentStudent.reading_count) > 0);
     currentStudent.blessing = bId;
 
     // 💡 순수 최초 등록 신규 유저일 때만 초기 기본값 세팅
@@ -1179,7 +1181,7 @@ function renderStudentQuestBoard() {
                 let isSameCycle = false;
 
                 if (q.repeat_cycle === '일일반복') {
-                    isSameCycle = subDate.getDate() === today.getDate() && subDate.getMonth() === today.getMonth() && subDate.getFullYear() === today.getFullYear();
+                    isSameCycle = getKSTDateString(subDate) === getKSTDateString(today);
                 } else if (q.repeat_cycle === '주간반복') {
                     const getMonday = function (d) {
                         const date = new Date(d);
