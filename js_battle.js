@@ -3022,11 +3022,8 @@ async function finishWorldBossSession(isSurvived) {
     const activeBoss = battleState.wbBossData;
     const finalDamage = battleState.wbDamageTotal;
 
-    // 한국 시간(KST) 기준 오늘 출전 날짜 기록
-    const now = new Date();
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const kstDate = new Date(utc + (9 * 60 * 60 * 1000));
-    const todayStr = `${kstDate.getFullYear()}-${String(kstDate.getMonth() + 1).padStart(2, '0')}-${String(kstDate.getDate()).padStart(2, '0')}`;
+    // 💡 [2번 해결] KST 날짜 공용 함수로 오늘 날짜 확정
+    const todayStr = getKSTDateString();
 
     // 1. 학생 상태 갱신 (오늘 참여일자 기록, 골드/경험치 지급)
     currentStudent.last_wb_date = todayStr;

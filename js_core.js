@@ -44,6 +44,48 @@ async function updateFastFirebaseStudent(student) {
         console.error("파이어베이스 학생 데이터 저장 실패:", e);
     }
 }
+
+// 💡 [2번 해결] 디바이스 타임존 무관 100% 한국 표준시(KST) YYYY-MM-DD 생성 공용 함수
+function getKSTDateString(dateObj = new Date()) {
+    const utc = dateObj.getTime() + (dateObj.getTimezoneOffset() * 60000);
+    const kst = new Date(utc + (9 * 60 * 60 * 1000));
+    const y = kst.getFullYear();
+    const m = String(kst.getMonth() + 1).padStart(2, '0');
+    const d = String(kst.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+// 💡 [4번 해결] 파티 던전 등 동시 접속 시 다른 학생의 보상 덮어쓰기를 방어하는 초경량 1인 동기화
+async function syncFreshCurrentStudent(silent = true) {
+    if (!currentStudent || !currentStudent.name) return;
+    const sName = encodeURIComponent(String(currentStudent.name).trim());
+
+    try {
+        const res = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`);
+        const freshData = await res.json();
+        if (freshData && freshData.name) {
+            currentStudent = freshData;
+            if (window.allStudentsData) {
+                const idx = window.allStudentsData.findIndex(s => s && String(s.name).trim() === String(freshData.name).trim());
+                if (idx > -1) window.allStudentsData[idx] = freshData;
+            }
+            // 대시보드가 열려있을 때만 UI 재렌더링
+            const modal = document.getElementById('detailModal');
+            if (!silent && modal && modal.style.display === 'flex') {
+                renderDashboard();
+            }
+        }
+    } catch (e) {
+        console.error("1인 실시간 학생 동기화 실패:", e);
+    }
+}
+
+// 💡 [4번 트리거] 탭 복귀 및 20초 주기 백그라운드 자동 동기화 리스너 등록
+window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') syncFreshCurrentStudent(false);
+});
+window.addEventListener('focus', () => syncFreshCurrentStudent(false));
+setInterval(() => syncFreshCurrentStudent(false), 20000); // 20초 무음 핑
 let originalStats = { hp: 5, atk: 5, def: 5, luk: 5 };
 let currentEquipType = 'weapon';
 
@@ -170,24 +212,19 @@ function initGameData(data) {
     renderButtons(studentsArray);
 }
 
-// 💡 [신규] Firebase 기반 주간 횟수 자동 초기화 엔진 (한국 시간 월요일 자정 기준)
+// 💡 [신규] Firebase 기반 주간 횟수 자동 초기화 엔진 (KST 표준 함수 연동)
 async function checkAndPerformWeeklyReset(data) {
     if (!data || !data.students) return;
 
-    // 한국 시간(UTC+9) 기준 이번 주 월요일 날짜(YYYY-MM-DD) 계산
+    // 💡 getKSTDateString 기반으로 이번 주 월요일 키 계산
     const now = new Date();
     const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
     const kstDate = new Date(utc + (9 * 60 * 60 * 1000));
-    
-    const day = kstDate.getDay(); // 0: 일, 1: 월, ..., 6: 토
+    const day = kstDate.getDay();
     const diffToMonday = (day === 0 ? -6 : 1) - day;
     const mondayDate = new Date(kstDate);
     mondayDate.setDate(kstDate.getDate() + diffToMonday);
-    
-    const year = mondayDate.getFullYear();
-    const month = String(mondayDate.getMonth() + 1).padStart(2, '0');
-    const date = String(mondayDate.getDate()).padStart(2, '0');
-    const currentMondayKey = `${year}-${month}-${date}`;
+    const currentMondayKey = getKSTDateString(mondayDate);
 
     const lastReset = sysConfig.last_weekly_reset || '';
 
@@ -311,8 +348,11 @@ function renderButtons(students) {
     });
 }
 
-// 💡 1. 본인 확인 로그인 흐름 (교사 모드 패스 기능 추가)
-function openStudentDetail() {
+// 💡 1. 본인 확인 로그인 흐름 (진입 즉시 1인 최신 데이터 자동 동기화)
+async function openStudentDetail() {
+    // 💡 [4번 방어] 입장 직전 서버에서 최신 상태(파티 보상/경험치 등)를 먼저 가져옴
+    await syncFreshCurrentStudent(true);
+
     // 🚨 [신규] 교사 모드가 활성화되어 있다면, 학생 비밀번호를 묻지 않고 바로 입장(프리패스)합니다!
     if (isTeacherMode) {
         openStudentDetailAfterAuth();
@@ -447,11 +487,12 @@ function showBlessingSelection() {
 function saveBlessing(bId) {
     document.getElementById('modalBody').innerHTML = '<h3 style="margin-top: 50px; color:var(--Highlight);">각성 진행 중...</h3>';
 
-    const isReSelect = (currentStudent.blessing === 'TEMP');
+    // 💡 기존 데이터가 존재하는지 엄격히 검증하여 레벨/골드 증발 원천 차단
+    const hasExistingData = (currentStudent.blessing === 'TEMP') || (Number(currentStudent.level) > 1) || (Number(currentStudent.game_money) > 0) || (Number(currentStudent.reading_count) > 0);
     currentStudent.blessing = bId;
 
-    // 💡 신규 유저일 때만 초기 스탯 5/5/5/5 부여, 임시 가호(재선택)일 때는 기존 스탯 100% 유지
-    if (!isReSelect) {
+    // 💡 순수 최초 등록 신규 유저일 때만 초기 기본값 세팅
+    if (!hasExistingData) {
         if (!currentStudent.password || currentStudent.password === "") currentStudent.password = '!1234';
         if (currentStudent.hp_points === undefined || currentStudent.hp_points === "") currentStudent.hp_points = 5;
         if (currentStudent.atk_points === undefined || currentStudent.atk_points === "") currentStudent.atk_points = 5;
@@ -1576,11 +1617,8 @@ function openWorldBossModal() {
 
     if (!rankingHtml) rankingHtml = '<div style="color:#64748B; font-size:0.85em; padding:10px 0;">아직 참전한 모험가가 없습니다.</div>';
 
-    // 오늘 참여 여부 체크 (한국 시간 KST YYYY-MM-DD 기준)
-    const now = new Date();
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const kstDate = new Date(utc + (9 * 60 * 60 * 1000));
-    const todayStr = `${kstDate.getFullYear()}-${String(kstDate.getMonth() + 1).padStart(2, '0')}-${String(kstDate.getDate()).padStart(2, '0')}`;
+    // 💡 [2번 해결] KST 날짜 공용 함수로 판별
+    const todayStr = getKSTDateString();
 
     let isFoughtToday = false;
     if (currentStudent && String(currentStudent.last_wb_date).trim() === todayStr) {

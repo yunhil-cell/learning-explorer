@@ -634,13 +634,13 @@ function processUseItem(itemName, count = 1) {
         content: itemName + (removedCount > 1 ? " x" + removedCount : "")
     });
 
-    // 🧪 [신규] 망각의 물약 사용 처리 (스탯 초기화, 포인트 전액 환급, 가호 재선택)
+    // 🧪 [신규] 망각의 물약 사용 처리 (스탯 초기화, 포인트 전액 환급, 가호 재선택 - 기존 레벨/재화 보존)
     if (itemName.includes('망각의 물약') || itemName.includes('망각')) {
         currentStudent.hp_points = 5;
         currentStudent.atk_points = 5;
         currentStudent.def_points = 5;
         currentStudent.luk_points = 5;
-        currentStudent.blessing = ""; // 가호 초기화 (재각성 가능)
+        currentStudent.blessing = "TEMP"; // 💡 'TEMP'로 지정하여 saveBlessing에서 레벨/재화 리셋 방어
 
         updateFastFirebaseStudent(currentStudent);
         showUiAlert(
