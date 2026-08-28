@@ -202,11 +202,12 @@ function initGameData(data) {
     // 💡 [필수 호출] 매주 월요일 자정 주간 횟수 자동 초기화 검사 및 실행
     checkAndPerformWeeklyReset(data);
 
-    // 💡 학생 개별 방 객체(Object Map)를 화면 렌더링용 배열(Array)로 안전 변환
+    // 💡 학생 개별 방 객체(Object Map)를 화면 렌더링용 배열(Array)로 안전 변환 및 시트 행 순서(sheet_order) 기준 정렬
     let studentsArray = [];
     if (data.students) {
         studentsArray = Array.isArray(data.students) ? data.students : Object.values(data.students);
         studentsArray = studentsArray.filter(s => s && s.name && String(s.name).trim() !== "");
+        studentsArray.sort((a, b) => (Number(a.sheet_order) || 999) - (Number(b.sheet_order) || 999));
     }
 
     renderButtons(studentsArray);

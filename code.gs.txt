@@ -16,13 +16,13 @@ function getGameData() {
     // 0. 초기 결과 객체에 relics 추가
     let result = { students: [], system: { config: {} }, skills: [], relics: [] };
 
-    // 1. 학생 데이터 (빈 행 필터링 추가)
+    // 1. 학생 데이터 (시트 행 순서 sheet_order 자동 부여 및 빈 행 필터링)
     const studentSheet = ss.getSheetByName('students');
     if (!studentSheet) return "Error: 'students' 시트 없음";
     const studentData = studentSheet.getDataRange().getValues();
     const sHeaders = studentData[0].map(h => String(h).trim());
-    result.students = studentData.slice(1).map(row => {
-      let obj = {};
+    result.students = studentData.slice(1).map((row, idx) => {
+      let obj = { sheet_order: idx + 1 };
       sHeaders.forEach((header, i) => { obj[header] = row[i]; });
       return obj;
     }).filter(s => s && s.name && String(s.name).trim() !== "");
