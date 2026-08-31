@@ -164,6 +164,15 @@ function processSelectSkill(skillId, skillName) {
     if (!myUnlocked.includes(String(skillId))) myUnlocked.push(skillId);
     currentStudent.unlocked_skills = "!" + myUnlocked.join(',');
 
+    // 📝 [Firebase 스킬 뽑기 로그 전송]
+    const cost = Number(sysConfig.skill_price) || 50;
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: "상점 구매",
+        content: `스킬 뽑기 ➔ [${skillName}] 획득 (${cost}골드 소모)`
+    });
+
     updateFastFirebaseStudent(currentStudent);
     showUiAlert("🎉 획득 완료!", "[<b style=\"color:var(--Highlight);\">" + skillName + "</b>] 스킬을 얻었습니다!", "renderDashboard()");
 }
@@ -239,6 +248,15 @@ function processSelectRelic(relicId, relicName) {
     let myRelics = rawRelics ? rawRelics.split(',').map(x => x.trim()).filter(Boolean) : [];
     if (!myRelics.includes(String(relicId))) myRelics.push(relicId);
     currentStudent.unlocked_relics = "!" + myRelics.join(',');
+
+    // 📝 [Firebase 유물 뽑기 로그 전송]
+    const cost = Number(sysConfig.relic_price) || 100;
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: "상점 구매",
+        content: `유물 뽑기 ➔ [${relicName}] 발굴 (${cost}골드 소모)`
+    });
 
     updateFastFirebaseStudent(currentStudent);
     showUiAlert("🎉 발굴 완료!", "[<b style=\"color:var(--Highlight);\">" + relicName + "</b>] 유물을 얻었습니다!", "renderDashboard()");
@@ -768,9 +786,17 @@ function processDrawMercenary() {
     currentStudent.game_money = currentMoney - cost;
     currentStudent.unlocked_mercenaries = "!" + unlockedIds.join(',');
 
-    updateFastFirebaseStudent(currentStudent);
-
     const tier = String(pickedMerc.tier || 'C').toUpperCase();
+
+    // 📝 [Firebase 동료 뽑기 로그 전송]
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: "상점 구매",
+        content: `동료 영입 ➔ [${tier}급] ${pickedMerc.name} 계약 (${cost}골드 소모)`
+    });
+
+    updateFastFirebaseStudent(currentStudent);
     let tierColor = 'var(--Green)';
     let tierBg = 'rgba(16, 185, 129, 0.1)';
     let tierGlow = '0 0 15px rgba(16, 185, 129, 0.4)';

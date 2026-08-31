@@ -616,6 +616,16 @@ function processBuySkin(skinId, skinName) {
     }
     currentStudent.unlocked_skins = "!" + mySkins.join(',');
 
+    // 📝 [Firebase 스킨 구매 로그 전송]
+    const cost = sysConfig.skin_price || 500;
+    const currency = sysConfig.currency_name || '티';
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: "상점 구매",
+        content: `외형 해금 ➔ [${skinName}] 구매 (${cost}${currency} 소모)`
+    });
+
     // 3. 옷장 새로고침 (방금 산 스킨의 자물쇠가 즉시 풀림!)
     openWardrobe();
 
