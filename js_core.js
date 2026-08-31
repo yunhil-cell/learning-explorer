@@ -1403,8 +1403,6 @@ function autoCompleteStudentQuest(questId, rewardGold, rewardPoint, rewardExp, i
     currentStudent.game_money = (Number(currentStudent.game_money) || 0) + Number(rewardGold);
     currentStudent.bonus_points = (Number(currentStudent.bonus_points) || 0) + Number(rewardPoint);
     currentStudent.exp = (Number(currentStudent.exp) || 0) + Number(rewardExp);
-    renderDashboard();
-
     currentStudent.quest_count = (Number(currentStudent.quest_count) || 0) + 1;
 
     // 레벨업 수동 체크
