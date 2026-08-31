@@ -300,6 +300,14 @@ function fleeBattle() {
             updateFastFirebaseStudent(stObj);
         });
 
+        // 📝 [Firebase 파티 던전 후퇴 로그 전송]
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "파티 던전",
+            content: `${currentRaidDungeon ? currentRaidDungeon.dungeon_name : '던전'} (${raidParty.join(', ')}) -> 중도 후퇴 (기회 1회 차감)`
+        });
+
         showUiAlert("🏃 레이드 포기", "파티 레이드에서 후퇴했습니다.<br><span style='color:#ff4d4d; font-size:0.9em;'>(파티원 전원의 탐험 기회가 1 차감됩니다.)</span>", "renderDashboard()");
         return;
     }
@@ -310,6 +318,14 @@ function fleeBattle() {
     currentStudent.penalty_end_time = pTime + (2 * 60 * 60 * 1000);
     currentStudent.flee_count = (Number(currentStudent.flee_count) || 0) + 1;
     updateFastFirebaseStudent(currentStudent);
+
+    // 📝 [Firebase 사냥/보스전 도망 로그 전송]
+    pushFirebaseLog('common', {
+        time: new Date().toISOString(),
+        name: currentStudent.name,
+        category: battleState.isBoss ? "보스 도전" : "일반 사냥",
+        content: (battleState.monster ? battleState.monster.name : '몬스터') + " 전투 중 도망침 🏃 (2시간 패널티)"
+    });
 
     if (battleState.isBoss) {
         showUiAlert("🏃 보스전 이탈", "보스의 무시무시한 힘에 압도당해 도망쳤습니다!<br><br><span style='font-size:0.95em; color:#ff4d4d;'>(재정비를 위해 <b style='color:white;'>2시간 동안</b> 모든 사냥 및 보스전 진입이 금지됩니다.)</span>", "renderDashboard()");
@@ -1172,6 +1188,15 @@ function showBattleResult(isWin) {
         currentStudent.last_defeat = nowTime;
         currentStudent.penalty_end_time = nowTime + (8 * 60 * 60 * 1000);
         updateFastFirebaseStudent(currentStudent);
+
+        // 📝 [Firebase 사냥/보스전 패배 로그 전송]
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: battleState.isBoss ? "보스 도전" : "일반 사냥",
+            content: (battleState.monster ? battleState.monster.name : '몬스터') + "에게 패배 ☠️ (8시간 패널티)"
+        });
+
         showUiAlert("☠️ 전투 패배", "아쉽게도 쓰러지고 말았습니다...<br><br><span style='font-size:0.9em; color:#ff4d4d;'>(8시간 동안 전투에 진입할 수 없습니다)</span>", "document.getElementById('battleModal').style.display = 'none'; renderDashboard();");
         return;
     }
@@ -2323,8 +2348,21 @@ function finishRaid(isSuccess) {
     });
 
     if (!isSuccess) {
-        updateFastFirebaseStudent(currentStudent);
-        showUiAlert("💀 던전 탐험 실패", "파티가 전멸하여 보상을 얻지 못했습니다...<br><br><span style='color:#ff4d4d; font-size:0.9em;'>(참여한 파티원 전원의 탐험 기회가 1 차감됩니다.)</span>", "renderDashboard()");
+        // 📝 [Firebase 파티 던전 전멸 패배 로그 전송]
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "파티 던전",
+            content: `${currentRaidDungeon ? currentRaidDungeon.dungeon_name : '던전'} (${raidParty.join(', ')}) -> ${currentRaidStage}계층에서 전멸 실패 💀`
+        });
+
+        // 💡 패배 시에도 참여한 파티원 3명 전원의 차감된 기회를 Firebase에 안전 저장
+        Promise.all(battleState.party.map(p => {
+            let stObj = window.allStudentsData.find(s => s.name === p.name);
+            return stObj ? updateFastFirebaseStudent(stObj) : Promise.resolve();
+        })).then(() => {
+            showUiAlert("💀 던전 탐험 실패", "파티가 전멸하여 보상을 얻지 못했습니다...<br><br><span style='color:#ff4d4d; font-size:0.9em;'>(참여한 파티원 전원의 탐험 기회가 1 차감됩니다.)</span>", "renderDashboard()");
+        });
         return;
     }
 

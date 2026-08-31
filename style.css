@@ -20,24 +20,39 @@ font-weight: 700;
 font-display: swap;
 }
 
-/* 💡 2. 본문 및 UI 가독성 전용 폰트: 나눔스퀘어 네오 로드 */
+/* 💡 2. 본문 및 UI 가독성 전용 폰트: 나눔스퀘어 네오 로드 (공식 정품 CDN) */
 @font-face {
-font-family: 'NanumSquareNeoBold';
-src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_11-01@1.0/NanumSquareNeo-cBd.woff2') format('woff2');
-font-weight: 700;
-font-display: swap;
+    font-family: 'NanumSquareNeo';
+    src: url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumSquareNeo/NanumSquareNeoTTF-bRg.woff2') format('woff2');
+    font-weight: 400;
+    font-display: swap;
 }
 
 @font-face {
-font-family: 'NanumSquareNeo';
-src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_11-01@1.0/NanumSquareNeo-bRg.woff2') format('woff2');
-font-weight: 400;
-font-display: swap;
+    font-family: 'NanumSquareNeo';
+    src: url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumSquareNeo/NanumSquareNeoTTF-cBd.woff2') format('woff2');
+    font-weight: 700;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'NanumSquareNeo';
+    src: url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumSquareNeo/NanumSquareNeoTTF-dEb.woff2') format('woff2');
+    font-weight: 800;
+    font-display: swap;
+}
+
+/* 기존 코드 호환용 굵은 폰트 별칭 */
+@font-face {
+    font-family: 'NanumSquareNeoBold';
+    src: url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumSquareNeo/NanumSquareNeoTTF-cBd.woff2') format('woff2');
+    font-weight: 700;
+    font-display: swap;
 }
 
 /* 💡 3. 기본 전체 본문, 버튼, 입력창, 학생 카드는 나눔스퀘어 네오 유지 */
 *, body, button, input, select, textarea, .stat-row, .student-btn {
-font-family: 'NanumSquareNeoBold', 'NanumSquareNeo', sans-serif;
+    font-family: 'NanumSquareNeo', 'NanumSquareNeoBold', sans-serif;
 }
 
 /* 💡 4. 대형 타이틀, 모달 대제목, 전투 돌입 타이틀에 연단된 칼날 굵게 적용 */
