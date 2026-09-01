@@ -493,7 +493,7 @@ function showBlessingSelection() {
     const body = document.getElementById('modalBody');
     const bList = [
         { id: 'Red', n: '🔴 용기의 가호(공격력 보너스)' }, { id: 'Blue', n: '🔵 지혜의 가호(방어력 보너스)' },
-        { id: 'Green', n: '🟢 끈기의 가호(체력 보너스)' }, { id: 'Yellow', n: '🟡 행운의 가호(행운 보너스)' }, { id: 'Purple', n: '🟣 희망의 가호(1회 확정 회피)' }
+        { id: 'Green', n: '🟢 끈기의 가호(건강 보너스)' }, { id: 'Yellow', n: '🟡 행운의 가호(행운 보너스)' }, { id: 'Purple', n: '🟣 희망의 가호(1회 확정 회피)' }
     ];
     body.innerHTML = '<h2>✨ 가호의 각성</h2><p>' + currentStudent.name + ' 모험가여, 영혼의 색을 선택하라.</p>';
     bList.forEach(b => {
@@ -773,7 +773,7 @@ function renderDashboard() {
             '  <button class="small-btn" style="background:var(--Highlight); padding:6px 12px; font-size:0.9em;" onclick="openStatAllocation()">능력치 분배</button>' +
             '</div>' +
             '<div style="display:flex; flex-direction:column; gap:5px;">' +
-            renderStatHtml('체력(HP)', baseHp, equipBonus.hp, relicBonus.hp, 'hp') +
+            renderStatHtml('건강(HP)', baseHp, equipBonus.hp, relicBonus.hp, 'hp') +
             renderStatHtml('공격(ATK)', baseAtk, equipBonus.atk, relicBonus.atk, 'atk') +
             renderStatHtml('방어(DEF)', baseDef, equipBonus.def, relicBonus.def, 'def') +
             renderStatHtml('행운(LUK)', baseLuk, equipBonus.luk, relicBonus.luk, 'luk') +
@@ -1766,7 +1766,7 @@ function openGameGuideModal(tab = 'growth') {
                 </div>
                 <div style="background:#1E293B; border-left:4px solid #FBBF24; padding:12px 15px; border-radius:6px; margin-bottom:12px;">
                     <b style="color:#FBBF24; font-size:1.05em;">📊 4대 기본 능력치 안내</b><br>
-                    • <b style="color:#34D399;">체력(HP)</b>: 전투 중 생명력 (1pt당 HP 10 상승)<br>
+                    • <b style="color:#34D399;">건강(HP)</b>: 생명력 증가 (1pt당 최대 HP 10 상승)<br>
                     • <b style="color:#F87171;">공격력(ATK)</b>: 기본 공격 및 스킬 데미지 증가<br>
                     • <b style="color:#A78BFA;">방어력(DEF)</b>: 적에게 받는 피해량 감소<br>
                     • <b style="color:#FBBF24;">행운(LUK)</b>: 스킬 발동률, 치명타율, 회피율, 상자 골드 보상 증가

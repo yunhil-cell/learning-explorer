@@ -38,7 +38,7 @@ function drawStatUI() {
         '  <div id="displayRemain" style="font-size:2.5em; color:white; font-weight:bold; margin-top:5px;">' + tempStats.remain + '</div>' +
         '</div>' +
         '<div class="db-section">' +
-        getStatRow('체력 (HP)', 'hp') + getStatRow('공격력 (ATK)', 'atk') + getStatRow('방어력 (DEF)', 'def') + getStatRow('행운 (LUK)', 'luk') +
+        getStatRow('건강 (HP)', 'hp') + getStatRow('공격력 (ATK)', 'atk') + getStatRow('방어력 (DEF)', 'def') + getStatRow('행운 (LUK)', 'luk') +
         '</div>' +
         '<div style="display:flex; gap:10px; margin-top:20px;">' +
         '  <button style="flex:1; padding:15px; border-radius:10px; border:none; background:#444; color:white; font-size:1.1em; cursor:pointer;" onclick="renderDashboard()">취소</button>' +
@@ -89,7 +89,7 @@ function drawForgeUI() {
     // 💡 [신규] 장비별 상승 능력치 안내 문구 매핑
     const equipInfo = {
         'weapon': { name: '무기', stat: '⚔️ 공격력(ATK)' },
-        'head': { name: '투구', stat: '❤️ 체력(HP)' },
+        'head': { name: '투구', stat: '❤️ 건강(HP)' },
         'body': { name: '갑옷', stat: '🛡️ 방어력(DEF)' },
         'accessory': { name: '장신구', stat: '🍀 행운(LUK)' }
     };
@@ -774,7 +774,7 @@ function openMercSelectModal(slotNum) {
 
     // 2. 가호 옵션 명칭 매핑 사전
     const optTypeMap = {
-        'HP_UP': '체력', 'DEF_UP': '방어력', 'ATK_UP': '공격력',
+        'HP_UP': '건강', 'DEF_UP': '방어력', 'ATK_UP': '공격력',
         'LUK_UP': '행운', 'CRIT_UP': '치명타율', 'CRIT_DMG_UP': '치명피해',
         'DAMAGE_REDUCE': '피해감소', 'DEF_PEN': '방어관통', 'DMG_UP': '피해증가',
         'SKILL_DMG': '스킬피해', 'HEAL_UP': '회복량', 'EVD_UP': '회피율'

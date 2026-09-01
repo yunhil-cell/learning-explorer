@@ -76,7 +76,8 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 다. Google Spreadsheet는 교사용 마스터 데이터베이스로 동작하며, `syncToFirebase()`(시트 데이터 100% Firebase 반영)와 `syncFromFirebase()`(5분 주기 Firebase ➔ 시트 6개 탭 완전 백업)를 통해 유기적으로 동기화
 라. Google Drive 이미지는 썸네일 우회 URL(`lh3` 및 direct thumbnail)로 매핑하여 트래픽 및 권한 문제 방지
 마. 전역 클릭 차단 로딩 오버레이(`showGlobalLoading`)를 통해 비동기 통신 중 사용자 중복 조작을 물리적으로 차단
-바. 학생은 웹 주소(GitHub Pages)로 접속하며, 교사는 웹 내 교사 모드 및 Google Sheets를 통해 데이터 관리
+바. 데이터 동기화 시 전체 학생 DB(`students.json`)의 일괄 `PUT`을 전면 금지하고, 개별 학생 1:1 독립 방 저장(`PUT`) 및 주간 횟수 필드 부분 갱신(`PATCH`)을 적용하여 동시 접속 롤백 및 `sheet_order` 순서 유실을 원천 차단
+사. 학생은 웹 주소(GitHub Pages)로 접속하며, 교사는 웹 내 교사 모드 및 Google Sheets를 통해 데이터 관리
 
 ---
 
@@ -151,8 +152,8 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 라. 전투에서는 가호에 따라 능력치 보정 또는 특수 효과가 적용됩니다.
 
 ## 3. 스탯 시스템
-가. 기본 스탯은 HP, ATK, DEF, LUK입니다.
-나. HP는 체력, ATK는 공격력, DEF는 방어력, LUK는 행운입니다.
+가. 기본 스탯은 건강(HP), 공격력(ATK), 방어력(DEF), 행운(LUK) 4종입니다. (DB 컬럼: `hp_points`, `atk_points`, `def_points`, `luk_points`)
+나. '건강(HP)' 스탯은 캐릭터의 생명력을 강화하며, 건강 1pt당 전투 중 최대 생명력(Max HP)이 `system.hp_per_point`(기본 10)만큼 상승합니다. (스탯 투자 명칭 '건강'과 전투 자원 '최대 생명력(Max HP)'의 개념 분리)
 다. 기본값은 각 5입니다.
 라. 최대 스탯은 `system.max_stat_point`를 기준으로 하며, 기본값은 150입니다.
 마. 스탯 저장 시 서버에서 기존 값보다 낮아지는 요청은 거부합니다.
@@ -438,7 +439,7 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 6. `level`: 캐릭터 레벨 (기본값 1)
 7. `exp`: 현재 보유 경험치
 8. `level_points`: 레벨업 시 지급된 미분배 스탯 포인트
-9. `hp_points`: 체력 투자 스탯 (기본 5)
+9. `hp_points`: 건강(HP) 투자 스탯 (기본 5, 1pt당 전투 생명력 10 증가)
 10. `atk_points`: 공격력 투자 스탯 (기본 5)
 11. `def_points`: 방어력 투자 스탯 (기본 5)
 12. `luk_points`: 행운 투자 스탯 (기본 5)
@@ -514,7 +515,7 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
   * `rate_weapon`, `rate_head`, `rate_body`, `rate_acc`: 장비 부위별 강화 스탯 증가 계수
   * `fail_bonus_prob`: 대장간 강화 실패 1회당 추가 보정 확률(%)
   * `def_constant`: 데미지 계산 공식 방어 상수
-  * `hp_per_point`: 체력 스탯 1pt당 실제 인게임 HP 배율 (기본: 10)
+  * `hp_per_point`: 건강 스탯 1pt당 실제 인게임 HP 배율 (기본: 10)
   * `exchange_rate`: 골드 ➔ 현실 화폐(티) 환전 비율
   * `teacher_PIN`: 교사 모드 활성화용 6자리 암호
   * `poison_dmg`, `bleed_dmg`, `burn_dmg`: 상태이상 턴당 피해 비율(%)
@@ -839,9 +840,9 @@ is_active
 아. `mapSkillEffects()`: 구글 드라이브 스킬 GIF 이펙트 이미지 우회 서버 lh3 자동 매핑
 
 ## 10. 주간 초기화
-가. `checkAndPerformWeeklyReset()` (프론트엔드): 데이터 로드 시 한국 시간(KST) 월요일 날짜 키(`YYYY-MM-DD`)를 검사하여 매주 월요일 자정 기준 주간 사냥(2회), 보스(3회), 파티 던전(1회), 도전의 탑(1회) 횟수를 Firebase 독립 방 객체(`studentsMap`) 구조를 보존하며 자동 일괄 초기화
+가. `checkAndPerformWeeklyReset()` (프론트엔드): 데이터 로드 시 한국 시간(KST) 월요일 날짜 키(`YYYY-MM-DD`)를 검사하여 매주 월요일 자정 기준 주간 사냥(`max_weekly_battles`), 1:1 보스(`max_weekly_boss`), 파티 던전(`max_weekly_raid`), 도전의 탑(`max_weekly_tower`) 4종 횟수를 각 학생의 독립 방에 `PATCH` 방식으로 안전하게 부분 갱신하여 데이터 롤백 및 순서 유실을 원천 차단
 나. `resetWeeklyBattles()` (백엔드 GAS): 구글 스프레드시트 주간 트리거용 초기화 함수
-다. `executeForceResetWeekly()` (교사 모드): 교사 대시보드에서 필요 시 즉시 주간 횟수를 강제 리셋할 수 있는 관리자 제어 기능
+다. `executeForceResetWeekly()` (교사 모드): 교사 대시보드에서 필요 시 주간 4종 횟수만 학생별 `PATCH`로 안전 초기화하는 관리자 제어 기능
 
 ---
 # VIII. 프론트엔드 구조

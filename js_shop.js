@@ -823,7 +823,7 @@ function processDrawMercenary() {
         : '<div style="font-size:70px; margin-bottom:15px;">🛡️</div>';
 
     const optTypeMap = {
-        'HP_UP': '체력 증가', 'DEF_UP': '방어력 증가', 'ATK_UP': '공격력 증가',
+        'HP_UP': '건강 증가', 'DEF_UP': '방어력 증가', 'ATK_UP': '공격력 증가',
         'LUK_UP': '행운 증가', 'CRIT_UP': '치명타율 증가', 'CRIT_DMG_UP': '치명피해 증가',
         'DAMAGE_REDUCE': '피해 감소', 'DEF_PEN': '방어 관통', 'DMG_UP': '피해 증가',
         'SKILL_DMG': '스킬 피해 증가', 'HEAL_UP': '회복량 증가', 'EVD_UP': '회피율 증가'

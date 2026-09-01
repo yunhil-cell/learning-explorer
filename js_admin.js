@@ -281,7 +281,7 @@ function renderClassroomDashboard(tab = 'overview') {
             '    <div style="font-size:0.8em; color:#CBD5E1; display:grid; grid-template-columns:1fr 1fr; gap:6px; line-height:1.4;">' +
             '      <div>🔴 용기(공격): ' + blessingCount.Red + '명 (' + getBlessingPct('Red') + '%)</div>' +
             '      <div>🔵 지혜(방어): ' + blessingCount.Blue + '명 (' + getBlessingPct('Blue') + '%)</div>' +
-            '      <div>🟢 끈기(체력): ' + blessingCount.Green + '명 (' + getBlessingPct('Green') + '%)</div>' +
+            '      <div>🟢 끈기(건강): ' + blessingCount.Green + '명 (' + getBlessingPct('Green') + '%)</div>' +
             '      <div>🟡 행운(행운): ' + blessingCount.Yellow + '명 (' + getBlessingPct('Yellow') + '%)</div>' +
             '      <div>🟣 희망(장막): ' + blessingCount.Purple + '명 (' + getBlessingPct('Purple') + '%)</div>' +
             '      <div>⚪ 미각성: ' + blessingCount.None + '명</div>' +
