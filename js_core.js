@@ -210,11 +210,30 @@ function initGameData(data) {
     // 💡 [필수 호출] 매주 월요일 자정 주간 횟수 자동 초기화 검사 및 실행
     checkAndPerformWeeklyReset(data);
 
-    // 💡 학생 개별 방 객체(Object Map)를 화면 렌더링용 배열(Array)로 안전 변환 및 시트 행 순서(sheet_order) 기준 정렬
+    // 💡 학생 개별 방 객체(Object Map)를 안전 변환 + [중복 제거(Deduplication)] + 시트 행 순서 정렬
     let studentsArray = [];
     if (data.students) {
-        studentsArray = Array.isArray(data.students) ? data.students : Object.values(data.students);
-        studentsArray = studentsArray.filter(s => s && s.name && String(s.name).trim() !== "");
+        const rawList = Array.isArray(data.students) ? data.students : Object.values(data.students);
+        const uniqueStudentMap = {};
+
+        // 동일한 이름이 있으면 최신 데이터(독서록/레벨/스탯이 더 높은 쪽)를 우선 유지하여 중복 완전 제거
+        rawList.forEach(s => {
+            if (!s || !s.name || String(s.name).trim() === "") return;
+            const sName = String(s.name).trim();
+            if (!uniqueStudentMap[sName]) {
+                uniqueStudentMap[sName] = s;
+            } else {
+                // 이미 존재한다면 경험치/독서록/스탯 합계가 더 높은 최신 레코드로 병합
+                const existing = uniqueStudentMap[sName];
+                const existingScore = (Number(existing.level) || 1) * 1000 + (Number(existing.reading_count) || 0);
+                const newScore = (Number(s.level) || 1) * 1000 + (Number(s.reading_count) || 0);
+                if (newScore >= existingScore) {
+                    uniqueStudentMap[sName] = s;
+                }
+            }
+        });
+
+        studentsArray = Object.values(uniqueStudentMap);
         studentsArray.sort((a, b) => (Number(a.sheet_order) || 999) - (Number(b.sheet_order) || 999));
     }
 
@@ -1408,6 +1427,28 @@ async function submitStudentQuest(questId, isRequireText) {
 }
 
 function autoCompleteStudentQuest(questId, rewardGold, rewardPoint, rewardExp, isRequireText) {
+    // 🛡️ [보안 패치] 다중 탭 및 연타를 통한 중복 보상 수령 차단 검증
+    const qObj = (questsData || []).find(q => String(q.quest_id) === String(questId));
+    const safeSubmissions = submissionsData || [];
+    const existingSub = safeSubmissions.find(s => String(s.quest_id) === String(questId) && String(s.student_name) === currentStudent.name);
+
+    if (existingSub && existingSub.status === '승인완료') {
+        if (qObj && qObj.repeat_cycle !== '1회성' && existingSub.submitted_at) {
+            const subDate = new Date(existingSub.submitted_at);
+            const today = new Date();
+            let isSameCycle = false;
+            if (qObj.repeat_cycle === '일일반복') isSameCycle = getKSTDateString(subDate) === getKSTDateString(today);
+            else if (qObj.repeat_cycle === '월반복') isSameCycle = subDate.getMonth() === today.getMonth() && subDate.getFullYear() === today.getFullYear();
+            else isSameCycle = true;
+
+            if (isSameCycle) {
+                return showUiAlert("⚠️ 완료된 의뢰", "이번 주기에 이미 완료하여 보상을 수령한 의뢰입니다.", "renderStudentQuestBoard()");
+            }
+        } else {
+            return showUiAlert("⚠️ 완료된 의뢰", "이미 완료하여 보상을 수령한 의뢰입니다.", "renderStudentQuestBoard()");
+        }
+    }
+
     let answerText = "일일 퀘스트 자동 완수";
 
     // 💡 텍스트가 필수인 의뢰라면 화면에서 작성한 글을 긁어옵니다.

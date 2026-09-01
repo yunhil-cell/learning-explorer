@@ -773,16 +773,71 @@ function processDrawMercenary() {
     const rawUnlocked = String(currentStudent.unlocked_mercenaries || "").replace(/!/g, '');
     let unlockedIds = rawUnlocked ? rawUnlocked.split(',').map(x => x.trim()).filter(Boolean) : [];
 
-    let unowned = (mercenariesData || []).filter(m => m.merc_id && !unlockedIds.includes(String(m.merc_id)));
-    if (unowned.length === 0) {
+    // 💡 [밸런스 패치] 등급별 미보유 용병 풀 분류
+    let unownedByTier = { C: [], B: [], A: [], S: [] };
+    (mercenariesData || []).forEach(m => {
+        if (!m.merc_id) return;
+        const mId = String(m.merc_id).trim();
+        const mTier = String(m.tier || "C").trim().toUpperCase();
+        if (!unlockedIds.includes(mId)) {
+            if (unownedByTier[mTier]) unownedByTier[mTier].push(m);
+            else unownedByTier['C'].push(m);
+        }
+    });
+
+    const totalUnowned = unownedByTier.C.length + unownedByTier.B.length + unownedByTier.A.length + unownedByTier.S.length;
+    if (totalUnowned === 0) {
         hideGlobalLoading();
-        showUiAlert("🏆 도감 올클리어", "이미 모든 동료를 영입하셨습니다!", "renderDashboard()");
+        showUiAlert("🏆 도감 올클리어", "이미 모든 동료를 영입하셨습니다!<br>재화는 차감되지 않습니다.", "renderDashboard()");
         return;
     }
 
-    const pickedMerc = unowned[Math.floor(Math.random() * unowned.length)];
-    unlockedIds.push(String(pickedMerc.merc_id));
+    // 💡 system 시트 확률 연동 (기본: C 50% / B 35% / A 12% / S 3%)
+    const probC = sysConfig.merc_prob_c !== undefined ? Number(sysConfig.merc_prob_c) : 50;
+    const probB = sysConfig.merc_prob_b !== undefined ? Number(sysConfig.merc_prob_b) : 35;
+    const probA = sysConfig.merc_prob_a !== undefined ? Number(sysConfig.merc_prob_a) : 12;
+    const probS = sysConfig.merc_prob_s !== undefined ? Number(sysConfig.merc_prob_s) : 3;
 
+    const totalProb = probC + probB + probA + probS;
+    const rand = Math.random() * (totalProb || 100);
+    let rolledTier = "C";
+
+    if (rand <= probS) rolledTier = "S";
+    else if (rand <= probS + probA) rolledTier = "A";
+    else if (rand <= probS + probA + probB) rolledTier = "B";
+    else rolledTier = "C";
+
+    // 💡 해당 등급 올클리어 시 상위 등급으로 자동 승급 탐색
+    const tierOrder = ["C", "B", "A", "S"];
+    let startIdx = tierOrder.indexOf(rolledTier);
+    let pickedMerc = null;
+
+    for (let t = startIdx; t < tierOrder.length; t++) {
+        let tName = tierOrder[t];
+        if (unownedByTier[tName] && unownedByTier[tName].length > 0) {
+            let pool = unownedByTier[tName];
+            pickedMerc = pool[Math.floor(Math.random() * pool.length)];
+            break;
+        }
+    }
+    if (!pickedMerc) {
+        for (let t = startIdx - 1; t >= 0; t--) {
+            let tName = tierOrder[t];
+            if (unownedByTier[tName] && unownedByTier[tName].length > 0) {
+                let pool = unownedByTier[tName];
+                pickedMerc = pool[Math.floor(Math.random() * pool.length)];
+                break;
+            }
+        }
+    }
+
+    if (!pickedMerc) {
+        hideGlobalLoading();
+        showUiAlert("오류", "추첨 가능한 용병이 없습니다.", "renderDashboard()");
+        return;
+    }
+
+    unlockedIds.push(String(pickedMerc.merc_id));
     currentStudent.game_money = currentMoney - cost;
     currentStudent.unlocked_mercenaries = "!" + unlockedIds.join(',');
 

@@ -1637,6 +1637,17 @@ function enterRaid(dungeonId) {
         turnTimer: null
     };
 
+    // 🛡️ [보안 패치] 파티 던전 진입 즉시 파티원 3인 전원의 weekly_raid 횟수 선차감
+    const maxWeeklyRaid = Number(sysConfig.max_weekly_raid) || 1;
+    raidParty.forEach(sName => {
+        const sObj = window.allStudentsData.find(s => s.name === sName);
+        if (sObj) {
+            let curRaid = (sObj.weekly_raid !== undefined && sObj.weekly_raid !== "") ? Number(sObj.weekly_raid) : maxWeeklyRaid;
+            sObj.weekly_raid = Math.max(0, curRaid - 1);
+            updateFastFirebaseStudent(sObj);
+        }
+    });
+
     // 파티원 데이터 스냅샷 생성
     raidParty.forEach((sName, index) => {
         const sData = window.allStudentsData.find(s => s.name === sName);
@@ -2337,16 +2348,6 @@ function finishRaid(isSuccess) {
     if (battleState.isFleeing) return;
     document.getElementById('battleModal').style.display = 'none';
 
-    const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
-
-    battleState.party.forEach(p => {
-        let stObj = window.allStudentsData.find(s => s.name === p.name);
-        if (!stObj) return;
-
-        let curRaid = (stObj.weekly_raid !== undefined && stObj.weekly_raid !== "") ? Number(stObj.weekly_raid) : maxRaid;
-        stObj.weekly_raid = Math.max(0, curRaid - 1);
-    });
-
     if (!isSuccess) {
         // 📝 [Firebase 파티 던전 전멸 패배 로그 전송]
         pushFirebaseLog('common', {
@@ -2573,6 +2574,12 @@ function checkAndStartTower() {
 }
 
 function startTower() {
+    // 🛡️ [보안 패치] 다중 탭 및 연타 어뷰징 방지를 위해 입장 즉시 주간 횟수 1회 선차감
+    const maxTower = Number(sysConfig.max_weekly_tower) || 1;
+    let curTower = (currentStudent.weekly_tower !== undefined && currentStudent.weekly_tower !== "") ? Number(currentStudent.weekly_tower) : maxTower;
+    currentStudent.weekly_tower = Math.max(0, curTower - 1);
+    updateFastFirebaseStudent(currentStudent);
+
     battleState.isTower = true;
     battleState.towerFloor = 1;
     battleState.towerBossCount = 0;
@@ -2811,10 +2818,6 @@ function endTowerAndReward(isMaxClear = false) {
         currentStudent.monster_data = "!" + myMonsters.join(',');
     }
 
-    const maxTower = Number(sysConfig.max_weekly_tower) || 1;
-    let curTower = (currentStudent.weekly_tower !== undefined && currentStudent.weekly_tower !== "") ? Number(currentStudent.weekly_tower) : maxTower;
-    currentStudent.weekly_tower = Math.max(0, curTower - 1);
-
     // 📝 [Firebase 도전의 탑 로그 전송]
     pushFirebaseLog('common', {
         time: new Date().toISOString(),
@@ -2841,6 +2844,10 @@ function startWorldBossRaid(wbId) {
     const pStats = getPlayerTotalStats();
 
     const bossMaxHp = Number(activeBoss.max_hp) || Number(worldBossState.max_hp) || 150000;
+
+    // 🛡️ [보안 패치] 월드 보스 진입 즉시 당일 출전 기록을 확정하여 새로고침(F5) 리트라이 어뷰징 차단
+    currentStudent.last_wb_date = getKSTDateString();
+    updateFastFirebaseStudent(currentStudent);
 
     battleState = {
         isWorldBoss: true,
