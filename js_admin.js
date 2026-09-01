@@ -389,18 +389,25 @@ async function executeForceResetWeekly() {
         currentStudent.weekly_tower = maxTower;
     }
 
-    // 💡 [구조 보존] 배열 대신 이름 키 기반 객체(Map)로 변환하여 저장
-    let studentsMap = {};
-    students.forEach(s => {
-        if (s && s.name) studentsMap[String(s.name).trim()] = s;
-    });
+    const resetPayload = {
+        weekly_battles: maxBattles,
+        weekly_boss: maxBoss,
+        weekly_raid: maxRaid,
+        weekly_tower: maxTower
+    };
 
     try {
-        await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(studentsMap)
+        // 💡 [롤백 방어] 옛날 캐시로 학생 전체를 덮어쓰지 않고 주간 횟수 필드만 개별 PATCH
+        const updatePromises = students.map(s => {
+            if (!s || !s.name) return Promise.resolve();
+            const sName = encodeURIComponent(String(s.name).trim());
+            return fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(resetPayload)
+            });
         });
+        await Promise.all(updatePromises);
         hideGlobalLoading();
         showUiAlert("🎉 초기화 완료", "전체 학생의 주간 횟수가 성공적으로 초기화되었습니다!", "renderClassroomDashboard('overview')");
         renderButtons(students);
@@ -953,18 +960,14 @@ function batchApproveSelectedSubs(questId) {
         }
     });
 
-    // 3. Firebase 일괄 동기화 (학생 객체 Map 구조 보존)
-    let studentsMap = {};
-    (window.allStudentsData || []).forEach(s => {
-        if (s && s.name) studentsMap[String(s.name).trim()] = s;
+    // 3. Firebase 일괄 동기화 (승인 대상 학생만 1:1 독립 방 저장하여 타 학생 롤백 방지)
+    const studentSavePromises = targetNames.map(sName => {
+        const targetStudent = (window.allStudentsData || []).find(x => x.name === sName);
+        return targetStudent ? updateFastFirebaseStudent(targetStudent) : Promise.resolve();
     });
 
     Promise.all([
-        fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(studentsMap)
-        }),
+        ...studentSavePromises,
         fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },

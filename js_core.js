@@ -26,6 +26,14 @@ async function updateFastFirebaseStudent(student) {
     if (!student || !student.name) return;
     const sName = encodeURIComponent(String(student.name).trim());
 
+    // 💡 [순서 보존] sheet_order가 누락되어 999번으로 밀리는 현상 원천 방어
+    if (student.sheet_order === undefined && window.allStudentsData) {
+        const existing = window.allStudentsData.find(s => s && String(s.name).trim() === String(student.name).trim());
+        if (existing && existing.sheet_order !== undefined) {
+            student.sheet_order = existing.sheet_order;
+        }
+    }
+
     try {
         // 1. 서버의 내 독립 방에 1:1 다이렉트 저장
         await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
@@ -254,20 +262,32 @@ async function checkAndPerformWeeklyReset(data) {
     sysConfig.last_weekly_reset = currentMondayKey;
 
     try {
-        // 💡 [구조 보존] 학생 독립 방 객체(Object Map) 형태로 저장하여 용병 데이터 유실 원천 차단
-        await Promise.all([
-            fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json', {
-                method: 'PUT',
+        // 💡 [롤백 방어] 전체 students.json을 PUT하지 않고, 주간 횟수 4종만 각 방에 PATCH로 안전 갱신
+        const resetPayload = {
+            weekly_battles: maxBattles,
+            weekly_boss: maxBoss,
+            weekly_raid: maxRaid,
+            weekly_tower: maxTower
+        };
+        const updatePromises = studentsList.map(s => {
+            if (!s || !s.name) return Promise.resolve();
+            const sName = encodeURIComponent(String(s.name).trim());
+            return fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(studentsMap)
-            }),
+                body: JSON.stringify(resetPayload)
+            });
+        });
+
+        await Promise.all([
+            ...updatePromises,
             fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(currentMondayKey)
             })
         ]);
-        console.log("✅ Firebase 주간 횟수 일괄 초기화 및 동기화 완료!");
+        console.log("✅ Firebase 주간 횟수 안전 부분 갱신 완료!");
     } catch (e) {
         console.error("❌ 주간 초기화 Firebase 저장 실패:", e);
     }
