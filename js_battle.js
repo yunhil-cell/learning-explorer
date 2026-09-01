@@ -289,26 +289,15 @@ function fleeBattle() {
     document.getElementById('battleModal').style.display = 'none';
 
     if (battleState.isRaid) {
-        const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
-        
-        // 💡 [버그 해결] 도망 시에도 파티원 전원의 탐험 횟수 공평하게 1 차감 및 저장
-        battleState.party.forEach(p => {
-            let stObj = window.allStudentsData.find(s => s.name === p.name);
-            if (!stObj) return;
-            let curRaid = (stObj.weekly_raid !== undefined && stObj.weekly_raid !== "") ? Number(stObj.weekly_raid) : maxRaid;
-            stObj.weekly_raid = Math.max(0, curRaid - 1);
-            updateFastFirebaseStudent(stObj);
-        });
-
-        // 📝 [Firebase 파티 던전 후퇴 로그 전송]
+        // 📝 [Firebase 파티 던전 후퇴 로그 전송] (입장 시 이미 차감되었으므로 로그만 기록)
         pushFirebaseLog('common', {
             time: new Date().toISOString(),
             name: currentStudent.name,
             category: "파티 던전",
-            content: `${currentRaidDungeon ? currentRaidDungeon.dungeon_name : '던전'} (${raidParty.join(', ')}) -> 중도 후퇴 (기회 1회 차감)`
+            content: `${currentRaidDungeon ? currentRaidDungeon.dungeon_name : '던전'} (${raidParty.join(', ')}) -> 중도 후퇴`
         });
 
-        showUiAlert("🏃 레이드 포기", "파티 레이드에서 후퇴했습니다.<br><span style='color:#ff4d4d; font-size:0.9em;'>(파티원 전원의 탐험 기회가 1 차감됩니다.)</span>", "renderDashboard()");
+        showUiAlert("🏃 레이드 포기", "파티 레이드에서 후퇴했습니다.<br><span style='color:#ff4d4d; font-size:0.9em;'>(소모된 던전 탐험 기회는 복구되지 않습니다.)</span>", "renderDashboard()");
         return;
     }
 
