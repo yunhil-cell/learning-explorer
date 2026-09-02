@@ -1626,14 +1626,15 @@ function enterRaid(dungeonId) {
         turnTimer: null
     };
 
-    // 🛡️ [보안 패치] 파티 던전 진입 즉시 파티원 3인 전원의 weekly_raid 횟수 선차감
+    // 🛡️ [보안 패치] 파티원 3인의 weekly_raid만 안전하게 부분 차감 (강화/용병/스킨 덮어쓰기 차단)
     const maxWeeklyRaid = Number(sysConfig.max_weekly_raid) || 1;
     raidParty.forEach(sName => {
         const sObj = window.allStudentsData.find(s => s.name === sName);
         if (sObj) {
             let curRaid = (sObj.weekly_raid !== undefined && sObj.weekly_raid !== "") ? Number(sObj.weekly_raid) : maxWeeklyRaid;
-            sObj.weekly_raid = Math.max(0, curRaid - 1);
-            updateFastFirebaseStudent(sObj);
+            const newRaid = Math.max(0, curRaid - 1);
+            sObj.weekly_raid = newRaid;
+            patchFirebaseStudentFields(sName, { weekly_raid: newRaid });
         }
     });
 
@@ -2428,11 +2429,19 @@ function finishRaid(isSuccess) {
         content: `${d.dungeon_name} (${raidParty.join(', ')}) -> 전원 ${totalRaidReward} EXP` + (boxToGive ? ` / [${boxToGive}] 지급` : '')
     });
 
-    // 💡 [안정화 패치] 전체 학생 DB 덮어쓰기를 제거하고, 실제 파티에 참여한 3명만 개별 안전 업데이트
-    Promise.all(battleState.party.map(p => {
+    // 💡 [안정화 패치] 파티원들의 보상 필드(exp, level, level_points, inventory)만 PATCH로 안전 갱신 (용병/강화 100% 보존)
+    const updatePromises = battleState.party.map(p => {
         let stObj = window.allStudentsData.find(s => s.name === p.name);
-        return stObj ? updateFastFirebaseStudent(stObj) : Promise.resolve();
-    })).then(() => {
+        if (!stObj) return Promise.resolve();
+        return patchFirebaseStudentFields(p.name, {
+            exp: stObj.exp,
+            level: stObj.level,
+            level_points: stObj.level_points,
+            inventory: stObj.inventory
+        });
+    });
+
+    Promise.all(updatePromises).then(() => {
         showUiAlert("🏆 던전 탐험 보상 획득", msg, "renderDashboard()");
     });
 }

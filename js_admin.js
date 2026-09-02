@@ -516,7 +516,7 @@ function processExchange(studentName, val, maxExchange) {
 
     showUiAlert("🎉 환전 완료", studentName + " 학생의 " + cost + gameCurrency + "를 차감했습니다.<br><br><b style='color:#10B981; font-size:1.2em;'>" + exchangeAmount + realCurrency + "</b>를 오프라인에서 지급해주세요!", "openExchangeAdmin()");
 
-    updateFastFirebaseStudent(targetStudent);
+    patchFirebaseStudentFields(studentName, { game_money: targetStudent.game_money });
 }
 
 // 💡 2. 교사 모드 토글 (안내 문구 변경)
@@ -886,7 +886,14 @@ function updateSubStatus(questId, studentName, newStatus, rewardGold, rewardPoin
     renderQuestAdmin('list', questId);
 
     Promise.all([
-        updateFastFirebaseStudent(targetStudent),
+        patchFirebaseStudentFields(studentName, {
+            bonus_points: targetStudent.bonus_points,
+            game_money: targetStudent.game_money,
+            exp: targetStudent.exp,
+            level: targetStudent.level,
+            level_points: targetStudent.level_points,
+            quest_count: targetStudent.quest_count
+        }),
         fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -969,10 +976,18 @@ function batchApproveSelectedSubs(questId) {
         }
     });
 
-    // 3. Firebase 일괄 동기화 (승인 대상 학생만 1:1 독립 방 저장하여 타 학생 롤백 방지)
+    // 3. Firebase 일괄 동기화 (보상 관련 필드만 PATCH로 안전 부분 갱신하여 강화/용병 롤백 원천 차단)
     const studentSavePromises = targetNames.map(sName => {
         const targetStudent = (window.allStudentsData || []).find(x => x.name === sName);
-        return targetStudent ? updateFastFirebaseStudent(targetStudent) : Promise.resolve();
+        if (!targetStudent) return Promise.resolve();
+        return patchFirebaseStudentFields(sName, {
+            bonus_points: targetStudent.bonus_points,
+            game_money: targetStudent.game_money,
+            exp: targetStudent.exp,
+            level: targetStudent.level,
+            level_points: targetStudent.level_points,
+            quest_count: targetStudent.quest_count
+        });
     });
 
     Promise.all([

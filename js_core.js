@@ -21,12 +21,11 @@ function pushFirebaseLog(type, logData) {
     }).catch(err => console.error("로그 전송 실패:", err));
 }
 
-// 💡 [영구 격리 패치] 학생 이름을 고유 Key로 하는 독립 방 다이렉트 1:1 저장 (남의 데이터 간섭 0%)
+// 💡 [영구 격리 패치] 본인(currentStudent) 전체 데이터 안전 저장
 async function updateFastFirebaseStudent(student) {
     if (!student || !student.name) return;
     const sName = encodeURIComponent(String(student.name).trim());
 
-    // 💡 [순서 보존] sheet_order가 누락되어 999번으로 밀리는 현상 원천 방어
     if (student.sheet_order === undefined && window.allStudentsData) {
         const existing = window.allStudentsData.find(s => s && String(s.name).trim() === String(student.name).trim());
         if (existing && existing.sheet_order !== undefined) {
@@ -35,14 +34,12 @@ async function updateFastFirebaseStudent(student) {
     }
 
     try {
-        // 1. 서버의 내 독립 방에 1:1 다이렉트 저장
         await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(student)
         });
 
-        // 2. 서버 저장이 성공했을 때만 내 화면 캐시 갱신
         if (window.allStudentsData) {
             const idx = window.allStudentsData.findIndex(s => s && String(s.name).trim() === String(student.name).trim());
             if (idx > -1) window.allStudentsData[idx] = student;
@@ -50,6 +47,30 @@ async function updateFastFirebaseStudent(student) {
         }
     } catch (e) {
         console.error("파이어베이스 학생 데이터 저장 실패:", e);
+    }
+}
+
+// 🛡️ [신규 - 타인 데이터 간섭 원천 차단] 강화/용병/스킨 덮어쓰기 없이 지정한 필드만 부분 수정하는 PATCH 함수
+async function patchFirebaseStudentFields(studentName, fieldsToUpdate) {
+    if (!studentName || !fieldsToUpdate || Object.keys(fieldsToUpdate).length === 0) return;
+    const sName = encodeURIComponent(String(studentName).trim());
+
+    try {
+        await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fieldsToUpdate)
+        });
+
+        // 로컬 캐시 부분 동기화
+        if (window.allStudentsData) {
+            const target = window.allStudentsData.find(s => s && String(s.name).trim() === String(studentName).trim());
+            if (target) {
+                Object.keys(fieldsToUpdate).forEach(k => { target[k] = fieldsToUpdate[k]; });
+            }
+        }
+    } catch (e) {
+        console.error("파이어베이스 필드 부분 패치 실패:", e);
     }
 }
 
