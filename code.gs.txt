@@ -2841,7 +2841,7 @@ function syncStudentToFirebase(studentName) {
   }
 }
 
-// 💡 [완벽 마스터 동기화] Firebase를 이름 기반 독립 방(Object Map) 구조로 전면 동기화 (실시간 횟수/스탯 보존)
+// 💡 [마스터 동기화: 시트 ➔ 파이어베이스] 구글 시트의 전체 데이터를 Firebase에 100% 반영
 function syncToFirebase() {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData";
   
@@ -2852,55 +2852,35 @@ function syncToFirebase() {
       return;
     }
 
-    // 1. 기존 Firebase 데이터 가져오기 및 맵(Map) 변환
+    // 1. 기존 Firebase 데이터 가져오기
     var fbRes = UrlFetchApp.fetch(baseUrl + ".json");
     var fbData = JSON.parse(fbRes.getContentText()) || {};
-    var fbRawStudents = fbData.students || {};
-    var fbStudentsList = Array.isArray(fbRawStudents) ? fbRawStudents : Object.values(fbRawStudents);
-    var fbStudentsMap = {};
-    fbStudentsList.forEach(function(st) {
-      if (st && st.name) fbStudentsMap[String(st.name).trim()] = st;
-    });
 
-    // 2. 학생 데이터를 이름(Key) 기반 독립 방 객체로 변환 (구글 시트의 값이 절대 우선 전송)
+    // 2. 학생 데이터를 이름(Key) 기반 독립 방 객체로 변환
     var newStudentsMap = {};
-
     if (fullData.students) {
       fullData.students.forEach(function(s) {
         if (!s || !s.name) return;
         var sName = String(s.name).trim();
-        var fbS = fbStudentsMap[sName];
-
-        // 💡 [정상화] 구글 시트에 적힌 값(주간 횟수, 골드, 스탯 등)이 100% 그대로 Firebase로 전송됩니다.
-        // 시트 셀이 아예 비어있는("") 경우에만 Firebase 기존 데이터로 안전하게 채웁니다.
-        if (fbS) {
-          Object.keys(fbS).forEach(function(field) {
-            var sheetVal = s[field] !== undefined ? String(s[field]).trim() : "";
-            if (sheetVal === "" || sheetVal === "undefined" || sheetVal === "null") {
-              s[field] = fbS[field];
-            }
-          });
-        }
         newStudentsMap[sName] = s;
       });
     }
-
     fullData.students = newStudentsMap;
 
-    // 3. 월드보스 및 제출물, 로그, [주간 초기화 날짜] 완벽 보존 및 기본값 자동 보정
+    // 3. 월드보스, 성찰일지 제출물, 로그 보존
     if (!fullData.system) fullData.system = { config: {} };
     if (!fullData.system.config) fullData.system.config = {};
 
     if (fbData.system && fbData.system.config && fbData.system.config.last_weekly_reset) {
       fullData.system.config.last_weekly_reset = String(fbData.system.config.last_weekly_reset).trim();
     } else {
-      // Firebase에 날짜 키가 없으면 현재 KST 월요일 날짜로 안전하게 생성하여 무한 리셋 차단
       var nowKst = new Date(Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy/MM/dd HH:mm:ss"));
       var kstDay = nowKst.getDay();
       var diffMon = (kstDay === 0 ? -6 : 1) - kstDay;
       nowKst.setDate(nowKst.getDate() + diffMon);
       fullData.system.config.last_weekly_reset = Utilities.formatDate(nowKst, "Asia/Seoul", "yyyy-MM-dd");
     }
+
     if (fbData.worldBoss) fullData.worldBoss = fbData.worldBoss;
     if (fbData.submissions && (!fullData.submissions || fullData.submissions.length === 0)) fullData.submissions = fbData.submissions;
     if (fbData.forgeLogs) fullData.forgeLogs = fbData.forgeLogs;
@@ -2913,13 +2893,13 @@ function syncToFirebase() {
       payload: JSON.stringify(fullData)
     });
 
-    Logger.log("🎉 [개별 독립 방 체제 전환 완료] 실시간 주간 횟수 및 플레이 데이터를 100% 보존하며 동기화 완료!");
+    Logger.log("🎉 [시트 ➔ 파이어베이스] 구글 시트 마스터 데이터 동기화 완료!");
   } catch (e) {
     Logger.log("❌ 동기화 중 오류 발생: " + e.toString());
   }
 }
 
-// 💡 [완전 백업] 학생(students) 탭 실시간 플레이 데이터 백업 (주간 도전 횟수 4종 완벽 동기화)
+// 💡 [완전 백업: 파이어베이스 ➔ 시트] 학생 플레이 데이터 백업 + 2중 스냅샷 백업 시트 생성
 function syncFromFirebase() {
   var firebaseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData.json";
   var res = UrlFetchApp.fetch(firebaseUrl);
@@ -2940,6 +2920,9 @@ function syncFromFirebase() {
 
     var stSheet = ss.getSheetByName("students");
     if (stSheet) {
+      // 🛡️ [2중 안전 백업] 기존 students 시트를 backup-(YYYYMMDD-HHmm) 시트로 복제 보관
+      createStudentSnapshotBackup(ss, stSheet);
+
       var range = stSheet.getDataRange();
       var values = range.getValues();
       var headers = values[0].map(function(h) { return String(h).trim(); });
@@ -3173,5 +3156,63 @@ function logCommonAction(studentName, category, content) {
     return "Success";
   } catch(e) {
     return "Error: " + e.toString();
+  }
+}
+
+// 📦 [스마트 2중 백업] 데이터 실질 변동이 있을 때만 최근 15개의 유의미한 스냅샷을 보존하는 함수
+function createStudentSnapshotBackup(ss, stSheet) {
+  try {
+    var timeStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd-HHmm");
+    var backupName = "backup-(" + timeStr + ")";
+
+    // 1. 이미 동일한 이름의 백업이 존재하면 중복 생성 방지
+    if (ss.getSheetByName(backupName)) return;
+
+    // 2. 가장 최근 생성된 백업 시트와 내용 비교 (변화가 없으면 야간/주말 중복 복제 스킵)
+    var allSheets = ss.getSheets();
+    var backupSheets = [];
+    for (var i = 0; i < allSheets.length; i++) {
+      var sName = allSheets[i].getName();
+      if (sName.indexOf("backup-") === 0) {
+        backupSheets.push(allSheets[i]);
+      }
+    }
+
+    if (backupSheets.length > 0) {
+      backupSheets.sort(function(a, b) {
+        return a.getName().localeCompare(b.getName());
+      });
+      var latestBackup = backupSheets[backupSheets.length - 1];
+      
+      // 현재 학생 시트 데이터와 최신 백업 시트 데이터 비교
+      var curValues = JSON.stringify(stSheet.getDataRange().getValues());
+      var prevValues = JSON.stringify(latestBackup.getDataRange().getValues());
+      
+      // 데이터 변동이 전혀 없으면 백업을 생성하지 않고 귀중한 이전 백업 슬롯 보존!
+      if (curValues === prevValues) {
+        Logger.log("ℹ️ 학생 데이터에 변동이 없어 백업 시트 생성을 스킵합니다.");
+        return;
+      }
+    }
+
+    // 3. 변동이 감지된 경우에만 새 백업 시트 생성
+    var newBackup = stSheet.copyTo(ss);
+    newBackup.setName(backupName);
+    backupSheets.push(newBackup);
+
+    // 4. 최근 15개 초과 시 가장 오래된 백업 시트 자동 삭제
+    var MAX_BACKUPS = 15;
+    if (backupSheets.length > MAX_BACKUPS) {
+      backupSheets.sort(function(a, b) {
+        return a.getName().localeCompare(b.getName());
+      });
+      while (backupSheets.length > MAX_BACKUPS) {
+        var oldest = backupSheets.shift();
+        ss.deleteSheet(oldest);
+      }
+    }
+    Logger.log("✅ 유의미한 데이터 변동 감지 ➔ 2중 스냅샷 백업 완료: " + backupName);
+  } catch (e) {
+    Logger.log("⚠️ 스냅샷 백업 처리 중 예외 (무시하고 진행): " + e.toString());
   }
 }
