@@ -398,6 +398,7 @@ async function executeForceResetWeekly() {
 
     try {
         // 💡 [롤백 방어] 옛날 캐시로 학생 전체를 덮어쓰지 않고 주간 횟수 필드만 개별 PATCH
+        const currentMondayKey = getKSTMondayKey();
         const updatePromises = students.map(s => {
             if (!s || !s.name) return Promise.resolve();
             const sName = encodeURIComponent(String(s.name).trim());
@@ -407,7 +408,15 @@ async function executeForceResetWeekly() {
                 body: JSON.stringify(resetPayload)
             });
         });
-        await Promise.all(updatePromises);
+        await Promise.all([
+            ...updatePromises,
+            fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(currentMondayKey)
+            })
+        ]);
+        if (sysConfig) sysConfig.last_weekly_reset = currentMondayKey;
         hideGlobalLoading();
         showUiAlert("🎉 초기화 완료", "전체 학생의 주간 횟수가 성공적으로 초기화되었습니다!", "renderClassroomDashboard('overview')");
         renderButtons(students);

@@ -240,26 +240,31 @@ function initGameData(data) {
     renderButtons(studentsArray);
 }
 
-// 💡 [신규] Firebase 기반 주간 횟수 자동 초기화 엔진 (KST 표준 함수 연동)
-async function checkAndPerformWeeklyReset(data) {
-    if (!data || !data.students) return;
-
-    // 💡 getKSTDateString 기반으로 이번 주 월요일 키 계산
+// 💡 [정밀 계산] 디바이스 환경 무관 KST 기준 이번 주 월요일 날짜 키(YYYY-MM-DD) 반환
+function getKSTMondayKey() {
     const now = new Date();
     const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
     const kstDate = new Date(utc + (9 * 60 * 60 * 1000));
     const day = kstDate.getDay();
     const diffToMonday = (day === 0 ? -6 : 1) - day;
-    const mondayDate = new Date(kstDate);
-    mondayDate.setDate(kstDate.getDate() + diffToMonday);
-    const currentMondayKey = getKSTDateString(mondayDate);
+    kstDate.setDate(kstDate.getDate() + diffToMonday);
+    const y = kstDate.getFullYear();
+    const m = String(kstDate.getMonth() + 1).padStart(2, '0');
+    const d = String(kstDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
 
-    const lastReset = sysConfig.last_weekly_reset || '';
+// 💡 [신규] Firebase 기반 주간 횟수 자동 초기화 엔진 (오프셋 버그 완전 해결)
+async function checkAndPerformWeeklyReset(data) {
+    if (!data || !data.students) return;
 
-    // 이미 이번 주 월요일에 초기화가 완료된 상태면 통과
+    const currentMondayKey = getKSTMondayKey();
+    const lastReset = String((sysConfig && sysConfig.last_weekly_reset) || '').trim();
+
+    // 1. 이미 이번 주 월요일 키와 일치하면 절대 초기화하지 않고 즉시 종료
     if (lastReset === currentMondayKey) return;
 
-    // 🛡️ [버그 방어] 최초 실행 시 lastReset이 비어있으면 학생 횟수를 건드리지 않고 날짜 도장만 찍음
+    // 2. 최초 실행 시 또는 날짜 키가 없을 때는 학생 횟수를 보존하고 기준 날짜만 저장
     if (!lastReset) {
         sysConfig.last_weekly_reset = currentMondayKey;
         fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
@@ -270,7 +275,7 @@ async function checkAndPerformWeeklyReset(data) {
         return;
     }
 
-    console.log(`🔄 주간 초기화 감지 (이전: ${lastReset} -> 이번 주: ${currentMondayKey})`);
+    console.log(`🔄 주간 초기화 실행 (이전: ${lastReset} -> 이번 주: ${currentMondayKey})`);
 
     const maxBattles = Number(sysConfig.max_weekly_battles) || 2;
     const maxBoss = Number(sysConfig.max_weekly_boss) || 3;
@@ -278,7 +283,6 @@ async function checkAndPerformWeeklyReset(data) {
     const maxTower = Number(sysConfig.max_weekly_tower) || 1;
 
     let studentsList = Array.isArray(data.students) ? data.students : Object.values(data.students);
-    let studentsMap = {};
 
     studentsList.forEach(s => {
         if (!s || !s.name) return;
@@ -286,13 +290,11 @@ async function checkAndPerformWeeklyReset(data) {
         s.weekly_boss = maxBoss;
         s.weekly_raid = maxRaid;
         s.weekly_tower = maxTower;
-        studentsMap[String(s.name).trim()] = s;
     });
 
     sysConfig.last_weekly_reset = currentMondayKey;
 
     try {
-        // 💡 [롤백 방어] 전체 students.json을 PUT하지 않고, 주간 횟수 4종만 각 방에 PATCH로 안전 갱신
         const resetPayload = {
             weekly_battles: maxBattles,
             weekly_boss: maxBoss,
@@ -317,7 +319,7 @@ async function checkAndPerformWeeklyReset(data) {
                 body: JSON.stringify(currentMondayKey)
             })
         ]);
-        console.log("✅ Firebase 주간 횟수 안전 부분 갱신 완료!");
+        console.log("✅ Firebase 주간 횟수 정기 초기화 완료!");
     } catch (e) {
         console.error("❌ 주간 초기화 Firebase 저장 실패:", e);
     }

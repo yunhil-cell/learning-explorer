@@ -2887,11 +2887,19 @@ function syncToFirebase() {
 
     fullData.students = newStudentsMap;
 
-    // 3. 월드보스 및 제출물, 로그, [주간 초기화 날짜] 보존 (웹 자동 리셋 버그 차단)
+    // 3. 월드보스 및 제출물, 로그, [주간 초기화 날짜] 완벽 보존 및 기본값 자동 보정
+    if (!fullData.system) fullData.system = { config: {} };
+    if (!fullData.system.config) fullData.system.config = {};
+
     if (fbData.system && fbData.system.config && fbData.system.config.last_weekly_reset) {
-      if (!fullData.system) fullData.system = { config: {} };
-      if (!fullData.system.config) fullData.system.config = {};
-      fullData.system.config.last_weekly_reset = fbData.system.config.last_weekly_reset;
+      fullData.system.config.last_weekly_reset = String(fbData.system.config.last_weekly_reset).trim();
+    } else {
+      // Firebase에 날짜 키가 없으면 현재 KST 월요일 날짜로 안전하게 생성하여 무한 리셋 차단
+      var nowKst = new Date(Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy/MM/dd HH:mm:ss"));
+      var kstDay = nowKst.getDay();
+      var diffMon = (kstDay === 0 ? -6 : 1) - kstDay;
+      nowKst.setDate(nowKst.getDate() + diffMon);
+      fullData.system.config.last_weekly_reset = Utilities.formatDate(nowKst, "Asia/Seoul", "yyyy-MM-dd");
     }
     if (fbData.worldBoss) fullData.worldBoss = fbData.worldBoss;
     if (fbData.submissions && (!fullData.submissions || fullData.submissions.length === 0)) fullData.submissions = fbData.submissions;
