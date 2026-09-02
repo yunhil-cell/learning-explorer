@@ -259,6 +259,17 @@ async function checkAndPerformWeeklyReset(data) {
     // 이미 이번 주 월요일에 초기화가 완료된 상태면 통과
     if (lastReset === currentMondayKey) return;
 
+    // 🛡️ [버그 방어] 최초 실행 시 lastReset이 비어있으면 학생 횟수를 건드리지 않고 날짜 도장만 찍음
+    if (!lastReset) {
+        sysConfig.last_weekly_reset = currentMondayKey;
+        fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentMondayKey)
+        });
+        return;
+    }
+
     console.log(`🔄 주간 초기화 감지 (이전: ${lastReset} -> 이번 주: ${currentMondayKey})`);
 
     const maxBattles = Number(sysConfig.max_weekly_battles) || 2;

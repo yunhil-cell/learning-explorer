@@ -2841,7 +2841,7 @@ function syncStudentToFirebase(studentName) {
   }
 }
 
-// 💡 [완벽 마스터 동기화] Firebase를 이름 기반 독립 방(Object Map) 구조로 전면 동기화
+// 💡 [완벽 마스터 동기화] Firebase를 이름 기반 독립 방(Object Map) 구조로 전면 동기화 (실시간 횟수/스탯 보존)
 function syncToFirebase() {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData";
   
@@ -2852,26 +2852,18 @@ function syncToFirebase() {
       return;
     }
 
-    // 1. 기존 Firebase 데이터 가져오기
+    // 1. 기존 Firebase 데이터 가져오기 및 맵(Map) 변환
     var fbRes = UrlFetchApp.fetch(baseUrl + ".json");
     var fbData = JSON.parse(fbRes.getContentText()) || {};
-    var fbStudentsMap = fbData.students || {};
+    var fbRawStudents = fbData.students || {};
+    var fbStudentsList = Array.isArray(fbRawStudents) ? fbRawStudents : Object.values(fbRawStudents);
+    var fbStudentsMap = {};
+    fbStudentsList.forEach(function(st) {
+      if (st && st.name) fbStudentsMap[String(st.name).trim()] = st;
+    });
 
-    // 2. 학생 데이터를 이름(Key) 기반 독립 방 객체로 변환 및 실시간 플레이 데이터 완벽 보존 병합
+    // 2. 학생 데이터를 이름(Key) 기반 독립 방 객체로 변환 (구글 시트의 값이 절대 우선 전송)
     var newStudentsMap = {};
-    var protectFields = [
-      "password", "blessing", "level", "exp", "level_points", "bonus_points",
-      "hp_points", "atk_points", "def_points", "luk_points", "game_money",
-      "weapon_lv", "head_lv", "body_lv", "accessory_lv",
-      "weapon_fail", "head_fail", "body_fail", "accessory_fail",
-      "unlocked_skins", "equipped_skin", "unlocked_skills", "equipped_1",
-      "unlocked_relics", "relic_1", "relic_2", "relic_slot_2_unlocked",
-      "unlocked_mercenaries", "party_m1", "party_m2", "party_s1", "party_s2", "merc_slot2_unlocked",
-      "inventory", "equipped_title", "custom_titles", "monster_data",
-      "last_defeat", "penalty_end_time", "flee_count", "relic_pull_count", "total_forge_fail",
-      "weekly_battles", "weekly_boss", "weekly_raid", "weekly_tower", "max_tower_floor",
-      "last_wb_date", "wb_total_damage"
-    ];
 
     if (fullData.students) {
       fullData.students.forEach(function(s) {
@@ -2879,17 +2871,12 @@ function syncToFirebase() {
         var sName = String(s.name).trim();
         var fbS = fbStudentsMap[sName];
 
-        // Firebase에 기존 플레이 기록이 있다면 빈 시트 데이터로 덮어쓰지 않도록 보호
+        // 💡 [정상화] 구글 시트에 적힌 값(주간 횟수, 골드, 스탯 등)이 100% 그대로 Firebase로 전송됩니다.
+        // 시트 셀이 아예 비어있는("") 경우에만 Firebase 기존 데이터로 안전하게 채웁니다.
         if (fbS) {
-          protectFields.forEach(function(field) {
+          Object.keys(fbS).forEach(function(field) {
             var sheetVal = s[field] !== undefined ? String(s[field]).trim() : "";
-            var fbVal = fbS[field] !== undefined ? String(fbS[field]).trim() : "";
-
-            if (field === "unlocked_skins") {
-              var sheetSkinCount = sheetVal ? sheetVal.split(',').length : 0;
-              var fbSkinCount = fbVal ? fbVal.split(',').length : 0;
-              if (fbSkinCount >= sheetSkinCount && fbVal !== "") s[field] = fbS[field];
-            } else if ((sheetVal === "" || sheetVal === "undefined" || sheetVal === "null") && fbVal !== "") {
+            if (sheetVal === "" || sheetVal === "undefined" || sheetVal === "null") {
               s[field] = fbS[field];
             }
           });
@@ -2900,7 +2887,12 @@ function syncToFirebase() {
 
     fullData.students = newStudentsMap;
 
-    // 3. 월드보스 및 제출물, 로그 보존
+    // 3. 월드보스 및 제출물, 로그, [주간 초기화 날짜] 보존 (웹 자동 리셋 버그 차단)
+    if (fbData.system && fbData.system.config && fbData.system.config.last_weekly_reset) {
+      if (!fullData.system) fullData.system = { config: {} };
+      if (!fullData.system.config) fullData.system.config = {};
+      fullData.system.config.last_weekly_reset = fbData.system.config.last_weekly_reset;
+    }
     if (fbData.worldBoss) fullData.worldBoss = fbData.worldBoss;
     if (fbData.submissions && (!fullData.submissions || fullData.submissions.length === 0)) fullData.submissions = fbData.submissions;
     if (fbData.forgeLogs) fullData.forgeLogs = fbData.forgeLogs;
@@ -2913,13 +2905,13 @@ function syncToFirebase() {
       payload: JSON.stringify(fullData)
     });
 
-    Logger.log("🎉 [개별 독립 방 체제 전환 완료] 모든 학생이 이름 기반 독립 주택으로 격리되어 충돌이 영구 차단되었습니다!");
+    Logger.log("🎉 [개별 독립 방 체제 전환 완료] 실시간 주간 횟수 및 플레이 데이터를 100% 보존하며 동기화 완료!");
   } catch (e) {
     Logger.log("❌ 동기화 중 오류 발생: " + e.toString());
   }
 }
 
-// 💡 [완전 백업] 학생(students) 탭 실시간 플레이 데이터 백업 (독립 방 Object Map 완벽 지원)
+// 💡 [완전 백업] 학생(students) 탭 실시간 플레이 데이터 백업 (주간 도전 횟수 4종 완벽 동기화)
 function syncFromFirebase() {
   var firebaseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData.json";
   var res = UrlFetchApp.fetch(firebaseUrl);
@@ -2929,9 +2921,15 @@ function syncFromFirebase() {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 1. 학생(students) 탭 실시간 플레이 데이터 백업 (독립 방 Object Map 완벽 지원)
+  // 1. 학생(students) 탭 실시간 플레이 데이터 백업 (배열/객체 구조 무관 100% 이름 매핑)
   if (data.students) {
-    var stMap = data.students;
+    var rawStudents = data.students;
+    var stList = Array.isArray(rawStudents) ? rawStudents : Object.values(rawStudents);
+    var stMap = {};
+    stList.forEach(function(st) {
+      if (st && st.name) stMap[String(st.name).trim()] = st;
+    });
+
     var stSheet = ss.getSheetByName("students");
     if (stSheet) {
       var range = stSheet.getDataRange();
@@ -2948,7 +2946,7 @@ function syncFromFirebase() {
 
         if (student) {
           headers.forEach(function(h, c) {
-            if (c !== -1 && !teacherColIndices.includes(c) && student[h] !== undefined) {
+            if (c !== -1 && !teacherColIndices.includes(c) && student[h] !== undefined && student[h] !== "") {
               values[r][c] = student[h];
             }
           });
