@@ -26,10 +26,11 @@ async function updateFastFirebaseStudent(student) {
     if (!student || !student.name) return;
     const sName = encodeURIComponent(String(student.name).trim());
 
-    if (student.sheet_order === undefined && window.allStudentsData) {
-        const existing = window.allStudentsData.find(s => s && String(s.name).trim() === String(student.name).trim());
-        if (existing && existing.sheet_order !== undefined) {
-            student.sheet_order = existing.sheet_order;
+    // 💡 [순서 절대 보존] sheet_order가 없거나 유실된 경우 allStudentsData 및 시트 순번에서 강제 복원
+    if ((student.sheet_order === undefined || student.sheet_order === null || Number(student.sheet_order) >= 999) && window.allStudentsData) {
+        const existingIdx = window.allStudentsData.findIndex(s => s && String(s.name).trim() === String(student.name).trim());
+        if (existingIdx > -1) {
+            student.sheet_order = window.allStudentsData[existingIdx].sheet_order || (existingIdx + 1);
         }
     }
 

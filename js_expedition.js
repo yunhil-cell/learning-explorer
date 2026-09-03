@@ -71,10 +71,20 @@ function adjustStat(key, amount) {
 }
 
 function saveStats() {
-    currentStudent.hp_points = tempStats.hp; currentStudent.atk_points = tempStats.atk;
-    currentStudent.def_points = tempStats.def; currentStudent.luk_points = tempStats.luk;
-    renderDashboard();
-    updateFastFirebaseStudent(currentStudent);
+    currentStudent.hp_points = tempStats.hp;
+    currentStudent.atk_points = tempStats.atk;
+    currentStudent.def_points = tempStats.def;
+    currentStudent.luk_points = tempStats.luk;
+
+    // 💡 저장 도중 창 닫힘으로 인한 누락 방지: 완료 팝업 명확히 출력
+    showGlobalLoading("📊 능력치 저장 중...");
+    updateFastFirebaseStudent(currentStudent).then(() => {
+        hideGlobalLoading();
+        showUiAlert("📊 저장 완료", "능력치가 성공적으로 저장되었습니다!", "renderDashboard()");
+    }).catch(() => {
+        hideGlobalLoading();
+        renderDashboard();
+    });
 }
 
 // ==========================================
