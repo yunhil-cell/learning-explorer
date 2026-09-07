@@ -35,7 +35,7 @@ async function updateFastFirebaseStudent(student) {
     }
 
     try {
-        await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
+        const response = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(student)
@@ -46,8 +46,10 @@ async function updateFastFirebaseStudent(student) {
             if (idx > -1) window.allStudentsData[idx] = student;
             else window.allStudentsData.push(student);
         }
+        return response;
     } catch (e) {
         console.error("파이어베이스 학생 데이터 저장 실패:", e);
+        throw e;
     }
 }
 

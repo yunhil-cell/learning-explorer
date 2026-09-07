@@ -70,21 +70,32 @@ function adjustStat(key, amount) {
     rElem.style.color = tempStats.remain === 0 ? '#ff4d4d' : 'white';
 }
 
-function saveStats() {
+async function saveStats() {
     currentStudent.hp_points = tempStats.hp;
     currentStudent.atk_points = tempStats.atk;
     currentStudent.def_points = tempStats.def;
     currentStudent.luk_points = tempStats.luk;
 
-    // 💡 저장 도중 창 닫힘으로 인한 누락 방지: 완료 팝업 명확히 출력
     showGlobalLoading("📊 능력치 저장 중...");
-    updateFastFirebaseStudent(currentStudent).then(() => {
+
+    const statPayload = {
+        hp_points: tempStats.hp,
+        atk_points: tempStats.atk,
+        def_points: tempStats.def,
+        luk_points: tempStats.luk
+    };
+
+    try {
+        // 💡 [동시성 안전 패치] 스탯 필드만 독립 PATCH하여 데이터 손실 및 롤백 원천 차단
+        await patchFirebaseStudentFields(currentStudent.name, statPayload);
+        await updateFastFirebaseStudent(currentStudent);
+
         hideGlobalLoading();
         showUiAlert("📊 저장 완료", "능력치가 성공적으로 저장되었습니다!", "renderDashboard()");
-    }).catch(() => {
+    } catch (err) {
         hideGlobalLoading();
-        renderDashboard();
-    });
+        showUiAlert("❌ 저장 오류", "능력치 저장 중 네트워크 오류가 발생했습니다: " + err, "renderDashboard()");
+    }
 }
 
 // ==========================================

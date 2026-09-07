@@ -71,6 +71,14 @@ function enterBattle(monsterId, isBoss = false) {
     const targetMonster = isBoss ? bossList.find(b => String(b.boss_id).trim() === String(monsterId).trim()) : monsterList.find(m => String(m.monster_id).trim() === String(monsterId).trim());
     if (!targetMonster) return alert("대상의 정보를 찾을 수 없습니다.");
 
+    // 🛡️ [보안/동기화 패치] 일반 사냥 진입 즉시 주간 횟수 1회 선차감 및 Firebase 즉시 저장 (전투 중 20초 핑 롤백 및 어뷰징 원천 차단)
+    if (!isBoss) {
+        const maxW = Number(sysConfig.max_weekly_battles) || 2;
+        const currentW = (currentStudent.weekly_battles !== undefined && currentStudent.weekly_battles !== "") ? Number(currentStudent.weekly_battles) : maxW;
+        currentStudent.weekly_battles = Math.max(0, currentW - 1);
+        updateFastFirebaseStudent(currentStudent);
+    }
+
     battleState.isTower = false;
     closeSubModal();
     document.getElementById('singlePlayerContainer').style.display = 'block';
@@ -1190,11 +1198,7 @@ function showBattleResult(isWin) {
         return;
     }
 
-    if (!battleState.isBoss) {
-        let maxW = Number(sysConfig.max_weekly_battles) || 2;
-        let currentW = (currentStudent.weekly_battles !== undefined && currentStudent.weekly_battles !== "") ? Number(currentStudent.weekly_battles) : maxW;
-        currentStudent.weekly_battles = Math.max(0, currentW - 1);
-    }
+    // 💡 주간 사냥 횟수(weekly_battles)는 enterBattle 진입 즉시 안전하게 선차감되었으므로 중복 차감하지 않음
 
     if (battleState.monster) {
         const mId = battleState.monster.monster_id || battleState.monster.boss_id;
@@ -2312,11 +2316,12 @@ function handleRaidMonsterDefeat() {
     const expGain = battleState.monster.name.includes('[보스]') ? (star * 30) : (star * 10);
     totalRaidReward += expGain; // totalRaidReward를 이제 경험치 누적용으로 사용합니다!
 
-    document.getElementById('raidStageInfo').innerText = `[ ${currentRaidStage} 계층 클리어! ] 누적 획득 예정: ${totalRaidReward} EXP`;
+    const perPersonExp = Math.max(1, Math.floor(totalRaidReward / (raidParty.length || 3)));
+    document.getElementById('raidStageInfo').innerText = `[ ${currentRaidStage} 계층 클리어! ] 1인당: ${perPersonExp} EXP (파티 누적: ${totalRaidReward})`;
 
     showUiConfirm(
         `🎉 ${currentRaidStage}계층 토벌 성공!`,
-        `누적 경험치: <b style="color:#60A5FA;">${totalRaidReward} EXP</b><br><br>다음 계층으로 나아가시겠습니까?<br><span style="color:#ff4d4d; font-size:0.8em;">(전멸 시 보상을 잃고 탐험 기회가 차감됩니다. 현재 체력 유지)</span>`,
+        `획득 예정 경험치: <b style="color:#60A5FA;">1인당 ${perPersonExp} EXP</b> <span style="font-size:0.8em; color:var(--TextSub);">(파티 총합 ${totalRaidReward} EXP의 1/3 분할)</span><br><br>다음 계층으로 나아가시겠습니까?<br><span style="color:#ff4d4d; font-size:0.8em;">(전멸 시 보상을 잃고 탐험 기회가 차감됩니다. 현재 체력 유지)</span>`,
         "proceedToNextRaidStage()"
     );
 
@@ -2357,6 +2362,9 @@ function finishRaid(isSuccess) {
         return;
     }
 
+    // 🛡️ [동기화 보호] 20초 주기 백그라운드 동기화 간섭 및 중복 조작을 물리적으로 차단
+    showGlobalLoading("🏆 던전 탐험 보상 정산 및 저장 중...");
+
     let isFullClear = false;
     const d = currentRaidDungeon;
     let nextMobId = currentRaidStage === 1 ? d.mob2_id : (currentRaidStage === 2 ? d.mob3_id : null);
@@ -2368,7 +2376,9 @@ function finishRaid(isSuccess) {
     const boxData = lootBoxesData.find(b => b.box_id === rewardBoxId);
     const boxName = boxData ? boxData.box_name : "전리품 상자";
 
-    let msg = `획득 경험치: <b style="color:var(--Highlight);">전원 ${totalRaidReward} EXP</b><br>`;
+    // 💡 1/3 분할 의도 밸런스 유지 + 1인당 실제 지급액을 화면에 투명하게 명시하여 오해 해소
+    let sharedRaidExp = Math.max(1, Math.floor(totalRaidReward / (raidParty.length || 3)));
+    let msg = `획득 경험치: <b style="color:var(--Highlight);">1인당 ${sharedRaidExp} EXP</b> <span style="font-size:0.8em; color:var(--TextSub);">(파티 총합 ${totalRaidReward} EXP의 1/3)</span><br>`;
     let boxToGive = isFullClear ? boxName : "";
 
     if (isFullClear) {
@@ -2377,19 +2387,19 @@ function finishRaid(isSuccess) {
         msg += `<span style="color:var(--TextLock); font-size:0.8em;">(중도 포기하여 전리품 상자는 지급되지 않습니다.)</span><br><br>`;
     }
 
-    let sharedRaidExp = Math.max(1, Math.floor(totalRaidReward / (raidParty.length || 3)));
     const expMax = Number(sysConfig.exp_max) || 200;
     const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
     let leveledUpMembers = [];
 
     battleState.party.forEach(p => {
-        let stObj = window.allStudentsData.find(s => s.name === p.name);
+        const pNameClean = String(p.name).trim();
+        let stObj = (window.allStudentsData || []).find(s => s && String(s.name).trim() === pNameClean);
         if (!stObj) return;
 
-        // 1. 경험치 지급 및 누적
+        // 1. 경험치 지급 및 누적 (1/3 분할 지급)
         stObj.exp = (Number(stObj.exp) || 0) + sharedRaidExp;
 
-        // 2. 💡 [핵심 버그 수정] 파티원 각각 레벨업 및 포인트 지급 체크
+        // 2. 💡 파티원 각각 레벨업 및 포인트 지급 체크
         let memberLeveled = false;
         while (stObj.exp >= expMax) {
             stObj.exp -= expMax;
@@ -2426,7 +2436,7 @@ function finishRaid(isSuccess) {
         time: new Date().toISOString(),
         name: currentStudent.name,
         category: "파티 던전",
-        content: `${d.dungeon_name} (${raidParty.join(', ')}) -> 전원 ${totalRaidReward} EXP` + (boxToGive ? ` / [${boxToGive}] 지급` : '')
+        content: `${d.dungeon_name} (${raidParty.join(', ')}) -> 1인당 ${sharedRaidExp} EXP` + (boxToGive ? ` / [${boxToGive}] 지급` : '')
     });
 
     // 💡 [안정화 패치] 파티원들의 보상 필드(exp, level, level_points, inventory)만 PATCH로 안전 갱신 (용병/강화 100% 보존)
@@ -2442,7 +2452,11 @@ function finishRaid(isSuccess) {
     });
 
     Promise.all(updatePromises).then(() => {
+        hideGlobalLoading();
         showUiAlert("🏆 던전 탐험 보상 획득", msg, "renderDashboard()");
+    }).catch(err => {
+        hideGlobalLoading();
+        showUiAlert("⚠️ 정산 안내", msg, "renderDashboard()");
     });
 }
 
