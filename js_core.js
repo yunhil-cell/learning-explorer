@@ -21,60 +21,319 @@ function pushFirebaseLog(type, logData) {
     }).catch(err => console.error("로그 전송 실패:", err));
 }
 
-// 💡 [영구 격리 패치] 본인(currentStudent) 전체 데이터 안전 저장
-async function updateFastFirebaseStudent(student) {
-    if (!student || !student.name) return;
-    const sName = encodeURIComponent(String(student.name).trim());
+// 🛡️ [동시성 안전 저장] 학생별 저장 큐 및 마지막 Firebase 기준 상태
+const studentWriteQueues = {};
+const studentServerSnapshots = {};
 
-    // 💡 [순서 절대 보존] sheet_order가 없거나 유실된 경우 allStudentsData 및 시트 순번에서 강제 복원
-    if ((student.sheet_order === undefined || student.sheet_order === null || Number(student.sheet_order) >= 999) && window.allStudentsData) {
-        const existingIdx = window.allStudentsData.findIndex(s => s && String(s.name).trim() === String(student.name).trim());
-        if (existingIdx > -1) {
-            student.sheet_order = window.allStudentsData[existingIdx].sheet_order || (existingIdx + 1);
-        }
-    }
-
-    try {
-        const response = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(student)
-        });
-
-        if (window.allStudentsData) {
-            const idx = window.allStudentsData.findIndex(s => s && String(s.name).trim() === String(student.name).trim());
-            if (idx > -1) window.allStudentsData[idx] = student;
-            else window.allStudentsData.push(student);
-        }
-        return response;
-    } catch (e) {
-        console.error("파이어베이스 학생 데이터 저장 실패:", e);
-        throw e;
-    }
+// 학생 데이터 비교용 안전 복사
+function cloneStudentSyncData(value) {
+    return JSON.parse(JSON.stringify(value || {}));
 }
 
-// 🛡️ [신규 - 타인 데이터 간섭 원천 차단] 강화/용병/스킨 덮어쓰기 없이 지정한 필드만 부분 수정하는 PATCH 함수
+// Firebase에서 마지막으로 확인한 학생 상태 저장
+function rememberStudentServerState(student) {
+    if (!student || !student.name) return;
+
+    const studentName = String(student.name).trim();
+    studentServerSnapshots[studentName] = cloneStudentSyncData(student);
+}
+
+// Firebase 저장 성공 후 특정 필드만 기준 상태에 반영
+function rememberStudentServerFields(studentName, fieldsToUpdate) {
+    if (!studentName || !fieldsToUpdate) return;
+
+    const key = String(studentName).trim();
+    const base = studentServerSnapshots[key] || { name: key };
+
+    studentServerSnapshots[key] = Object.assign(
+        {},
+        base,
+        cloneStudentSyncData(fieldsToUpdate)
+    );
+}
+
+// 같은 학생의 Firebase 저장 요청을 반드시 순서대로 실행
+function queueStudentWrite(studentName, task) {
+    const key = String(studentName).trim();
+    const previous = studentWriteQueues[key] || Promise.resolve();
+
+    const next = previous
+        .catch(() => {
+            // 이전 저장이 실패했더라도 다음 저장은 계속 진행
+        })
+        .then(task);
+
+    studentWriteQueues[key] = next;
+
+    return next.finally(() => {
+        if (studentWriteQueues[key] === next) {
+            delete studentWriteQueues[key];
+        }
+    });
+}
+
+// 마지막 Firebase 기준 상태와 현재 상태를 비교하여 변경된 필드만 추출
+function getChangedStudentFields(currentData, serverData) {
+    const changedFields = {};
+
+    Object.keys(currentData || {}).forEach(key => {
+        if (key === 'name') return;
+
+        const currentValue = currentData[key];
+        const serverValue = serverData ? serverData[key] : undefined;
+
+        if (JSON.stringify(currentValue) !== JSON.stringify(serverValue)) {
+            changedFields[key] = currentValue;
+        }
+    });
+
+    return changedFields;
+}
+
+// 💡 [영구 격리 패치] 본인(currentStudent) 변경 데이터만 안전 저장
+async function updateFastFirebaseStudent(student) {
+    if (!student || !student.name) return;
+
+    const studentName = String(student.name).trim();
+    const sName = encodeURIComponent(studentName);
+
+    // 호출 순간의 상태를 고정하여 이후 로컬 변경과 섞이지 않도록 함
+    const capturedStudent = cloneStudentSyncData(student);
+
+    return queueStudentWrite(studentName, async () => {
+        let serverSnapshot = studentServerSnapshots[studentName];
+
+        // 기준 상태가 없는 예외 상황에서는 Firebase 최신 데이터를 먼저 읽음
+        if (!serverSnapshot) {
+            const freshResponse = await fetch(
+                `https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`
+            );
+
+            if (!freshResponse.ok) {
+                throw new Error("학생 최신 데이터 확인 실패: HTTP " + freshResponse.status);
+            }
+
+            const freshData = await freshResponse.json();
+
+            serverSnapshot = freshData && freshData.name
+                ? freshData
+                : { name: studentName };
+
+            rememberStudentServerState(serverSnapshot);
+        }
+
+        // 학생 전체를 보내지 않고 실제 변경된 필드만 계산
+        const changedFields = getChangedStudentFields(
+            capturedStudent,
+            serverSnapshot
+        );
+
+        if (Object.keys(changedFields).length === 0) {
+            return null;
+        }
+
+        const response = await fetch(
+            `https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`,
+            {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(changedFields)
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error("학생 데이터 저장 실패: HTTP " + response.status);
+        }
+
+        // 저장에 성공한 필드만 Firebase 기준 상태에 반영
+        rememberStudentServerFields(studentName, changedFields);
+
+        return response;
+    }).catch(e => {
+        console.error("파이어베이스 학생 데이터 저장 실패:", e);
+        throw e;
+    });
+}
+
+// 🛡️ [신규 - 타인 데이터 간섭 원천 차단] 지정한 필드만 부분 수정하는 PATCH 함수
 async function patchFirebaseStudentFields(studentName, fieldsToUpdate) {
     if (!studentName || !fieldsToUpdate || Object.keys(fieldsToUpdate).length === 0) return;
-    const sName = encodeURIComponent(String(studentName).trim());
 
-    try {
-        await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(fieldsToUpdate)
-        });
+    const studentKey = String(studentName).trim();
+    const sName = encodeURIComponent(studentKey);
+    const payload = cloneStudentSyncData(fieldsToUpdate);
 
-        // 로컬 캐시 부분 동기화
+    return queueStudentWrite(studentKey, async () => {
+        const response = await fetch(
+            `https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`,
+            {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error("학생 필드 PATCH 실패: HTTP " + response.status);
+        }
+
+        // Firebase 기준 상태 갱신
+        rememberStudentServerFields(studentKey, payload);
+
+        // 현재 학생 로컬 데이터 동기화
+        if (
+            currentStudent &&
+            String(currentStudent.name).trim() === studentKey
+        ) {
+            Object.assign(currentStudent, payload);
+        }
+
+        // 전체 학생 캐시도 해당 필드만 갱신
         if (window.allStudentsData) {
-            const target = window.allStudentsData.find(s => s && String(s.name).trim() === String(studentName).trim());
+            const target = window.allStudentsData.find(
+                s => s &&
+                String(s.name).trim() === studentKey
+            );
+
             if (target) {
-                Object.keys(fieldsToUpdate).forEach(k => { target[k] = fieldsToUpdate[k]; });
+                Object.assign(target, payload);
             }
         }
-    } catch (e) {
+
+        return response;
+    }).catch(e => {
         console.error("파이어베이스 필드 부분 패치 실패:", e);
+        throw e;
+    });
+}
+
+// ==========================================
+// 🛡️ Firebase 중요 데이터 원자 저장
+// - Firebase REST ETag + If-Match 사용
+// - 같은 학생의 동시 수정 충돌 시 최신값으로 다시 시도
+// ==========================================
+async function runStudentAtomicTransaction(studentName, mutateFn, maxRetries = 6) {
+    if (!studentName || typeof mutateFn !== 'function') {
+        throw new Error("원자 저장 요청 정보가 올바르지 않습니다.");
     }
+
+    const studentKey = String(studentName).trim();
+    const sName = encodeURIComponent(studentKey);
+    const url = `https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`;
+
+    return queueStudentWrite(studentKey, async () => {
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            const readResponse = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'X-Firebase-ETag': 'true'
+                }
+            });
+
+            if (!readResponse.ok) {
+                throw new Error("학생 최신 데이터 조회 실패: HTTP " + readResponse.status);
+            }
+
+            const etag = readResponse.headers.get('ETag');
+
+            if (!etag) {
+                throw new Error("Firebase ETag을 확인할 수 없습니다.");
+            }
+
+            const freshData = await readResponse.json();
+            const draft = cloneStudentSyncData(
+                freshData || { name: studentKey }
+            );
+
+            if (!draft.name) {
+                draft.name = studentKey;
+            }
+
+            const transactionResult = mutateFn(draft) || {};
+
+            if (transactionResult.abort) {
+                rememberStudentServerState(freshData || draft);
+
+                if (
+                    currentStudent &&
+                    String(currentStudent.name).trim() === studentKey
+                ) {
+                    currentStudent = freshData || draft;
+                }
+
+                if (window.allStudentsData) {
+                    const idx = window.allStudentsData.findIndex(
+                        s => s &&
+                        String(s.name).trim() === studentKey
+                    );
+
+                    if (idx > -1) {
+                        window.allStudentsData[idx] = freshData || draft;
+                    }
+                }
+
+                return {
+                    committed: false,
+                    student: freshData || draft,
+                    result: transactionResult
+                };
+            }
+
+            const writeResponse = await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'If-Match': etag
+                },
+                body: JSON.stringify(draft)
+            });
+
+            if (writeResponse.status === 412) {
+                continue;
+            }
+
+            if (!writeResponse.ok) {
+                throw new Error("학생 원자 저장 실패: HTTP " + writeResponse.status);
+            }
+
+            const savedData = await writeResponse.json();
+
+            const committedStudent =
+                savedData && savedData.name
+                    ? savedData
+                    : draft;
+
+            rememberStudentServerState(committedStudent);
+
+            if (
+                currentStudent &&
+                String(currentStudent.name).trim() === studentKey
+            ) {
+                currentStudent = committedStudent;
+            }
+
+            if (window.allStudentsData) {
+                const idx = window.allStudentsData.findIndex(
+                    s => s &&
+                    String(s.name).trim() === studentKey
+                );
+
+                if (idx > -1) {
+                    window.allStudentsData[idx] = committedStudent;
+                } else {
+                    window.allStudentsData.push(committedStudent);
+                }
+            }
+
+            return {
+                committed: true,
+                student: committedStudent,
+                result: transactionResult
+            };
+        }
+
+        throw new Error("동시 저장 충돌이 반복되어 저장하지 못했습니다. 다시 시도해주세요.");
+    });
 }
 
 // 💡 [2번 해결] 디바이스 타임존 무관 100% 한국 표준시(KST) YYYY-MM-DD 생성 공용 함수
@@ -90,17 +349,43 @@ function getKSTDateString(dateObj = new Date()) {
 // 💡 [4번 해결] 파티 던전 등 동시 접속 시 다른 학생의 보상 덮어쓰기를 방어하는 초경량 1인 동기화
 async function syncFreshCurrentStudent(silent = true) {
     if (!currentStudent || !currentStudent.name) return;
-    const sName = encodeURIComponent(String(currentStudent.name).trim());
+
+    const studentName = String(currentStudent.name).trim();
+    const sName = encodeURIComponent(studentName);
 
     try {
+        // 🛡️ 이 학생의 Firebase 저장이 진행 중이면 완료 후 최신값을 읽음
+        if (studentWriteQueues[studentName]) {
+            await studentWriteQueues[studentName].catch(() => {});
+        }
+
+        // 기다리는 동안 다른 학생으로 전환되었으면 이전 학생 데이터로 화면을 덮지 않음
+        if (
+            !currentStudent ||
+            String(currentStudent.name).trim() !== studentName
+        ) {
+            return;
+        }
+
         const res = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`);
+
+        if (!res.ok) {
+            throw new Error("학생 최신 데이터 조회 실패: HTTP " + res.status);
+        }
+
         const freshData = await res.json();
+
         if (freshData && freshData.name) {
+            // 🛡️ Firebase에서 방금 확인한 최신 상태를 저장 비교 기준으로 갱신
+            rememberStudentServerState(freshData);
+
             currentStudent = freshData;
+
             if (window.allStudentsData) {
                 const idx = window.allStudentsData.findIndex(s => s && String(s.name).trim() === String(freshData.name).trim());
                 if (idx > -1) window.allStudentsData[idx] = freshData;
             }
+
             // 대시보드가 열려있을 때만 UI 재렌더링
             const modal = document.getElementById('detailModal');
             if (!silent && modal && modal.style.display === 'flex') {
@@ -259,6 +544,11 @@ function initGameData(data) {
 
         studentsArray = Object.values(uniqueStudentMap);
         studentsArray.sort((a, b) => (Number(a.sheet_order) || 999) - (Number(b.sheet_order) || 999));
+
+        // 🛡️ 현재 Firebase 데이터를 학생별 저장 비교 기준으로 등록
+        studentsArray.forEach(student => {
+            rememberStudentServerState(student);
+        });
     }
 
     renderButtons(studentsArray);
@@ -1022,18 +1312,46 @@ function openReadingCountEdit() {
         '</div>';
 }
 
-function saveReadingCount() {
+async function saveReadingCount() {
     if (!isTeacherMode) {
         showUiAlert("🔒 권한 없음", "독서록 수정은 교사 모드에서만 가능합니다.", "");
         return;
     }
+
     const inputVal = document.getElementById('newReadingCount').value;
     const newCount = Number(inputVal);
-    if (inputVal === "" || isNaN(newCount) || newCount < 0) { alert("올바른 숫자를 입력해주세요."); return; }
 
-    currentStudent.reading_count = newCount;
-    renderDashboard();
-    updateFastFirebaseStudent(currentStudent);
+    if (inputVal === "" || isNaN(newCount) || newCount < 0) {
+        alert("올바른 숫자를 입력해주세요.");
+        return;
+    }
+
+    showGlobalLoading("📚 독서록 저장 중...");
+
+    try {
+        await patchFirebaseStudentFields(currentStudent.name, {
+            reading_count: newCount
+        });
+
+        hideGlobalLoading();
+        renderDashboard();
+
+        showUiAlert(
+            "📚 저장 완료",
+            "독서록 편수가 성공적으로 저장되었습니다.",
+            ""
+        );
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 저장 오류",
+            "독서록 저장 중 네트워크 오류가 발생했습니다: " + err,
+            "renderDashboard()"
+        );
+    }
 }
 
 // 💡 [개선] 스마트 뒤로가기 / 닫기 통제 함수

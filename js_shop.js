@@ -51,39 +51,109 @@ function buyShopItem(itemId) {
     showUiConfirm("🛒 상점 구매", confirmMsg + "<br><br><span style='font-size:1.1em; font-weight:bold; color:var(--TextGold);'>비용: " + cost + " " + gameCurrency + "</span>", "processBuyItem('" + itemId + "')");
 }
 
-function processBuyItem(itemId) {
+async function processBuyItem(itemId) {
     const item = shopData.find(x => String(x.item_id) === String(itemId));
     if (!item) return;
 
     const cost = Number(item.price) || 0;
-    const currentMoney = Number(currentStudent.game_money) || 0;
 
-    if (currentMoney < cost) {
-        showUiAlert("⚠️ 구매 실패", "잔액이 부족합니다.", "");
-        return;
-    }
-
-    // 💡 [화면 차단] 결제 통신 중 전체 클릭 차단
     showGlobalLoading("🛒 상점 상품 결제 처리 중...");
 
-    currentStudent.game_money = currentMoney - cost;
-    let items = currentStudent.inventory ? String(currentStudent.inventory).split(',') : [];
-    items.push(item.item_name);
-    currentStudent.inventory = items.join(',');
+    try {
+        const tx = await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                const currentMoney = Number(student.game_money) || 0;
+                const invStr = String(student.inventory || '');
 
-    updateFastFirebaseStudent(currentStudent);
+                if (item.effect_type === 'UNLOCK_RELIC_SLOT2' || item.item_name.includes('유물 슬롯')) {
+                    const isUnlocked = String(student.relic_slot_2_unlocked).toUpperCase() === 'TRUE';
 
-    // 📝 [Firebase 상점 구매 로그 전송]
-    pushFirebaseLog('common', {
-        time: new Date().toISOString(),
-        name: currentStudent.name,
-        category: "상점 구매",
-        content: item.item_name + " (" + cost + "골드)"
-    });
+                    if (isUnlocked || invStr.includes(item.item_name)) {
+                        return {
+                            abort: true,
+                            code: 'ALREADY_OWNED'
+                        };
+                    }
+                }
 
-    hideGlobalLoading();
-    renderDashboard();
-    showUiAlert("🎁 구매 완료!", "[" + item.item_name + "]을(를) 구매했습니다!<br>가방에서 확인하고 원할 때 사용하세요.", "");
+                if (item.effect_type === 'UNLOCK_MERC_SLOT2' || item.item_name.includes('동료 슬롯')) {
+                    const isUnlocked = String(student.merc_slot2_unlocked).toUpperCase() === 'TRUE';
+
+                    if (isUnlocked || invStr.includes(item.item_name)) {
+                        return {
+                            abort: true,
+                            code: 'ALREADY_OWNED'
+                        };
+                    }
+                }
+
+                if (currentMoney < cost) {
+                    return {
+                        abort: true,
+                        code: 'NO_MONEY'
+                    };
+                }
+
+                let items = student.inventory
+                    ? String(student.inventory).split(',')
+                    : [];
+
+                items.push(item.item_name);
+
+                student.game_money = currentMoney - cost;
+                student.inventory = items.join(',');
+
+                return {};
+            }
+        );
+
+        if (!tx.committed) {
+            hideGlobalLoading();
+
+            if (tx.result.code === 'NO_MONEY') {
+                showUiAlert(
+                    "⚠️ 구매 실패",
+                    "다른 접속에서 재화가 사용되어 현재 잔액이 부족합니다.",
+                    "renderDashboard()"
+                );
+            } else {
+                showUiAlert(
+                    "⚠️ 구매 불가",
+                    "이미 해금되었거나 가방에 보유 중인 상품입니다.",
+                    "renderDashboard()"
+                );
+            }
+
+            return;
+        }
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "상점 구매",
+            content: item.item_name + " (" + cost + "골드)"
+        });
+
+        hideGlobalLoading();
+        renderDashboard();
+
+        showUiAlert(
+            "🎁 구매 완료!",
+            "[" + item.item_name + "]을(를) 구매했습니다!<br>가방에서 확인하고 원할 때 사용하세요.",
+            ""
+        );
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 구매 오류",
+            "상품 저장 중 오류가 발생했습니다: " + err.message,
+            "renderDashboard()"
+        );
+    }
 }
 
 // ==========================================
@@ -102,26 +172,257 @@ function openSkillShop() {
         '<button class="btn-main" style="background:var(--TextSub);" onclick="renderDashboard()">돌아가기</button>';
 }
 
-function promptDrawSkills(isReroll) {
-    if (isReroll) { drawSkills(true); return; } // 리롤은 무료
+async function processDrawMercenary() {
+    const body = document.getElementById('modalBody');
+    body.innerHTML = '<h2 style="color:var(--Highlight);">🏰 용병 계약 작성 중...</h2><div style="margin:50px 0;"><span class="anim-pot">📜</span></div><p style="color:var(--TextSub);">미지의 용병이 계약서에 서명하고 있습니다!</p>';
 
-    // 💡 [연타 방지] 클릭 즉시 모달 내의 모든 버튼을 비활성화
-    const btns = document.querySelectorAll('#modalBody .btn-main');
-    btns.forEach(btn => btn.disabled = true);
+    showGlobalLoading("📜 용병 계약서 작성 중...");
 
-    const cost = Number(sysConfig.skill_price) || 50;
-    const gameCurrency = sysConfig.game_money_currency || '골드';
-    const currentMoney = Number(currentStudent.game_money) || 0;
+    const cost = Number(sysConfig.merc_price) || 100;
 
-    if (currentMoney < cost) {
-        btns.forEach(btn => btn.disabled = false); // 실패 시 버튼 다시 활성화
-        showUiAlert("⚠️ 자금 부족", "소지한 재화가 부족합니다.<br><span style='font-size:0.9em; color:#aaa;'>(필요: " + cost + gameCurrency + " / 보유: " + currentMoney + gameCurrency + ")</span>", "");
-        return;
+    // 💡 등급 추첨 자체는 기존 확률 로직을 그대로 사용하고 1회만 결정
+    const probC = sysConfig.merc_prob_c !== undefined ? Number(sysConfig.merc_prob_c) : 50;
+    const probB = sysConfig.merc_prob_b !== undefined ? Number(sysConfig.merc_prob_b) : 35;
+    const probA = sysConfig.merc_prob_a !== undefined ? Number(sysConfig.merc_prob_a) : 12;
+    const probS = sysConfig.merc_prob_s !== undefined ? Number(sysConfig.merc_prob_s) : 3;
+
+    const totalProb = probC + probB + probA + probS;
+    const rand = Math.random() * (totalProb || 100);
+    let rolledTier = "C";
+
+    if (rand <= probS) rolledTier = "S";
+    else if (rand <= probS + probA) rolledTier = "A";
+    else if (rand <= probS + probA + probB) rolledTier = "B";
+    else rolledTier = "C";
+
+    try {
+        const tx = await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                const currentMoney = Number(student.game_money) || 0;
+
+                if (currentMoney < cost) {
+                    return {
+                        abort: true,
+                        code: 'NO_MONEY'
+                    };
+                }
+
+                const rawUnlocked = String(student.unlocked_mercenaries || "").replace(/!/g, '');
+
+                let unlockedIds = rawUnlocked
+                    ? rawUnlocked.split(',').map(x => x.trim()).filter(Boolean)
+                    : [];
+
+                let unownedByTier = {
+                    C: [],
+                    B: [],
+                    A: [],
+                    S: []
+                };
+
+                (mercenariesData || []).forEach(m => {
+                    if (!m.merc_id) return;
+
+                    const mId = String(m.merc_id).trim();
+                    const mTier = String(m.tier || "C").trim().toUpperCase();
+
+                    if (!unlockedIds.includes(mId)) {
+                        if (unownedByTier[mTier]) {
+                            unownedByTier[mTier].push(m);
+                        } else {
+                            unownedByTier.C.push(m);
+                        }
+                    }
+                });
+
+                const totalUnowned =
+                    unownedByTier.C.length +
+                    unownedByTier.B.length +
+                    unownedByTier.A.length +
+                    unownedByTier.S.length;
+
+                if (totalUnowned === 0) {
+                    return {
+                        abort: true,
+                        code: 'ALL_OWNED'
+                    };
+                }
+
+                const tierOrder = ["C", "B", "A", "S"];
+                let startIdx = tierOrder.indexOf(rolledTier);
+                let pickedMerc = null;
+
+                for (let t = startIdx; t < tierOrder.length; t++) {
+                    let tName = tierOrder[t];
+
+                    if (
+                        unownedByTier[tName] &&
+                        unownedByTier[tName].length > 0
+                    ) {
+                        let pool = unownedByTier[tName];
+                        pickedMerc = pool[Math.floor(Math.random() * pool.length)];
+                        break;
+                    }
+                }
+
+                if (!pickedMerc) {
+                    for (let t = startIdx - 1; t >= 0; t--) {
+                        let tName = tierOrder[t];
+
+                        if (
+                            unownedByTier[tName] &&
+                            unownedByTier[tName].length > 0
+                        ) {
+                            let pool = unownedByTier[tName];
+                            pickedMerc = pool[Math.floor(Math.random() * pool.length)];
+                            break;
+                        }
+                    }
+                }
+
+                if (!pickedMerc) {
+                    return {
+                        abort: true,
+                        code: 'NO_MERC'
+                    };
+                }
+
+                unlockedIds.push(String(pickedMerc.merc_id));
+
+                student.game_money = currentMoney - cost;
+                student.unlocked_mercenaries = "!" + unlockedIds.join(',');
+
+                return {
+                    pickedMerc: pickedMerc,
+                    tier: String(pickedMerc.tier || 'C').toUpperCase()
+                };
+            }
+        );
+
+        if (!tx.committed) {
+            hideGlobalLoading();
+
+            if (tx.result.code === 'NO_MONEY') {
+                showUiAlert(
+                    "⚠️ 자금 부족",
+                    "다른 접속에서 재화가 사용되어 현재 골드가 부족합니다.",
+                    "renderDashboard()"
+                );
+            } else if (tx.result.code === 'ALL_OWNED') {
+                showUiAlert(
+                    "🏆 도감 올클리어",
+                    "이미 모든 동료를 영입하셨습니다!<br>재화는 차감되지 않습니다.",
+                    "renderDashboard()"
+                );
+            } else {
+                showUiAlert(
+                    "오류",
+                    "추첨 가능한 용병이 없습니다.",
+                    "renderDashboard()"
+                );
+            }
+
+            return;
+        }
+
+        const pickedMerc = tx.result.pickedMerc;
+        const tier = tx.result.tier;
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "상점 구매",
+            content: `동료 영입 ➔ [${tier}급] ${pickedMerc.name} 계약 (${cost}골드 소모)`
+        });
+
+        let tierColor = 'var(--Green)';
+        let tierBg = 'rgba(16, 185, 129, 0.1)';
+        let tierGlow = '0 0 15px rgba(16, 185, 129, 0.4)';
+
+        if (tier === 'B') {
+            tierColor = 'var(--Blue)';
+            tierBg = 'rgba(59, 130, 246, 0.1)';
+            tierGlow = '0 0 20px rgba(59, 130, 246, 0.5)';
+        } else if (tier === 'A') {
+            tierColor = 'var(--Purple)';
+            tierBg = 'rgba(139, 92, 246, 0.15)';
+            tierGlow = '0 0 25px rgba(139, 92, 246, 0.6)';
+        } else if (tier === 'S') {
+            tierColor = 'var(--Yellow)';
+            tierBg = 'rgba(245, 158, 11, 0.2)';
+            tierGlow = '0 0 35px rgba(245, 158, 11, 0.8)';
+        }
+
+        const jobMap = {
+            'WARRIOR': '⚔️ 전사',
+            'ARCHER': '🏹 궁수',
+            'MAGE': '🔮 마법사',
+            'ROGUE': '🗡️ 도적'
+        };
+
+        const jobName =
+            jobMap[String(pickedMerc.job).toUpperCase()] ||
+            pickedMerc.job ||
+            '용병';
+
+        const iconHtml = pickedMerc.icon_url
+            ? '<img src="' + pickedMerc.icon_url + '" style="width:110px; height:110px; object-fit:contain; border-radius:50%; border:3px solid ' + tierColor + '; box-shadow:' + tierGlow + '; margin-bottom:15px; background:#FFFFFF; padding:4px;">'
+            : '<div style="font-size:70px; margin-bottom:15px;">🛡️</div>';
+
+        const optTypeMap = {
+            'HP_UP': '건강 증가',
+            'DEF_UP': '방어력 증가',
+            'ATK_UP': '공격력 증가',
+            'LUK_UP': '행운 증가',
+            'CRIT_UP': '치명타율 증가',
+            'CRIT_DMG_UP': '치명피해 증가',
+            'DAMAGE_REDUCE': '피해 감소',
+            'DEF_PEN': '방어 관통',
+            'DMG_UP': '피해 증가',
+            'SKILL_DMG': '스킬 피해 증가',
+            'HEAL_UP': '회복량 증가',
+            'EVD_UP': '회피율 증가'
+        };
+
+        const optName =
+            optTypeMap[String(pickedMerc.option_type).toUpperCase()] ||
+            pickedMerc.option_type;
+
+        const isPct =
+            String(pickedMerc.option_calc_type).toUpperCase() === 'PERCENT';
+
+        const optValStr = isPct
+            ? Math.round(Number(pickedMerc.option_value) * 100) + '%'
+            : pickedMerc.option_value;
+
+        setTimeout(() => {
+            hideGlobalLoading();
+
+            body.innerHTML =
+                '<h2 style="color:' + tierColor + ';">🎉 신규 동료 영입!</h2>' +
+                '<div style="background:' + tierBg + '; border: 2px solid ' + tierColor + '; border-radius:25px; padding:25px; margin:20px 0; box-shadow:' + tierGlow + ';">' +
+                '  ' + iconHtml +
+                '  <div style="font-size:0.9em; color:' + tierColor + '; font-weight:bold; margin-bottom:5px;">[' + tier + '등급] ' + jobName + '</div>' +
+                '  <h3 style="color:var(--TextMain); margin:0 0 10px 0; font-size:1.5em;">' + pickedMerc.name + '</h3>' +
+                '  <div style="font-size:0.95em; color:var(--TextSub); font-weight:bold; background:rgba(255,255,255,0.7); padding:8px; border-radius:8px; display:inline-block; border:1px solid var(--BorderColor);">' +
+                '    ✨ 용병 효과: ' + optName + ' +' + optValStr +
+                '  </div>' +
+                '</div>' +
+                '<button class="btn-main" style="background:var(--Highlight);" onclick="openMercenaryShop()">다시 영입하기</button>' +
+                '<button class="btn-main" style="background:var(--TextSub); margin-top:8px;" onclick="renderDashboard()">가방/대시보드로</button>';
+        }, 1000);
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 영입 오류",
+            "용병 영입 저장 중 오류가 발생했습니다: " + err.message,
+            "renderDashboard()"
+        );
     }
-
-    currentStudent.game_money = currentMoney - cost;
-    updateFastFirebaseStudent(currentStudent);
-    drawSkills(false);
 }
 
 function drawSkills(isReroll) {
@@ -559,73 +860,191 @@ function promptUseItem(itemName) {
 }
 
 // 💡 [신규] 전리품 상자 개봉 애니메이션 및 결과 출력
-function openLootBox(itemName, boxId) {
-    // 1. 가방에서 상자 1개 임시 차감 (화면 즉시 반영)
-    const rawInv = String(currentStudent.inventory || "");
-    let items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
-    const index = items.indexOf(itemName);
-    if (index > -1) items.splice(index, 1);
-    currentStudent.inventory = items.join(',');
+async function processUseItem(itemName, count = 1) {
+    const useCount = Math.max(1, Number(count) || 1);
 
-    // 화면을 개봉 애니메이션으로 전환
-    const body = document.getElementById('modalBody');
+    showGlobalLoading("🎒 아이템 사용 정보 저장 중...");
 
-    let itemIcon = '⚱️';
-    let glowStyle = '';
-    if (itemName.includes('나무') || itemName.includes('C급')) glowStyle = 'filter: drop-shadow(0 0 10px #9CA3AF);';
-    else if (itemName.includes('철') || itemName.includes('B급')) glowStyle = 'filter: drop-shadow(0 0 15px #3B82F6);';
-    else if (itemName.includes('은') || itemName.includes('A급')) glowStyle = 'filter: drop-shadow(0 0 25px #8B5CF6);';
-    else if (itemName.includes('금') || itemName.includes('S급')) glowStyle = 'filter: drop-shadow(0 0 35px #F59E0B);';
-    else if (itemName.includes('전설') || itemName.includes('SS급')) glowStyle = 'filter: drop-shadow(0 0 50px #EF4444);';
+    try {
+        const tx = await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                const rawInv = String(student.inventory || "");
 
-    body.innerHTML = '<h2 style="color:var(--TextGold);">상자 개봉 중...</h2><div style="font-size:100px; margin:40px 0; ' + glowStyle + '" class="anim-pot">' + itemIcon + '</div><p style="color:var(--TextSub);">두근두근...</p>';
+                let items = rawInv
+                    ? rawInv.split(',').map(x => x.trim()).filter(Boolean)
+                    : [];
 
-    // 💡 [화면 차단] 상자 개봉 연산 중 클릭 차단
-    showGlobalLoading("📦 전리품 상자 개봉 중...");
+                let removedCount = 0;
 
-    const box = lootBoxesData.find(b => b.box_id === boxId);
-    const minM = Number(box ? box.min_money : 0) || 0;
-    const maxM = Number(box ? box.max_money : 0) || 0;
-    const earnedGold = Math.floor(minM + Math.random() * (maxM - minM + 1));
+                for (let i = 0; i < useCount; i++) {
+                    const index = items.indexOf(itemName);
 
-    let earnedItems = [];
-    if (box) {
-        if (Math.random() * 100 <= (Number(box.prob_1) || 0) && box.item_1) earnedItems.push(box.item_1);
-        if (Math.random() * 100 <= (Number(box.prob_2) || 0) && box.item_2) earnedItems.push(box.item_2);
-        if (Math.random() * 100 <= (Number(box.prob_3) || 0) && box.item_3) earnedItems.push(box.item_3);
-        if (earnedItems.length === 0 && box.item_1) earnedItems.push(box.item_1);
-    }
+                    if (index > -1) {
+                        items.splice(index, 1);
+                        removedCount++;
+                    }
+                }
 
-    currentStudent.game_money = (Number(currentStudent.game_money) || 0) + earnedGold;
-    if (earnedItems.length > 0) {
-        let curItems = currentStudent.inventory ? String(currentStudent.inventory).split(',') : [];
-        curItems.push(...earnedItems);
-        currentStudent.inventory = curItems.join(',');
-    }
+                if (removedCount === 0) {
+                    return {
+                        abort: true,
+                        code: 'NO_ITEM'
+                    };
+                }
 
-    updateFastFirebaseStudent(currentStudent);
+                student.inventory = items.join(',');
 
-    // 📝 [Firebase 상자 개봉 로그 전송]
-    pushFirebaseLog('common', {
-        time: new Date().toISOString(),
-        name: currentStudent.name,
-        category: "상자 개봉",
-        content: itemName + " -> " + earnedGold + "골드 / " + (earnedItems.join(',') || '아이템 없음')
-    });
+                if (itemName.includes('망각의 물약') || itemName.includes('망각')) {
+                    student.hp_points = 5;
+                    student.atk_points = 5;
+                    student.def_points = 5;
+                    student.luk_points = 5;
+                    student.blessing = "TEMP";
+                } else if (itemName === '보스 도전기회 추가 티켓') {
+                    student.weekly_boss =
+                        (Number(student.weekly_boss) || 0) +
+                        removedCount;
+                } else if (
+                    itemName.includes('유물 슬롯 확장권') ||
+                    itemName.includes('유물 슬롯 해금권')
+                ) {
+                    student.relic_slot_2_unlocked = "TRUE";
+                } else if (
+                    itemName.includes('동료 슬롯 확장권') ||
+                    itemName.includes('동료 슬롯 해금권')
+                ) {
+                    student.merc_slot2_unlocked = "TRUE";
+                } else if (
+                    itemName.includes('치료제') ||
+                    itemName.includes('회복약') ||
+                    itemName.includes('부상')
+                ) {
+                    student.last_defeat = 0;
+                    student.penalty_end_time = 0;
+                }
 
-    setTimeout(() => {
+                return {
+                    removedCount: removedCount
+                };
+            }
+        );
+
+        if (!tx.committed) {
+            hideGlobalLoading();
+
+            showUiAlert(
+                "⚠️ 사용 실패",
+                "해당 아이템을 더 이상 보유하고 있지 않습니다.<br>다른 접속에서 이미 사용되었을 수 있습니다.",
+                "openInventory()"
+            );
+
+            return;
+        }
+
+        const removedCount = tx.result.removedCount;
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "아이템 사용",
+            content: itemName + (removedCount > 1 ? " x" + removedCount : "")
+        });
+
         hideGlobalLoading();
-        let formattedItems = earnedItems.map(item => '<span style="color:var(--Highlight); background:rgba(59, 130, 246, 0.1); padding:5px 12px; border-radius:8px; display:inline-block; margin:4px 3px; font-weight:bold; border:1px solid rgba(59, 130, 246, 0.3); box-shadow:0 2px 4px rgba(0,0,0,0.05);">' + item + '</span>').join('');
-        let itemsHtml = earnedItems.length > 0 ? '<div style="margin-top:15px; padding-top:15px; border-top:1px dashed var(--BorderColor);"><div style="font-weight:bold; color:var(--TextMain); font-size:1em; margin-bottom:8px;">✨ 획득 전리품</div><div>' + formattedItems + '</div></div>' : '';
-        let currencyUnit = sysConfig.game_money_currency || '골드';
 
-        body.innerHTML = '<h2 style="color:var(--TextGold);">🎉 개봉 결과!</h2>' +
-            '<div style="background:var(--BgDashboard); padding:25px; border-radius:15px; border:2px solid var(--TextGold); margin:20px 0; font-size:1.1em; line-height:1.5; color:var(--TextMain); box-shadow: 0 6px 15px rgba(217, 119, 6, 0.15);">' +
-            '  <div style="font-weight:bold; font-size:1.1em;">💰 재화: <b style="color:var(--TextGold); font-size:1.2em;">' + earnedGold + '</b> <span style="font-size:0.9em; color:var(--TextSub);">' + currencyUnit + '</span></div>' +
-            '  ' + itemsHtml +
-            '</div>' +
-            '<button class="btn-main" onclick="openInventory()">가방으로 돌아가기</button>';
-    }, 1000);
+        if (itemName.includes('망각의 물약') || itemName.includes('망각')) {
+            showUiAlert(
+                "🧪 망각의 물약 사용 완료!",
+                "정신이 맑아지며 영혼이 초기 상태로 정화되었습니다.<br><br>" +
+                "▪ <b>투자한 모든 스탯 포인트가 반환되었습니다.</b><br>" +
+                "▪ <b>새로운 가호(속성)를 다시 선택할 수 있습니다.</b>",
+                "closeModal(); openStudentDetail();"
+            );
+            return;
+        }
+
+        if (itemName === '보스 도전기회 추가 티켓') {
+            showUiAlert(
+                "🎫 사용 완료!",
+                "[보스 도전기회 추가 티켓] <b>" + removedCount + "장</b>을 사용했습니다.<br><br><span style='color:var(--Red); font-weight:bold;'>보스 도전 기회가 " + removedCount + "회 회복되었습니다.</span>",
+                "openInventory()"
+            );
+            return;
+        }
+
+        if (
+            itemName.includes('유물 슬롯 확장권') ||
+            itemName.includes('유물 슬롯 해금권')
+        ) {
+            showUiAlert(
+                "🔓 슬롯 해금 완료!",
+                "[유물 슬롯 확장권]을 사용하여 <b>두 번째 유물 슬롯</b>이 해금되었습니다!<br><span style='color:var(--Highlight); font-weight:bold;'>이제 유물을 2개까지 장착할 수 있습니다.</span>",
+                "renderDashboard()"
+            );
+            return;
+        }
+
+        if (
+            itemName.includes('동료 슬롯 확장권') ||
+            itemName.includes('동료 슬롯 해금권')
+        ) {
+            showUiAlert(
+                "🔓 슬롯 해금 완료!",
+                "[동료 슬롯 확장권]을 사용하여 <b>두 번째 동료 슬롯</b>이 해금되었습니다!<br><span style='color:var(--Highlight); font-weight:bold;'>파티 관리 메뉴에서 2번째 동료를 배치할 수 있습니다.</span>",
+                "renderDashboard()"
+            );
+            return;
+        }
+
+        if (
+            itemName.includes('치료제') ||
+            itemName.includes('회복약') ||
+            itemName.includes('부상')
+        ) {
+            showUiAlert(
+                "🩹 치료 완료!",
+                "[" + itemName + "]을(를) 사용하여 부상을 완치했습니다!<br><span style='color:var(--Green); font-weight:bold;'>이제 다시 사냥터에 입장할 수 있습니다.</span>",
+                "renderDashboard()"
+            );
+            return;
+        }
+
+        const rmMatch =
+            itemName.match(/\[현실 재화\]\s*(\d+)(.*?)\s*교환권/);
+
+        let totalNotice = "";
+
+        if (rmMatch) {
+            const singleVal = Number(rmMatch[1]) || 0;
+            const currencyUnit = rmMatch[2] || sysConfig.currency_name || '티';
+            const totalVal = singleVal * removedCount;
+
+            totalNotice =
+                "<br><br><span style='font-size:1.25em; color:var(--TextGold); font-weight:bold;'>총 지급액: " +
+                totalVal +
+                currencyUnit +
+                "</span>";
+        }
+
+        showUiAlert(
+            "🎉 사용 완료!",
+            "<b>[" + itemName + "] " + removedCount + "개</b>를 사용했습니다!" +
+            totalNotice +
+            "<br><br><span style='font-size:0.95em; color:var(--Highlight); font-weight:bold;'>선생님께 이 화면을 보여드리고 보상을 받으세요.</span>",
+            "openInventory()"
+        );
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 사용 오류",
+            "아이템 사용 정보 저장 중 오류가 발생했습니다: " + err.message,
+            "openInventory()"
+        );
+    }
 }
 
 function processUseItem(itemName, count = 1) {

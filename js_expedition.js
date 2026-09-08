@@ -88,7 +88,6 @@ async function saveStats() {
     try {
         // 💡 [동시성 안전 패치] 스탯 필드만 독립 PATCH하여 데이터 손실 및 롤백 원천 차단
         await patchFirebaseStudentFields(currentStudent.name, statPayload);
-        await updateFastFirebaseStudent(currentStudent);
 
         hideGlobalLoading();
         showUiAlert("📊 저장 완료", "능력치가 성공적으로 저장되었습니다!", "renderDashboard()");
@@ -173,8 +172,9 @@ function drawForgeUI() {
 function attemptEnhance(currentLv, finalProb, cost, currentFailCount, currency) {
     // 💡 [연타 방어] 버튼을 누른 즉시 비활성화시켜 다중 클릭을 물리적으로 차단!
     const btn = document.getElementById('btnEnhance');
+
     if (btn) {
-        if (btn.disabled) return; // 이미 처리 중이면 강제 종료
+        if (btn.disabled) return;
         btn.disabled = true;
         btn.innerText = "검증 중...";
     }
@@ -183,15 +183,26 @@ function attemptEnhance(currentLv, finalProb, cost, currentFailCount, currency) 
     const gameCurrency = sysConfig.game_money_currency || '골드';
 
     if (currentMoney < cost) {
-        if (btn) { btn.disabled = false; btn.innerText = "강화 시도 (" + cost + gameCurrency + ")"; }
-        showUiAlert("⚠️ 자금 부족", "소지한 재화가 부족합니다.<br><span style='font-size:0.9em; color:#aaa;'>(필요: " + cost + gameCurrency + " / 보유: " + currentMoney + gameCurrency + ")</span>", "");
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = "강화 시도 (" + cost + gameCurrency + ")";
+        }
+
+        showUiAlert(
+            "⚠️ 자금 부족",
+            "소지한 재화가 부족합니다.<br><span style='font-size:0.9em; color:#aaa;'>(필요: " + cost + gameCurrency + " / 보유: " + currentMoney + gameCurrency + ")</span>",
+            ""
+        );
+
         return;
     }
 
-    currentStudent.game_money = currentMoney - cost;
-    updateFastFirebaseStudent(currentStudent);
-
-    processEnhance(currentLv, finalProb, currentFailCount);
+    processEnhance(
+        currentLv,
+        finalProb,
+        currentFailCount,
+        cost
+    );
 }
 
 // 💡 신규: 파티클 흩뿌리기 연출 헬퍼 함수
@@ -235,75 +246,206 @@ function createForgeParticles(isSuccess) {
 }
 
 // [신규] 팝업에서 '확인'을 누르면 실행되는 실제 강화 로직
-function processEnhance(currentLv, finalProb, currentFailCount) {
+function processEnhance(currentLv, finalProb, currentFailCount, cost) {
     const btn = document.getElementById('btnEnhance');
     const hammer = document.getElementById('forgeHammer');
     const anvil = document.getElementById('forgeAnvil');
     const resultText = document.getElementById('forgeResult');
     const forgeContainer = document.getElementById('forgeContainer');
 
+    const equipType = currentEquipType;
+    const expectedRelic1 = String(currentStudent.relic_1 || '');
+    const expectedRelic2 = String(currentStudent.relic_2 || '');
+
     btn.disabled = true;
     btn.innerText = "진행 중...";
     resultText.innerText = "";
     hammer.classList.add('anim-hit');
 
-    setTimeout(() => {
+    // 강화 성공/실패 난수는 최초 1회만 결정
+    const isSuccess = (Math.random() * 100) < finalProb;
+
+    setTimeout(async () => {
         hammer.classList.remove('anim-hit');
-        if ((Math.random() * 100) < finalProb) {
-            anvil.classList.add('anim-success');
-            if (forgeContainer) forgeContainer.classList.add('forge-flash-success');
-            createForgeParticles(true); // 💡 황금빛 파티클 폭발!
 
-            resultText.style.color = "#D97706";
-            resultText.innerText = "✨ 강화 성공! ✨";
-            currentStudent[currentEquipType + '_lv'] = currentLv + 1;
-            currentStudent[currentEquipType + '_fail'] = 0;
-            updateFastFirebaseStudent(currentStudent);
+        try {
+            const tx = await runStudentAtomicTransaction(
+                currentStudent.name,
+                student => {
+                    const serverLv =
+                        Number(student[equipType + '_lv']) ||
+                        0;
 
-            // 📝 [Firebase 강화 로그 실시간 전송]
-            pushFirebaseLog('forge', {
-                time: new Date().toISOString(),
-                name: currentStudent.name,
-                equip: currentEquipType,
-                level: "+" + (currentLv + 1),
-                result: "성공 ✅",
-                fail: "-"
-            });
+                    const serverFail =
+                        Number(student[equipType + '_fail']) ||
+                        0;
 
-            setTimeout(() => {
-                anvil.classList.remove('anim-success');
-                if (forgeContainer) forgeContainer.classList.remove('forge-flash-success');
-                drawForgeUI();
-            }, 1000);
-        } else {
-            anvil.classList.add('anim-fail');
-            if (forgeContainer) forgeContainer.classList.add('forge-flash-fail');
-            createForgeParticles(false);
+                    const serverRelic1 =
+                        String(student.relic_1 || '');
 
-            anvil.innerText = "💥";
-            resultText.style.color = "#ff4d4d";
-            resultText.innerText = "💥 실패...";
+                    const serverRelic2 =
+                        String(student.relic_2 || '');
 
-            currentStudent[currentEquipType + '_fail'] = currentFailCount + 1;
-            currentStudent.total_forge_fail = (Number(currentStudent.total_forge_fail) || 0) + 1;
-            updateFastFirebaseStudent(currentStudent);
+                    if (
+                        serverLv !== currentLv ||
+                        serverFail !== currentFailCount ||
+                        serverRelic1 !== expectedRelic1 ||
+                        serverRelic2 !== expectedRelic2
+                    ) {
+                        return {
+                            abort: true,
+                            code: 'STALE_FORGE'
+                        };
+                    }
 
-            // 📝 [Firebase 강화 로그 실시간 전송]
-            pushFirebaseLog('forge', {
-                time: new Date().toISOString(),
-                name: currentStudent.name,
-                equip: currentEquipType,
-                level: "+" + (currentLv + 1),
-                result: "실패 ❌",
-                fail: (currentFailCount + 1) + "회"
-            });
+                    const currentMoney =
+                        Number(student.game_money) ||
+                        0;
 
-            setTimeout(() => {
-                anvil.classList.remove('anim-fail');
-                anvil.innerText = "🪨";
-                if (forgeContainer) forgeContainer.classList.remove('forge-flash-fail');
-                drawForgeUI();
-            }, 1000);
+                    if (currentMoney < cost) {
+                        return {
+                            abort: true,
+                            code: 'NO_MONEY'
+                        };
+                    }
+
+                    student.game_money =
+                        currentMoney -
+                        cost;
+
+                    if (isSuccess) {
+                        student[equipType + '_lv'] =
+                            currentLv +
+                            1;
+
+                        student[equipType + '_fail'] =
+                            0;
+                    } else {
+                        student[equipType + '_fail'] =
+                            currentFailCount +
+                            1;
+
+                        student.total_forge_fail =
+                            (Number(student.total_forge_fail) || 0) +
+                            1;
+                    }
+
+                    return {
+                        isSuccess: isSuccess,
+                        failCount: isSuccess
+                            ? 0
+                            : currentFailCount + 1
+                    };
+                }
+            );
+
+            if (!tx.committed) {
+                if (tx.result.code === 'NO_MONEY') {
+                    const gameCurrency =
+                        sysConfig.game_money_currency ||
+                        '골드';
+
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerText =
+                            "강화 시도 (" +
+                            cost +
+                            gameCurrency +
+                            ")";
+                    }
+
+                    showUiAlert(
+                        "⚠️ 자금 부족",
+                        "다른 접속에서 재화가 사용되어 현재 강화 비용이 부족합니다.",
+                        "drawForgeUI()"
+                    );
+                } else {
+                    showUiAlert(
+                        "🔄 장비 상태 변경",
+                        "다른 접속에서 장비 또는 강화 조건이 먼저 변경되었습니다.<br><br>최신 상태로 다시 불러온 뒤 강화해주세요.<br><b>이번 시도에서는 골드가 차감되지 않았습니다.</b>",
+                        "drawForgeUI()"
+                    );
+                }
+
+                return;
+            }
+
+            if (tx.result.isSuccess) {
+                anvil.classList.add('anim-success');
+
+                if (forgeContainer) {
+                    forgeContainer.classList.add('forge-flash-success');
+                }
+
+                createForgeParticles(true);
+
+                resultText.style.color = "#D97706";
+                resultText.innerText = "✨ 강화 성공! ✨";
+
+                pushFirebaseLog('forge', {
+                    time: new Date().toISOString(),
+                    name: currentStudent.name,
+                    equip: equipType,
+                    level: "+" + (currentLv + 1),
+                    result: "성공 ✅",
+                    fail: "-"
+                });
+
+                setTimeout(() => {
+                    anvil.classList.remove('anim-success');
+
+                    if (forgeContainer) {
+                        forgeContainer.classList.remove('forge-flash-success');
+                    }
+
+                    drawForgeUI();
+                }, 1000);
+            } else {
+                anvil.classList.add('anim-fail');
+
+                if (forgeContainer) {
+                    forgeContainer.classList.add('forge-flash-fail');
+                }
+
+                createForgeParticles(false);
+
+                anvil.innerText = "💥";
+                resultText.style.color = "#ff4d4d";
+                resultText.innerText = "💥 실패...";
+
+                pushFirebaseLog('forge', {
+                    time: new Date().toISOString(),
+                    name: currentStudent.name,
+                    equip: equipType,
+                    level: "+" + (currentLv + 1),
+                    result: "실패 ❌",
+                    fail: tx.result.failCount + "회"
+                });
+
+                setTimeout(() => {
+                    anvil.classList.remove('anim-fail');
+                    anvil.innerText = "🪨";
+
+                    if (forgeContainer) {
+                        forgeContainer.classList.remove('forge-flash-fail');
+                    }
+
+                    drawForgeUI();
+                }, 1000);
+            }
+        } catch (err) {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = "다시 시도";
+            }
+
+            await syncFreshCurrentStudent(true);
+
+            showUiAlert(
+                "❌ 강화 저장 오류",
+                "강화 결과를 저장하지 못했습니다.<br><b>저장되지 않은 결과는 확정되지 않습니다.</b><br><br>" + err.message,
+                "drawForgeUI()"
+            );
         }
     }, 750);
 }
@@ -951,15 +1093,41 @@ function applySkillToSlot(targetSlot, skillId, occupiedPos, force = false) {
 }
 
 // 5. 원정대 최종 저장
-function saveExpeditionSetup() {
-    currentStudent.party_m1 = tempExpedition.m1;
-    currentStudent.party_m2 = tempExpedition.m2;
-    currentStudent.party_s1 = tempExpedition.m1_skill;
-    currentStudent.party_s2 = tempExpedition.m2_skill;
+async function saveExpeditionSetup() {
+    const partyPayload = {
+        party_m1: tempExpedition.m1,
+        party_m2: tempExpedition.m2,
+        party_s1: tempExpedition.m1_skill,
+        party_s2: tempExpedition.m2_skill
+    };
 
-    updateFastFirebaseStudent(currentStudent);
-    showUiAlert('⚔️ 저장 완료', '원정대 배치가 성공적으로 저장되었습니다!', '');
-    renderDashboard();
+    showGlobalLoading("⚔️ 원정대 배치 저장 중...");
+
+    try {
+        await patchFirebaseStudentFields(
+            currentStudent.name,
+            partyPayload
+        );
+
+        hideGlobalLoading();
+        renderDashboard();
+
+        showUiAlert(
+            '⚔️ 저장 완료',
+            '원정대 배치가 성공적으로 저장되었습니다!',
+            ''
+        );
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            '❌ 저장 오류',
+            '원정대 배치를 저장하지 못했습니다.<br><br>' + err.message,
+            'openExpeditionModal()'
+        );
+    }
 }
 
 // ==========================================

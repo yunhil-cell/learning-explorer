@@ -931,6 +931,7 @@ function resetWeeklyBattles() {
   const stSheet = ss.getSheetByName("students");
   const stData = stSheet.getDataRange().getValues();
   const headers = stData[0].map(h => String(h).trim());
+  const nameIdx = headers.indexOf("name");
   const weeklyIdx = headers.indexOf("weekly_battles");
   const raidIdx = headers.indexOf("weekly_raid");
   let towerIdx = headers.indexOf("weekly_tower");
@@ -955,9 +956,68 @@ function resetWeeklyBattles() {
     stSheet.getRange(i + 1, towerIdx + 1).setValue(maxTower);
   }
 
-  // 💡 [핵심] 시트 초기화 후 Firebase로 즉시 푸시하여 웹앱에 100% 반영
+  // 🛡️ 학생 전체 데이터를 다시 보내지 않고 주간 횟수 4개만 Firebase에 반영
   try {
-    syncToFirebase();
+    const resetPayload = {
+      weekly_battles: maxBattles,
+      weekly_raid: maxRaid,
+      weekly_tower: maxTower,
+      weekly_boss: maxBoss
+    };
+
+    const requests = [];
+
+    for (let i = 1; i < stData.length; i++) {
+      const studentName = nameIdx > -1
+        ? String(stData[i][nameIdx]).trim()
+        : String(stData[i][0]).trim();
+
+      if (!studentName) continue;
+
+      requests.push({
+        url: "https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/" +
+          encodeURIComponent(studentName) +
+          ".json",
+        method: "PATCH",
+        contentType: "application/json",
+        payload: JSON.stringify(resetPayload),
+        muteHttpExceptions: true
+      });
+    }
+
+    if (requests.length > 0) {
+      UrlFetchApp.fetchAll(requests);
+    }
+
+    // 이번 주 월요일 날짜 키도 Firebase에 확정
+    var nowKst = new Date(
+      Utilities.formatDate(
+        new Date(),
+        "Asia/Seoul",
+        "yyyy/MM/dd HH:mm:ss"
+      )
+    );
+
+    var kstDay = nowKst.getDay();
+    var diffMon = (kstDay === 0 ? -6 : 1) - kstDay;
+    nowKst.setDate(nowKst.getDate() + diffMon);
+
+    var mondayKey = Utilities.formatDate(
+      nowKst,
+      "Asia/Seoul",
+      "yyyy-MM-dd"
+    );
+
+    UrlFetchApp.fetch(
+      "https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json",
+      {
+        method: "PUT",
+        contentType: "application/json",
+        payload: JSON.stringify(mondayKey)
+      }
+    );
+
+    Logger.log("✅ 주간 횟수 4종 Firebase 안전 초기화 완료");
   } catch (e) {
     Logger.log("주간 초기화 후 Firebase 동기화 실패: " + e.toString());
   }
@@ -2807,6 +2867,7 @@ function buyShopItem(studentName, itemName, cost) {
 // 💡 [신규] 특정 학생 1명만 핀포인트로 독립 방에 동기화
 function syncStudentToFirebase(studentName) {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData/students";
+
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var stSheet = ss.getSheetByName('students');
@@ -2818,82 +2879,207 @@ function syncStudentToFirebase(studentName) {
     if (nameIdx === -1) return "Error: name 열 없음";
 
     var targetStudent = null;
+    var targetOrder = null;
+
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
         targetStudent = {};
         headers.forEach(function(h, idx) { targetStudent[h] = data[i][idx]; });
+
+        // students 시트의 실제 학생 순번
+        targetOrder = i;
         break;
       }
     }
+
     if (!targetStudent) return "Error: 해당 학생을 찾을 수 없음";
 
-    var sName = encodeURIComponent(String(studentName).trim());
-    UrlFetchApp.fetch(baseUrl + "/" + sName + ".json", {
-      method: "PUT",
-      contentType: "application/json",
-      payload: JSON.stringify(targetStudent)
+    var cleanName = String(studentName).trim();
+    var sName = encodeURIComponent(cleanName);
+    var studentUrl = baseUrl + "/" + sName + ".json";
+
+    // Firebase에 이미 존재하는 학생인지 확인
+    var existingRes = UrlFetchApp.fetch(studentUrl, {
+      muteHttpExceptions: true
     });
 
-    Logger.log("✅ [" + studentName + "] 학생 독립 방 다이렉트 동기화 완료");
+    var existingData = JSON.parse(existingRes.getContentText());
+
+    if (existingData && existingData.name) {
+      // 🛡️ 기존 학생은 플레이 데이터 전체를 덮어쓰지 않고 순서만 반영
+      UrlFetchApp.fetch(studentUrl, {
+        method: "PATCH",
+        contentType: "application/json",
+        payload: JSON.stringify({
+          sheet_order: targetOrder
+        })
+      });
+
+      Logger.log("✅ [" + cleanName + "] 기존 학생 sheet_order 안전 동기화 완료");
+    } else {
+      // Firebase에 없는 신규 학생만 시트 데이터로 최초 생성
+      targetStudent.name = cleanName;
+      targetStudent.sheet_order = targetOrder;
+
+      UrlFetchApp.fetch(studentUrl, {
+        method: "PUT",
+        contentType: "application/json",
+        payload: JSON.stringify(targetStudent)
+      });
+
+      Logger.log("✅ [" + cleanName + "] 신규 학생 Firebase 최초 생성 완료");
+    }
+
     return "Success";
   } catch (e) {
     return "Error: " + e.toString();
   }
 }
 
-// 💡 [마스터 동기화: 시트 ➔ 파이어베이스] 구글 시트의 전체 데이터를 Firebase에 100% 반영
+// 💡 [마스터 동기화: 시트 ➔ 파이어베이스] 기획 데이터 + 신규 학생만 안전 반영
 function syncToFirebase() {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData";
   
   try {
     var fullData = getGameData();
+
     if (typeof fullData === 'string' && fullData.startsWith("Error")) {
       Logger.log("❌ 데이터 로드 실패: " + fullData);
       return;
     }
 
-    // 1. 기존 Firebase 데이터 가져오기
-    var fbRes = UrlFetchApp.fetch(baseUrl + ".json");
-    var fbData = JSON.parse(fbRes.getContentText()) || {};
-
-    // 2. 학생 데이터를 이름(Key) 기반 독립 방 객체로 변환
-    var newStudentsMap = {};
-    if (fullData.students) {
-      fullData.students.forEach(function(s) {
-        if (!s || !s.name) return;
-        var sName = String(s.name).trim();
-        newStudentsMap[sName] = s;
-      });
-    }
-    fullData.students = newStudentsMap;
-
-    // 3. 월드보스, 성찰일지 제출물, 로그 보존
+    // 1. 시스템 데이터 기본 구조 안전 확보
     if (!fullData.system) fullData.system = { config: {} };
     if (!fullData.system.config) fullData.system.config = {};
 
-    if (fbData.system && fbData.system.config && fbData.system.config.last_weekly_reset) {
-      fullData.system.config.last_weekly_reset = String(fbData.system.config.last_weekly_reset).trim();
-    } else {
-      var nowKst = new Date(Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy/MM/dd HH:mm:ss"));
-      var kstDay = nowKst.getDay();
-      var diffMon = (kstDay === 0 ? -6 : 1) - kstDay;
-      nowKst.setDate(nowKst.getDate() + diffMon);
-      fullData.system.config.last_weekly_reset = Utilities.formatDate(nowKst, "Asia/Seoul", "yyyy-MM-dd");
+    // 2. Firebase의 주간 초기화 기준일은 시트 데이터로 덮어쓰지 않고 보존
+    try {
+      var resetRes = UrlFetchApp.fetch(
+        baseUrl + "/system/config/last_weekly_reset.json",
+        {
+          muteHttpExceptions: true
+        }
+      );
+
+      var lastReset = JSON.parse(resetRes.getContentText());
+
+      if (lastReset) {
+        fullData.system.config.last_weekly_reset = String(lastReset).trim();
+      } else {
+        var nowKst = new Date(
+          Utilities.formatDate(
+            new Date(),
+            "Asia/Seoul",
+            "yyyy/MM/dd HH:mm:ss"
+          )
+        );
+
+        var kstDay = nowKst.getDay();
+        var diffMon = (kstDay === 0 ? -6 : 1) - kstDay;
+        nowKst.setDate(nowKst.getDate() + diffMon);
+
+        fullData.system.config.last_weekly_reset = Utilities.formatDate(
+          nowKst,
+          "Asia/Seoul",
+          "yyyy-MM-dd"
+        );
+      }
+    } catch (resetErr) {
+      Logger.log("⚠️ 주간 초기화 기준일 확인 실패: " + resetErr.toString());
     }
 
-    if (fbData.worldBoss) fullData.worldBoss = fbData.worldBoss;
-    if (fbData.submissions && (!fullData.submissions || fullData.submissions.length === 0)) fullData.submissions = fbData.submissions;
-    if (fbData.forgeLogs) fullData.forgeLogs = fbData.forgeLogs;
-    if (fbData.logs) fullData.logs = fbData.logs;
+    // 3. 시트가 원본인 기획 데이터만 Firebase에 반영
+    // 학생 플레이 데이터, 퀘스트/제출물/공지/로그/월드보스 실시간 상태는 제외
+    var planningPayload = {
+      system: fullData.system,
+      skills: fullData.skills || [],
+      relics: fullData.relics || [],
+      skins: fullData.skins || [],
+      lootBoxes: fullData.lootBoxes || [],
+      shopItems: fullData.shopItems || [],
+      mercenaries: fullData.mercenaries || [],
+      worldBosses: fullData.worldBosses || [],
+      monsters: fullData.monsters || [],
+      monsterSkills: fullData.monsterSkills || [],
+      dungeons: fullData.dungeons || [],
+      bosses: fullData.bosses || []
+    };
 
-    // 4. Firebase 전송
     UrlFetchApp.fetch(baseUrl + ".json", {
-      method: "put",
+      method: "PATCH",
       contentType: "application/json",
-      payload: JSON.stringify(fullData)
+      payload: JSON.stringify(planningPayload)
     });
 
-    Logger.log("🎉 [시트 ➔ 파이어베이스] 구글 시트 마스터 데이터 동기화 완료!");
+    // 4. 현재 Firebase 학생 목록 확인
+    var fbStudentsRes = UrlFetchApp.fetch(
+      baseUrl + "/students.json",
+      {
+        muteHttpExceptions: true
+      }
+    );
+
+    var rawFbStudents = JSON.parse(fbStudentsRes.getContentText()) || {};
+    var existingStudentsByName = {};
+
+    if (Array.isArray(rawFbStudents)) {
+      rawFbStudents.forEach(function(student) {
+        if (student && student.name) {
+          existingStudentsByName[String(student.name).trim()] = student;
+        }
+      });
+    } else {
+      Object.keys(rawFbStudents).forEach(function(key) {
+        var student = rawFbStudents[key];
+
+        if (student && student.name) {
+          existingStudentsByName[String(student.name).trim()] = student;
+        }
+      });
+    }
+
+    // 5. 기존 학생은 sheet_order만 갱신하고,
+    // Firebase에 존재하지 않는 신규 학생만 최초 생성
+    var studentRequests = [];
+
+    (fullData.students || []).forEach(function(student, index) {
+      if (!student || !student.name) return;
+
+      var studentName = String(student.name).trim();
+      var encodedName = encodeURIComponent(studentName);
+      var sheetOrder = Number(student.sheet_order) || (index + 1);
+
+      if (existingStudentsByName[studentName]) {
+        studentRequests.push({
+          url: baseUrl + "/students/" + encodedName + ".json",
+          method: "PATCH",
+          contentType: "application/json",
+          payload: JSON.stringify({
+            sheet_order: sheetOrder
+          }),
+          muteHttpExceptions: true
+        });
+      } else {
+        var newStudent = Object.assign({}, student, {
+          name: studentName,
+          sheet_order: sheetOrder
+        });
+
+        studentRequests.push({
+          url: baseUrl + "/students/" + encodedName + ".json",
+          method: "PUT",
+          contentType: "application/json",
+          payload: JSON.stringify(newStudent),
+          muteHttpExceptions: true
+        });
+      }
+    });
+
+    if (studentRequests.length > 0) {
+      UrlFetchApp.fetchAll(studentRequests);
+    }
+
+    Logger.log("🎉 [시트 ➔ 파이어베이스] 기획 데이터, 신규 학생, 학생 순서 안전 동기화 완료!");
   } catch (e) {
     Logger.log("❌ 동기화 중 오류 발생: " + e.toString());
   }
@@ -2928,16 +3114,13 @@ function syncFromFirebase() {
       var headers = values[0].map(function(h) { return String(h).trim(); });
       var nameIdx = headers.indexOf("name");
 
-      var teacherFields = ["reading_count", "custom_titles"];
-      var teacherColIndices = teacherFields.map(function(f) { return headers.indexOf(f); });
-
       for (var r = 1; r < values.length; r++) {
         var sName = String(values[r][nameIdx]).trim();
         var student = stMap[sName];
 
         if (student) {
           headers.forEach(function(h, c) {
-            if (c !== -1 && !teacherColIndices.includes(c) && student[h] !== undefined && student[h] !== "") {
+            if (c !== -1 && student[h] !== undefined) {
               values[r][c] = student[h];
             }
           });
