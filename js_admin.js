@@ -793,30 +793,56 @@ function createNewQuestAction() {
     btn.disabled = true;
     btn.style.background = "#555";
 
-    if (!window.questsData) window.questsData = [];
-    const newQuest = {
-        quest_id: 'Q' + new Date().getTime(),
-        title: title,
-        description: desc,
-        require_text: req,
-        reward_gold: gold,
-        reward_exp: exp,
-        reward_point: point,
-        is_active: true,
-        is_auto_approve: isAuto,
-        repeat_cycle: repeatCycle
-    };
-    window.questsData.push(newQuest);
+// 💡 퀘스트 활성화/마감 토글
+async function toggleQuestStatus(questId, isActive) {
+    try {
+        const tx = await runFirebasePathAtomicTransaction(
+            'https://learning-explorer-default-rtdb.firebaseio.com/gameData/quests.json',
+            currentData => {
+                const list =
+                    firebaseCollectionToArray(currentData);
 
-    fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/quests.json', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(window.questsData)
-    }).then(() => {
-        showUiAlert("🎉 등록 완료!", "새로운 의뢰가 길드 게시판에 등록되었습니다.", "openQuestAdmin()");
-    }).catch(err => {
-        showUiAlert("❌ 등록 실패", err);
-    });
+                const q = list.find(
+                    x =>
+                        x &&
+                        String(x.quest_id) === String(questId)
+                );
+
+                if (!q) {
+                    return {
+                        abort: true,
+                        code: 'QUEST_NOT_FOUND'
+                    };
+                }
+
+                q.is_active = isActive;
+
+                return {
+                    data: list
+                };
+            }
+        );
+
+        if (!tx.committed) {
+            return showUiAlert(
+                "❌ 변경 실패",
+                "의뢰 정보를 찾을 수 없습니다.",
+                "openQuestAdmin()"
+            );
+        }
+
+        window.questsData =
+            firebaseCollectionToArray(tx.data);
+
+        renderQuestAdmin('list');
+    } catch (err) {
+        showUiAlert(
+            "❌ 변경 실패",
+            err.message,
+            "openQuestAdmin()"
+        );
+    }
+}
 }
 
 // 💡 퀘스트 활성화/마감 토글
@@ -834,76 +860,108 @@ function toggleQuestStatus(questId, isActive) {
 }
 
 // 💡 학생 제출물 승인/취소 (승인 시 보상 지급 로직 포함)
-function updateSubStatus(questId, studentName, newStatus, rewardGold, rewardPoint) {
+async function updateSubStatus(questId, studentName, newStatus, rewardGold, rewardPoint) {
     const safeSubmissions = submissionsData || [];
-    const sub = safeSubmissions.find(s => String(s.quest_id) === String(questId) && String(s.student_name) === String(studentName));
-    if (sub) sub.status = newStatus;
 
-    const q = questsData.find(x => String(x.quest_id) === String(questId));
-    const rewardExp = q ? (Number(q.reward_exp) || 0) : 0;
+    const sub = safeSubmissions.find(
+        s =>
+            s &&
+            String(s.quest_id) === String(questId) &&
+            String(s.student_name) === String(studentName)
+    );
 
-    const targetStudent = window.allStudentsData.find(x => x.name === studentName);
-    let leveledUp = false;
-
-    if (newStatus === '승인완료') {
-        if (targetStudent) {
-            targetStudent.bonus_points = (Number(targetStudent.bonus_points) || 0) + Number(rewardPoint);
-            targetStudent.game_money = (Number(targetStudent.game_money) || 0) + Number(rewardGold);
-            targetStudent.exp = (Number(targetStudent.exp) || 0) + Number(rewardExp);
-            targetStudent.quest_count = (Number(targetStudent.quest_count) || 0) + 1;
-
-            const expMax = Number(sysConfig.exp_max) || 200;
-            const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
-            while (targetStudent.exp >= expMax) {
-                targetStudent.exp -= expMax;
-                targetStudent.level = (Number(targetStudent.level) || 1) + 1;
-                targetStudent.level_points = (Number(targetStudent.level_points) || 0) + pointsPerLevel;
-                leveledUp = true;
-            }
-        }
-    } else if (newStatus === '제출완료') {
-        if (targetStudent) {
-            targetStudent.bonus_points = Math.max(0, (Number(targetStudent.bonus_points) || 0) - Number(rewardPoint));
-            targetStudent.game_money = Math.max(0, (Number(targetStudent.game_money) || 0) - Number(rewardGold));
-            targetStudent.exp = Math.max(0, (Number(targetStudent.exp) || 0) - Number(rewardExp));
-            targetStudent.quest_count = Math.max(0, (Number(targetStudent.quest_count) || 0) - 1);
-        }
+    if (!sub) {
+        return showUiAlert(
+            "❌ 처리 실패",
+            "해당 학생의 제출물을 찾을 수 없습니다.",
+            ""
+        );
     }
 
-    // 💡 [핵심] 현재 접속/조회 중인 학생 객체(currentStudent)도 즉시 동기화
-    if (currentStudent && currentStudent.name === studentName && targetStudent) {
-        currentStudent.bonus_points = targetStudent.bonus_points;
-        currentStudent.game_money = targetStudent.game_money;
-        currentStudent.exp = targetStudent.exp;
-        currentStudent.level = targetStudent.level;
-        currentStudent.level_points = targetStudent.level_points;
-        currentStudent.quest_count = targetStudent.quest_count;
-        if (document.getElementById('detailModal').style.display === 'flex') {
-            renderDashboard();
-        }
+    const q = questsData.find(
+        x => String(x.quest_id) === String(questId)
+    );
+
+    if (!q) {
+        return showUiAlert(
+            "❌ 처리 실패",
+            "의뢰 정보를 찾을 수 없습니다.",
+            ""
+        );
     }
 
-    renderQuestAdmin('list', questId);
+    const rewardExp =
+        Number(q.reward_exp) || 0;
 
-    Promise.all([
-        patchFirebaseStudentFields(studentName, {
-            bonus_points: targetStudent.bonus_points,
-            game_money: targetStudent.game_money,
-            exp: targetStudent.exp,
-            level: targetStudent.level,
-            level_points: targetStudent.level_points,
-            quest_count: targetStudent.quest_count
-        }),
-        fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(window.submissionsData)
-        })
-    ]).then(() => {
-        if (leveledUp) {
-            showUiAlert("🎉 승인 및 레벨업 완료", studentName + " 학생이 의뢰 보상을 받고 <b>Lv." + targetStudent.level + "</b>(으)로 레벨 업 했습니다!", "");
+    const cycleDate = sub.submitted_at
+        ? new Date(sub.submitted_at)
+        : new Date();
+
+    showGlobalLoading("📜 의뢰 승인 상태 저장 중...");
+
+    try {
+        let rewardTx = null;
+
+        if (newStatus === '승인완료') {
+            rewardTx = await applyQuestRewardAtomic(
+                studentName,
+                q,
+                rewardGold,
+                rewardPoint,
+                rewardExp,
+                true,
+                cycleDate
+            );
+        } else if (newStatus === '제출완료') {
+            rewardTx = await applyQuestRewardAtomic(
+                studentName,
+                q,
+                rewardGold,
+                rewardPoint,
+                rewardExp,
+                false,
+                cycleDate,
+                sub.status === '승인완료'
+            );
         }
-    });
+
+        await saveSubmissionRecordAtomic({
+            quest_id: String(questId),
+            student_name: String(studentName),
+            status: newStatus
+        });
+
+        hideGlobalLoading();
+
+        renderQuestAdmin(
+            'list',
+            questId
+        );
+
+        if (
+            newStatus === '승인완료' &&
+            rewardTx &&
+            rewardTx.committed &&
+            rewardTx.result.leveledUp
+        ) {
+            showUiAlert(
+                "🎉 승인 및 레벨업 완료",
+                studentName +
+                    " 학생이 의뢰 보상을 받고 <b>Lv." +
+                    rewardTx.result.level +
+                    "</b>(으)로 레벨 업 했습니다!",
+                ""
+            );
+        }
+    } catch (err) {
+        hideGlobalLoading();
+
+        showUiAlert(
+            "❌ 처리 실패",
+            "승인 정보를 저장하지 못했습니다: " + err.message,
+            "openQuestAdmin()"
+        );
+    }
 }
 
 // 💡 [신규] 퀘스트 제출물 전체 선택/해제 토글
@@ -925,87 +983,154 @@ function updateQuestBatchCount() {
 }
 
 // 💡 [신규] 선택한 학생들 원클릭 초고속 일괄 승인 & 보상 지급
-function batchApproveSelectedSubs(questId) {
-    const chks = document.querySelectorAll('.quest-sub-chk:checked');
+async function batchApproveSelectedSubs(questId) {
+    const chks =
+        document.querySelectorAll('.quest-sub-chk:checked');
+
     if (chks.length === 0) return;
 
-    const targetNames = Array.from(chks).map(c => c.getAttribute('data-name'));
-    const q = questsData.find(x => String(x.quest_id) === String(questId));
+    const targetNames =
+        Array.from(chks).map(
+            c => c.getAttribute('data-name')
+        );
+
+    const q = questsData.find(
+        x => String(x.quest_id) === String(questId)
+    );
+
     if (!q) return;
 
-    showGlobalLoading('📜 ' + targetNames.length + '명의 의뢰 일괄 승인 중...');
+    showGlobalLoading(
+        '📜 ' +
+        targetNames.length +
+        '명의 의뢰 일괄 승인 중...'
+    );
 
-    const rewardGold = Number(q.reward_gold) || 0;
-    const rewardPoint = Number(q.reward_point) || 0;
-    const rewardExp = Number(q.reward_exp) || 0;
-    const expMax = Number(sysConfig.exp_max) || 200;
-    const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
+    const rewardGold =
+        Number(q.reward_gold) || 0;
 
-    let leveledUpNames = [];
+    const rewardPoint =
+        Number(q.reward_point) || 0;
 
-    targetNames.forEach(sName => {
-        // 1. 제출물 상태 변경
-        const sub = (submissionsData || []).find(s => String(s.quest_id) === String(questId) && String(s.student_name) === String(sName));
-        if (sub) sub.status = '승인완료';
+    const rewardExp =
+        Number(q.reward_exp) || 0;
 
-        // 2. 학생 데이터 보상 반영
-        const targetStudent = (window.allStudentsData || []).find(x => x.name === sName);
-        if (targetStudent) {
-            targetStudent.bonus_points = (Number(targetStudent.bonus_points) || 0) + rewardPoint;
-            targetStudent.game_money = (Number(targetStudent.game_money) || 0) + rewardGold;
-            targetStudent.exp = (Number(targetStudent.exp) || 0) + rewardExp;
-            targetStudent.quest_count = (Number(targetStudent.quest_count) || 0) + 1;
+    try {
+        const rewardResults = await Promise.all(
+            targetNames.map(async sName => {
+                const sub = (submissionsData || []).find(
+                    s =>
+                        s &&
+                        String(s.quest_id) === String(questId) &&
+                        String(s.student_name) === String(sName)
+                );
 
-            let leveled = false;
-            while (targetStudent.exp >= expMax) {
-                targetStudent.exp -= expMax;
-                targetStudent.level = (Number(targetStudent.level) || 1) + 1;
-                targetStudent.level_points = (Number(targetStudent.level_points) || 0) + pointsPerLevel;
-                leveled = true;
+                if (!sub) {
+                    return {
+                        name: sName,
+                        skipped: true
+                    };
+                }
+
+                const cycleDate = sub.submitted_at
+                    ? new Date(sub.submitted_at)
+                    : new Date();
+
+                const tx = await applyQuestRewardAtomic(
+                    sName,
+                    q,
+                    rewardGold,
+                    rewardPoint,
+                    rewardExp,
+                    true,
+                    cycleDate
+                );
+
+                return {
+                    name: sName,
+                    tx: tx
+                };
+            })
+        );
+
+        // 모든 학생 보상 처리 후 제출 상태 배열을 최신 Firebase 기준으로 원자 갱신
+        const submissionsTx =
+            await runFirebasePathAtomicTransaction(
+                'https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json',
+                currentData => {
+                    const list =
+                        firebaseCollectionToArray(currentData);
+
+                    list.forEach(sub => {
+                        if (
+                            sub &&
+                            String(sub.quest_id) === String(questId) &&
+                            targetNames.includes(
+                                String(sub.student_name)
+                            )
+                        ) {
+                            sub.status = '승인완료';
+                        }
+                    });
+
+                    return {
+                        data: list
+                    };
+                }
+            );
+
+        window.submissionsData =
+            firebaseCollectionToArray(
+                submissionsTx.data
+            );
+
+        const leveledUpNames = [];
+
+        rewardResults.forEach(result => {
+            if (
+                result.tx &&
+                result.tx.committed &&
+                result.tx.result.leveledUp
+            ) {
+                leveledUpNames.push(
+                    result.name +
+                    '(Lv.' +
+                    result.tx.result.level +
+                    ')'
+                );
             }
-            if (leveled) leveledUpNames.push(sName + '(Lv.' + targetStudent.level + ')');
-
-            if (currentStudent && currentStudent.name === sName) {
-                currentStudent.bonus_points = targetStudent.bonus_points;
-                currentStudent.game_money = targetStudent.game_money;
-                currentStudent.exp = targetStudent.exp;
-                currentStudent.level = targetStudent.level;
-                currentStudent.level_points = targetStudent.level_points;
-                currentStudent.quest_count = targetStudent.quest_count;
-            }
-        }
-    });
-
-    // 3. Firebase 일괄 동기화 (보상 관련 필드만 PATCH로 안전 부분 갱신하여 강화/용병 롤백 원천 차단)
-    const studentSavePromises = targetNames.map(sName => {
-        const targetStudent = (window.allStudentsData || []).find(x => x.name === sName);
-        if (!targetStudent) return Promise.resolve();
-        return patchFirebaseStudentFields(sName, {
-            bonus_points: targetStudent.bonus_points,
-            game_money: targetStudent.game_money,
-            exp: targetStudent.exp,
-            level: targetStudent.level,
-            level_points: targetStudent.level_points,
-            quest_count: targetStudent.quest_count
         });
-    });
 
-    Promise.all([
-        ...studentSavePromises,
-        fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(window.submissionsData)
-        })
-    ]).then(() => {
         hideGlobalLoading();
-        renderQuestAdmin('list', questId);
-        let lvMsg = leveledUpNames.length > 0 ? '<br><br>🎊 <b>레벨업 달성 모험가:</b> ' + leveledUpNames.join(', ') : '';
-        showUiAlert('🎉 일괄 승인 완료!', '총 <b>' + targetNames.length + '명</b>의 의뢰를 일괄 승인하고 보상을 지급했습니다!' + lvMsg, '');
-    }).catch(err => {
+
+        renderQuestAdmin(
+            'list',
+            questId
+        );
+
+        const lvMsg =
+            leveledUpNames.length > 0
+                ? '<br><br>🎊 <b>레벨업 달성 모험가:</b> ' +
+                  leveledUpNames.join(', ')
+                : '';
+
+        showUiAlert(
+            '🎉 일괄 승인 완료!',
+            '총 <b>' +
+                targetNames.length +
+                '명</b>의 의뢰를 일괄 승인하고 보상을 지급했습니다!' +
+                lvMsg,
+            ''
+        );
+    } catch (err) {
         hideGlobalLoading();
-        showUiAlert('❌ 일괄 승인 실패', err, '');
-    });
+
+        showUiAlert(
+            '❌ 일괄 승인 실패',
+            err.message,
+            ''
+        );
+    }
 }
 
 // 2. [교사 전용] 공지사항 관리 UI 열기
@@ -1089,6 +1214,7 @@ function createNewNoticeAction() {
     btn.style.background = "#555";
 
     if (!window.noticesData) window.noticesData = [];
+
     const newNotice = {
         notice_id: 'N' + new Date().getTime(),
         date: new Date().toISOString().split('T')[0],
@@ -1097,30 +1223,87 @@ function createNewNoticeAction() {
         content: content,
         is_active: true
     };
-    window.noticesData.push(newNotice);
 
-    fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/notices.json', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(window.noticesData)
-    }).then(() => {
-        showUiAlert("🎉 등록 완료!", "새로운 공지사항이 게시되었습니다.", "openNoticeAdmin()");
+    runFirebasePathAtomicTransaction(
+        'https://learning-explorer-default-rtdb.firebaseio.com/gameData/notices.json',
+        currentData => {
+            const list =
+                firebaseCollectionToArray(currentData);
+
+            list.push(newNotice);
+
+            return {
+                data: list
+            };
+        }
+    ).then(tx => {
+        window.noticesData =
+            firebaseCollectionToArray(tx.data);
+
+        showUiAlert(
+            "🎉 등록 완료!",
+            "새로운 공지사항이 게시되었습니다.",
+            "openNoticeAdmin()"
+        );
     }).catch(err => {
-        showUiAlert("❌ 등록 실패", err);
+        btn.disabled = false;
+        btn.innerText = "📢 공지사항 등록";
+
+        showUiAlert(
+            "❌ 등록 실패",
+            err
+        );
     });
 }
 
-function toggleNoticeStatus(noticeId, isActive) {
-    const n = noticesData.find(x => String(x.notice_id) === String(noticeId));
-    if (n) n.is_active = isActive;
+async function toggleNoticeStatus(noticeId, isActive) {
+    try {
+        const tx = await runFirebasePathAtomicTransaction(
+            'https://learning-explorer-default-rtdb.firebaseio.com/gameData/notices.json',
+            currentData => {
+                const list =
+                    firebaseCollectionToArray(currentData);
 
-    fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/notices.json', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(window.noticesData)
-    }).then(() => {
+                const notice = list.find(
+                    x =>
+                        x &&
+                        String(x.notice_id) === String(noticeId)
+                );
+
+                if (!notice) {
+                    return {
+                        abort: true,
+                        code: 'NOTICE_NOT_FOUND'
+                    };
+                }
+
+                notice.is_active = isActive;
+
+                return {
+                    data: list
+                };
+            }
+        );
+
+        if (!tx.committed) {
+            return showUiAlert(
+                "❌ 변경 실패",
+                "공지사항을 찾을 수 없습니다.",
+                "openNoticeAdmin()"
+            );
+        }
+
+        window.noticesData =
+            firebaseCollectionToArray(tx.data);
+
         renderNoticeAdmin('list');
-    });
+    } catch (err) {
+        showUiAlert(
+            "❌ 변경 실패",
+            err.message,
+            "openNoticeAdmin()"
+        );
+    }
 }
 
 // 💡 [신규] 공지사항 삭제 프롬프트 및 실행
@@ -1128,18 +1311,39 @@ function deleteNoticePrompt(noticeId) {
     showUiConfirm("⚠️ 공지 삭제", "이 공지사항을 완전히 삭제하시겠습니까?<br><span style='font-size:0.8em; color:#aaa;'>(시트에서도 영구 삭제됩니다)</span>", "executeDeleteNotice('" + noticeId + "')");
 }
 
-function executeDeleteNotice(noticeId) {
-    window.noticesData = (noticesData || []).filter(x => String(x.notice_id) !== String(noticeId));
+async function executeDeleteNotice(noticeId) {
+    try {
+        const tx = await runFirebasePathAtomicTransaction(
+            'https://learning-explorer-default-rtdb.firebaseio.com/gameData/notices.json',
+            currentData => {
+                const list =
+                    firebaseCollectionToArray(currentData)
+                        .filter(
+                            x =>
+                                String(x.notice_id) !==
+                                String(noticeId)
+                        );
 
-    fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/notices.json', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(window.noticesData)
-    }).then(() => {
-        showUiAlert("🗑️ 삭제 완료!", "공지사항이 영구적으로 삭제되었습니다.", "openNoticeAdmin()");
-    }).catch(err => {
-        showUiAlert("❌ 삭제 실패", err);
-    });
+                return {
+                    data: list
+                };
+            }
+        );
+
+        window.noticesData =
+            firebaseCollectionToArray(tx.data);
+
+        showUiAlert(
+            "🗑️ 삭제 완료!",
+            "공지사항이 영구적으로 삭제되었습니다.",
+            "openNoticeAdmin()"
+        );
+    } catch (err) {
+        showUiAlert(
+            "❌ 삭제 실패",
+            err.message
+        );
+    }
 }
 
 // ==========================================

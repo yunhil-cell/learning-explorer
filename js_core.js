@@ -336,6 +336,376 @@ async function runStudentAtomicTransaction(studentName, mutateFn, maxRetries = 6
     });
 }
 
+// ==========================================
+// 🛡️ 임의 Firebase 경로 ETag 원자 저장
+// ==========================================
+async function runFirebasePathAtomicTransaction(url, mutateFn, maxRetries = 6) {
+    if (!url || typeof mutateFn !== 'function') {
+        throw new Error("원자 저장 요청 정보가 올바르지 않습니다.");
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const readResponse = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-Firebase-ETag': 'true',
+                'Cache-Control': 'no-cache'
+            }
+        });
+
+        if (!readResponse.ok) {
+            throw new Error("최신 데이터 조회 실패: HTTP " + readResponse.status);
+        }
+
+        const etag =
+            readResponse.headers.get('ETag') ||
+            readResponse.headers.get('etag');
+
+        if (!etag) {
+            throw new Error("Firebase ETag을 확인할 수 없습니다.");
+        }
+
+        const currentData = await readResponse.json();
+        const draft = cloneStudentSyncData(currentData);
+        const transactionResult = mutateFn(draft) || {};
+
+        if (transactionResult.abort) {
+            return {
+                committed: false,
+                data: currentData,
+                result: transactionResult
+            };
+        }
+
+        const nextData = Object.prototype.hasOwnProperty.call(transactionResult, 'data')
+            ? transactionResult.data
+            : draft;
+
+        const writeResponse = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'If-Match': etag
+            },
+            body: JSON.stringify(nextData)
+        });
+
+        if (writeResponse.status === 412) {
+            continue;
+        }
+
+        if (!writeResponse.ok) {
+            throw new Error("원자 저장 실패: HTTP " + writeResponse.status);
+        }
+
+        const savedData = await writeResponse.json();
+
+        return {
+            committed: true,
+            data: savedData === null ? nextData : savedData,
+            result: transactionResult
+        };
+    }
+
+    throw new Error("동시 저장 충돌이 반복되어 저장하지 못했습니다. 다시 시도해주세요.");
+}
+
+function firebaseCollectionToArray(data) {
+    if (!data) return [];
+    if (Array.isArray(data)) return data.filter(Boolean);
+    return Object.values(data).filter(Boolean);
+}
+
+// 제출물은 기존 배열 구조를 유지하면서 같은 학생/같은 퀘스트 레코드만 안전 갱신
+async function saveSubmissionRecordAtomic(submission) {
+    if (!submission || submission.quest_id === undefined || !submission.student_name) {
+        throw new Error("제출물 정보가 올바르지 않습니다.");
+    }
+
+    const url = 'https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json';
+
+    const tx = await runFirebasePathAtomicTransaction(
+        url,
+        currentData => {
+            const list = firebaseCollectionToArray(currentData);
+
+            const existingIdx = list.findIndex(s =>
+                s &&
+                String(s.quest_id) === String(submission.quest_id) &&
+                String(s.student_name) === String(submission.student_name)
+            );
+
+            if (existingIdx > -1) {
+                list[existingIdx] = Object.assign(
+                    {},
+                    list[existingIdx],
+                    submission
+                );
+            } else {
+                list.push(submission);
+            }
+
+            return {
+                data: list
+            };
+        }
+    );
+
+    window.submissionsData = firebaseCollectionToArray(tx.data);
+
+    return tx;
+}
+
+// Firebase 객체 내부 키에서 사용하기 위한 안전 문자열
+function makeFirebaseObjectKey(value) {
+    return encodeURIComponent(String(value || '')).replace(/\./g, '%2E');
+}
+
+// 특정 날짜를 기준으로 KST 월요일 키 생성
+function getKSTMondayKeyForDate(dateObj = new Date()) {
+    const utc = dateObj.getTime() + (dateObj.getTimezoneOffset() * 60000);
+    const kstDate = new Date(utc + (9 * 60 * 60 * 1000));
+
+    const day = kstDate.getDay();
+    const diffToMonday = (day === 0 ? -6 : 1) - day;
+
+    kstDate.setDate(kstDate.getDate() + diffToMonday);
+
+    const y = kstDate.getFullYear();
+    const m = String(kstDate.getMonth() + 1).padStart(2, '0');
+    const d = String(kstDate.getDate()).padStart(2, '0');
+
+    return `${y}-${m}-${d}`;
+}
+
+// 퀘스트 반복 주기별 보상 중복 방지 키
+function getQuestRewardCycleKey(qObj, dateObj = new Date()) {
+    const repeatCycle = qObj ? String(qObj.repeat_cycle || '1회성') : '1회성';
+
+    if (repeatCycle === '일일반복') {
+        return getKSTDateString(dateObj);
+    }
+
+    if (repeatCycle === '주간반복') {
+        return getKSTMondayKeyForDate(dateObj);
+    }
+
+    if (repeatCycle === '월반복') {
+        return getKSTDateString(dateObj).slice(0, 7);
+    }
+
+    return 'ONCE';
+}
+
+function getQuestRewardClaimKey(qObj, dateObj = new Date()) {
+    const questId = qObj ? String(qObj.quest_id || '') : '';
+    const cycleKey = getQuestRewardCycleKey(qObj, dateObj);
+
+    return makeFirebaseObjectKey(questId + '|' + cycleKey);
+}
+
+// 퀘스트 보상 지급/회수 원자 처리
+// quest_reward_claims는 Firebase 전용 보상 중복 방지 필드이며 시트 컬럼은 변경하지 않음
+async function applyQuestRewardAtomic(
+    studentName,
+    qObj,
+    rewardGold,
+    rewardPoint,
+    rewardExp,
+    grantReward,
+    cycleDate = new Date(),
+    assumeRewarded = false
+) {
+    const claimKey = getQuestRewardClaimKey(qObj, cycleDate);
+
+    return runStudentAtomicTransaction(
+        studentName,
+        student => {
+            let claims = {};
+
+            if (
+                student.quest_reward_claims &&
+                typeof student.quest_reward_claims === 'object' &&
+                !Array.isArray(student.quest_reward_claims)
+            ) {
+                claims = Object.assign({}, student.quest_reward_claims);
+            }
+
+            const claimState = claims[claimKey];
+            const isRewarded =
+                claimState === true ||
+                claimState === 'rewarded';
+
+            const isReverted =
+                claimState === 'reverted';
+
+            if (grantReward) {
+                if (isRewarded) {
+                    return {
+                        abort: true,
+                        code: 'ALREADY_REWARDED'
+                    };
+                }
+
+                student.game_money =
+                    (Number(student.game_money) || 0) +
+                    Number(rewardGold || 0);
+
+                student.bonus_points =
+                    (Number(student.bonus_points) || 0) +
+                    Number(rewardPoint || 0);
+
+                student.exp =
+                    (Number(student.exp) || 0) +
+                    Number(rewardExp || 0);
+
+                student.quest_count =
+                    (Number(student.quest_count) || 0) + 1;
+
+                const expMax = Number(sysConfig.exp_max) || 200;
+                const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
+
+                let leveledUp = false;
+
+                while (student.exp >= expMax) {
+                    student.exp -= expMax;
+                    student.level = (Number(student.level) || 1) + 1;
+                    student.level_points =
+                        (Number(student.level_points) || 0) +
+                        pointsPerLevel;
+
+                    leveledUp = true;
+                }
+
+                claims[claimKey] = 'rewarded';
+                student.quest_reward_claims = claims;
+
+                return {
+                    leveledUp: leveledUp,
+                    level: Number(student.level) || 1
+                };
+            }
+
+            if (isReverted) {
+                return {
+                    abort: true,
+                    code: 'ALREADY_REVERTED'
+                };
+            }
+
+            if (!isRewarded && !assumeRewarded) {
+                return {
+                    abort: true,
+                    code: 'NOT_REWARDED'
+                };
+            }
+
+            // 기존 취소 로직과 동일하게 현재 레벨 자체는 되돌리지 않음
+            student.bonus_points = Math.max(
+                0,
+                (Number(student.bonus_points) || 0) -
+                Number(rewardPoint || 0)
+            );
+
+            student.game_money = Math.max(
+                0,
+                (Number(student.game_money) || 0) -
+                Number(rewardGold || 0)
+            );
+
+            student.exp = Math.max(
+                0,
+                (Number(student.exp) || 0) -
+                Number(rewardExp || 0)
+            );
+
+            student.quest_count = Math.max(
+                0,
+                (Number(student.quest_count) || 0) - 1
+            );
+
+            claims[claimKey] = 'reverted';
+            student.quest_reward_claims = claims;
+
+            return {
+                reverted: true
+            };
+        }
+    );
+}
+
+// students 루트가 배열이든 객체든 이름으로 실제 학생 객체 참조 반환
+function getStudentFromFirebaseRoot(studentsRoot, studentName) {
+    const targetName = String(studentName || '').trim();
+
+    if (!studentsRoot || !targetName) return null;
+
+    if (Array.isArray(studentsRoot)) {
+        return studentsRoot.find(
+            s => s &&
+            String(s.name).trim() === targetName
+        ) || null;
+    }
+
+    if (
+        studentsRoot[targetName] &&
+        String(studentsRoot[targetName].name || '').trim() === targetName
+    ) {
+        return studentsRoot[targetName];
+    }
+
+    const keys = Object.keys(studentsRoot);
+
+    for (let i = 0; i < keys.length; i++) {
+        const student = studentsRoot[keys[i]];
+
+        if (
+            student &&
+            String(student.name || '').trim() === targetName
+        ) {
+            return student;
+        }
+    }
+
+    return null;
+}
+
+// students 루트 원자 저장 후 브라우저 캐시와 기준 스냅샷도 최신화
+function applyFirebaseStudentRootToLocal(studentsRoot, studentNames) {
+    (studentNames || []).forEach(studentName => {
+        const fresh = getStudentFromFirebaseRoot(
+            studentsRoot,
+            studentName
+        );
+
+        if (!fresh || !fresh.name) return;
+
+        const freshStudent = cloneStudentSyncData(fresh);
+
+        rememberStudentServerState(freshStudent);
+
+        if (window.allStudentsData) {
+            const idx = window.allStudentsData.findIndex(
+                s => s &&
+                String(s.name).trim() === String(studentName).trim()
+            );
+
+            if (idx > -1) {
+                window.allStudentsData[idx] = freshStudent;
+            } else {
+                window.allStudentsData.push(freshStudent);
+            }
+        }
+
+        if (
+            currentStudent &&
+            String(currentStudent.name).trim() === String(studentName).trim()
+        ) {
+            currentStudent = freshStudent;
+        }
+    });
+}
+
 // 💡 [2번 해결] 디바이스 타임존 무관 100% 한국 표준시(KST) YYYY-MM-DD 생성 공용 함수
 function getKSTDateString(dateObj = new Date()) {
     const utc = dateObj.getTime() + (dateObj.getTimezoneOffset() * 60000);
@@ -1734,138 +2104,185 @@ function showStudentQuestDetail(questId) {
 
 async function submitStudentQuest(questId, isRequireText) {
     let answerText = '';
+
     if (isRequireText) {
         answerText = document.getElementById('studentQAnswer').value.trim();
+
         if (!answerText) {
-            return showUiAlert("⚠️ 알림", "내용을 작성해주세요!", "");
+            return showUiAlert(
+                "⚠️ 알림",
+                "내용을 작성해주세요!",
+                ""
+            );
         }
     }
 
     showGlobalLoading("📜 퀘스트 보고서 제출 중...");
 
+    const newSub = {
+        quest_id: String(questId),
+        student_name: currentStudent.name,
+        status: '제출완료',
+        answer_text: answerText,
+        submitted_at: new Date().toISOString()
+    };
+
     try {
-        // 💡 [안전장치] 제출 전 Firebase에서 최신 제출물 목록을 먼저 읽어와 다른 학생 글 덮어쓰기 방지
-        const res = await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json');
-        let currentSubs = await res.json();
-        if (!currentSubs) currentSubs = [];
-        if (!Array.isArray(currentSubs)) currentSubs = Object.values(currentSubs);
-
-        const newSub = {
-            quest_id: String(questId),
-            student_name: currentStudent.name,
-            status: '제출완료',
-            answer_text: answerText,
-            submitted_at: new Date().toISOString()
-        };
-
-        const existingIdx = currentSubs.findIndex(s => s && String(s.quest_id) === String(questId) && String(s.student_name) === currentStudent.name);
-        if (existingIdx > -1) {
-            currentSubs[existingIdx] = newSub;
-        } else {
-            currentSubs.push(newSub);
-        }
-
-        window.submissionsData = currentSubs;
-
-        await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(currentSubs)
-        });
+        await saveSubmissionRecordAtomic(newSub);
 
         hideGlobalLoading();
-        showUiAlert("🎉 제출 완료!", "길드에 성공적으로 보고되었습니다!<br>선생님의 승인을 기다려주세요.", "renderStudentQuestBoard()");
+
+        showUiAlert(
+            "🎉 제출 완료!",
+            "길드에 성공적으로 보고되었습니다!<br>선생님의 승인을 기다려주세요.",
+            "renderStudentQuestBoard()"
+        );
     } catch (err) {
         hideGlobalLoading();
-        showUiAlert("❌ 제출 실패", "통신 중 오류가 발생했습니다: " + err, "");
+
+        showUiAlert(
+            "❌ 제출 실패",
+            "통신 중 오류가 발생했습니다: " + err,
+            ""
+        );
     }
 }
 
-function autoCompleteStudentQuest(questId, rewardGold, rewardPoint, rewardExp, isRequireText) {
-    // 🛡️ [보안 패치] 다중 탭 및 연타를 통한 중복 보상 수령 차단 검증
-    const qObj = (questsData || []).find(q => String(q.quest_id) === String(questId));
+async function autoCompleteStudentQuest(questId, rewardGold, rewardPoint, rewardExp, isRequireText) {
+    const qObj = (questsData || []).find(
+        q => String(q.quest_id) === String(questId)
+    );
+
+    if (!qObj) {
+        return showUiAlert(
+            "❌ 오류",
+            "의뢰 정보를 찾을 수 없습니다.",
+            "renderStudentQuestBoard()"
+        );
+    }
+
     const safeSubmissions = submissionsData || [];
-    const existingSub = safeSubmissions.find(s => String(s.quest_id) === String(questId) && String(s.student_name) === currentStudent.name);
 
-    if (existingSub && existingSub.status === '승인완료') {
-        if (qObj && qObj.repeat_cycle !== '1회성' && existingSub.submitted_at) {
-            const subDate = new Date(existingSub.submitted_at);
-            const today = new Date();
-            let isSameCycle = false;
-            if (qObj.repeat_cycle === '일일반복') isSameCycle = getKSTDateString(subDate) === getKSTDateString(today);
-            else if (qObj.repeat_cycle === '월반복') isSameCycle = subDate.getMonth() === today.getMonth() && subDate.getFullYear() === today.getFullYear();
-            else isSameCycle = true;
+    const existingSub = safeSubmissions.find(
+        s =>
+            s &&
+            String(s.quest_id) === String(questId) &&
+            String(s.student_name) === currentStudent.name
+    );
 
-            if (isSameCycle) {
-                return showUiAlert("⚠️ 완료된 의뢰", "이번 주기에 이미 완료하여 보상을 수령한 의뢰입니다.", "renderStudentQuestBoard()");
-            }
-        } else {
-            return showUiAlert("⚠️ 완료된 의뢰", "이미 완료하여 보상을 수령한 의뢰입니다.", "renderStudentQuestBoard()");
+    if (
+        existingSub &&
+        existingSub.status === '승인완료' &&
+        existingSub.submitted_at
+    ) {
+        const oldCycle = getQuestRewardCycleKey(
+            qObj,
+            new Date(existingSub.submitted_at)
+        );
+
+        const currentCycle = getQuestRewardCycleKey(
+            qObj,
+            new Date()
+        );
+
+        if (oldCycle === currentCycle) {
+            return showUiAlert(
+                "⚠️ 완료된 의뢰",
+                qObj.repeat_cycle === '1회성'
+                    ? "이미 완료하여 보상을 수령한 의뢰입니다."
+                    : "이번 주기에 이미 완료하여 보상을 수령한 의뢰입니다.",
+                "renderStudentQuestBoard()"
+            );
         }
     }
 
     let answerText = "일일 퀘스트 자동 완수";
 
-    // 💡 텍스트가 필수인 의뢰라면 화면에서 작성한 글을 긁어옵니다.
     if (isRequireText) {
-        answerText = document.getElementById('studentQAnswer').value.trim();
+        answerText =
+            document.getElementById('studentQAnswer').value.trim();
+
         if (!answerText) {
-            return showUiAlert("⚠️ 알림", "내용을 작성해주세요!", "");
+            return showUiAlert(
+                "⚠️ 알림",
+                "내용을 작성해주세요!",
+                ""
+            );
         }
     }
 
     showGlobalLoading("💰 의뢰 완수 및 보상 수령 중...");
 
-    currentStudent.game_money = (Number(currentStudent.game_money) || 0) + Number(rewardGold);
-    currentStudent.bonus_points = (Number(currentStudent.bonus_points) || 0) + Number(rewardPoint);
-    currentStudent.exp = (Number(currentStudent.exp) || 0) + Number(rewardExp);
-    currentStudent.quest_count = (Number(currentStudent.quest_count) || 0) + 1;
+    const submittedAt = new Date().toISOString();
 
-    // 레벨업 수동 체크
-    const expMax = Number(sysConfig.exp_max) || 200;
-    const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
-    let leveledUp = false;
-    while (currentStudent.exp >= expMax) {
-        currentStudent.exp -= expMax;
-        currentStudent.level = (Number(currentStudent.level) || 1) + 1;
-        currentStudent.level_points = (Number(currentStudent.level_points) || 0) + pointsPerLevel;
-        leveledUp = true;
-    }
+    try {
+        const rewardTx = await applyQuestRewardAtomic(
+            currentStudent.name,
+            qObj,
+            rewardGold,
+            rewardPoint,
+            rewardExp,
+            true,
+            new Date(submittedAt)
+        );
 
-    renderDashboard();
+        // 이미 다른 탭에서 같은 주기 보상을 처리했더라도
+        // 제출 기록이 누락된 경우 복구할 수 있도록 제출물 저장은 수행
+        const newSub = {
+            quest_id: String(questId),
+            student_name: currentStudent.name,
+            status: '승인완료',
+            answer_text: answerText,
+            submitted_at: submittedAt
+        };
 
-    if (!window.submissionsData) window.submissionsData = [];
-    const newSub = {
-        quest_id: questId,
-        student_name: currentStudent.name,
-        status: '승인완료',
-        answer_text: answerText,
-        submitted_at: new Date().toISOString()
-    };
+        await saveSubmissionRecordAtomic(newSub);
 
-    const existingIdx = window.submissionsData.findIndex(s => String(s.quest_id) === String(questId) && String(s.student_name) === currentStudent.name);
-    if (existingIdx > -1) window.submissionsData[existingIdx] = newSub;
-    else window.submissionsData.push(newSub);
-
-    Promise.all([
-        updateFastFirebaseStudent(currentStudent),
-        fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/submissions.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(window.submissionsData)
-        })
-    ]).then(() => {
         hideGlobalLoading();
-        const gameCurrency = sysConfig.game_money_currency || '골드';
-        if (leveledUp) {
-            showUiAlert("🎊 의뢰 완수 & 레벨 업!!", "보상으로 <b>" + rewardGold + " " + gameCurrency + "</b>, <b>" + rewardPoint + " pt</b>, <b>" + rewardExp + " EXP</b>를 획득했습니다!<br><br>레벨이 <b>" + currentStudent.level + "</b>(으)로 올랐습니다!", "openStudentQuestBoard()");
-        } else {
-            showUiAlert("🎉 의뢰 완수!", "보상으로 <b>" + rewardGold + " " + gameCurrency + "</b>, <b>" + rewardPoint + " pt</b>, <b>" + rewardExp + " EXP</b>를 즉시 획득했습니다.", "openStudentQuestBoard()");
+        renderDashboard();
+
+        const gameCurrency =
+            sysConfig.game_money_currency || '골드';
+
+        if (!rewardTx.committed) {
+            showUiAlert(
+                "⚠️ 완료된 의뢰",
+                "이번 주기에 이미 보상을 수령한 의뢰입니다.",
+                "openStudentQuestBoard()"
+            );
+
+            return;
         }
-    }).catch(err => {
+
+        if (rewardTx.result.leveledUp) {
+            showUiAlert(
+                "🎊 의뢰 완수 & 레벨 업!!",
+                "보상으로 <b>" + rewardGold + " " + gameCurrency + "</b>, <b>" +
+                rewardPoint + " pt</b>, <b>" + rewardExp +
+                " EXP</b>를 획득했습니다!<br><br>레벨이 <b>" +
+                currentStudent.level + "</b>(으)로 올랐습니다!",
+                "openStudentQuestBoard()"
+            );
+        } else {
+            showUiAlert(
+                "🎉 의뢰 완수!",
+                "보상으로 <b>" + rewardGold + " " + gameCurrency + "</b>, <b>" +
+                rewardPoint + " pt</b>, <b>" + rewardExp +
+                " EXP</b>를 즉시 획득했습니다.",
+                "openStudentQuestBoard()"
+            );
+        }
+    } catch (err) {
         hideGlobalLoading();
-        showUiAlert("❌ 통신 오류", err);
-    });
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 통신 오류",
+            "의뢰 보상 처리 중 오류가 발생했습니다: " + err.message,
+            "openStudentQuestBoard()"
+        );
+    }
 }
 
 // 1. [학생/공통] 공지사항 게시판 열기 (리스트 형태)
