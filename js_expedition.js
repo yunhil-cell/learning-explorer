@@ -71,29 +71,95 @@ function adjustStat(key, amount) {
 }
 
 async function saveStats() {
-    currentStudent.hp_points = tempStats.hp;
-    currentStudent.atk_points = tempStats.atk;
-    currentStudent.def_points = tempStats.def;
-    currentStudent.luk_points = tempStats.luk;
+    const desiredStats = {
+        hp_points: Number(tempStats.hp) || 5,
+        atk_points: Number(tempStats.atk) || 5,
+        def_points: Number(tempStats.def) || 5,
+        luk_points: Number(tempStats.luk) || 5
+    };
 
     showGlobalLoading("📊 능력치 저장 중...");
 
-    const statPayload = {
-        hp_points: tempStats.hp,
-        atk_points: tempStats.atk,
-        def_points: tempStats.def,
-        luk_points: tempStats.luk
-    };
-
     try {
-        // 💡 [동시성 안전 패치] 스탯 필드만 독립 PATCH하여 데이터 손실 및 롤백 원천 차단
-        await patchFirebaseStudentFields(currentStudent.name, statPayload);
+        const tx = await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                const serverStats = {
+                    hp_points: Number(student.hp_points) || 5,
+                    atk_points: Number(student.atk_points) || 5,
+                    def_points: Number(student.def_points) || 5,
+                    luk_points: Number(student.luk_points) || 5
+                };
+
+                const statKeys = ['hp_points', 'atk_points', 'def_points', 'luk_points'];
+                const hasDecrease = statKeys.some(
+                    key => desiredStats[key] < serverStats[key]
+                );
+
+                if (hasDecrease) {
+                    return {
+                        abort: true,
+                        code: 'STALE_STATS'
+                    };
+                }
+
+                const maxStat = Number(sysConfig.max_stat_point) || 150;
+                const exceedsMax = statKeys.some(
+                    key => desiredStats[key] > maxStat
+                );
+
+                if (exceedsMax) {
+                    return {
+                        abort: true,
+                        code: 'STAT_MAX'
+                    };
+                }
+
+                const ppb = Number(sysConfig.point_per_book) || 4;
+                const totalAvailable =
+                    ((Number(student.reading_count) || 0) * ppb) +
+                    (Number(student.bonus_points) || 0) +
+                    (Number(student.level_points) || 0);
+
+                const usedPoints =
+                    Math.max(0, desiredStats.hp_points - 5) +
+                    Math.max(0, desiredStats.atk_points - 5) +
+                    Math.max(0, desiredStats.def_points - 5) +
+                    Math.max(0, desiredStats.luk_points - 5);
+
+                if (usedPoints > totalAvailable) {
+                    return {
+                        abort: true,
+                        code: 'NO_POINTS'
+                    };
+                }
+
+                Object.assign(student, desiredStats);
+
+                return {};
+            }
+        );
 
         hideGlobalLoading();
+
+        if (!tx.committed) {
+            const message = tx.result.code === 'STALE_STATS'
+                ? "다른 접속에서 능력치가 먼저 변경되었습니다.<br>최신 능력치를 다시 불러왔으니 다시 분배해주세요."
+                : "현재 보유 포인트 또는 능력치 상한을 초과하여 저장할 수 없습니다.";
+
+            showUiAlert(
+                "⚠️ 저장 불가",
+                message,
+                "openStatAllocation()"
+            );
+            return;
+        }
+
         showUiAlert("📊 저장 완료", "능력치가 성공적으로 저장되었습니다!", "renderDashboard()");
     } catch (err) {
         hideGlobalLoading();
-        showUiAlert("❌ 저장 오류", "능력치 저장 중 네트워크 오류가 발생했습니다: " + err, "renderDashboard()");
+        await syncFreshCurrentStudent(true);
+        showUiAlert("❌ 저장 오류", "능력치 저장 중 네트워크 오류가 발생했습니다: " + err.message, "renderDashboard()");
     }
 }
 
@@ -768,33 +834,73 @@ function promptBuySkin(skinId, skinName) {
     );
 }
 
-function processBuySkin(skinId, skinName) {
-    // 1. 획득한 스킨 목록 파싱
-    const rawSkins = String(currentStudent.unlocked_skins || "").replace(/!/g, '');
-    let mySkins = rawSkins ? rawSkins.split(',').map(x => x.trim()).filter(Boolean) : [];
+async function processBuySkin(skinId, skinName) {
+    showGlobalLoading("👗 스킨 해금 정보 저장 중...");
 
-    // 2. 중복이 아니면 목록에 새로 추가
-    if (!mySkins.includes(String(skinId))) {
-        mySkins.push(skinId);
+    try {
+        const tx = await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                const rawSkins = String(student.unlocked_skins || "").replace(/!/g, '');
+                const unlockedIds = rawSkins
+                    ? rawSkins.split(',').map(x => x.trim()).filter(Boolean)
+                    : [];
+
+                const normalizedSkinId = String(skinId);
+
+                if (unlockedIds.includes(normalizedSkinId)) {
+                    return {
+                        abort: true,
+                        code: 'ALREADY_OWNED'
+                    };
+                }
+
+                unlockedIds.push(normalizedSkinId);
+                student.unlocked_skins = "!" + unlockedIds.join(',');
+
+                return {};
+            }
+        );
+
+        hideGlobalLoading();
+
+        if (!tx.committed) {
+            showUiAlert(
+                "⚠️ 이미 해금됨",
+                "[" + skinName + "] 스킨은 이미 보유하고 있습니다.",
+                "openWardrobe()"
+            );
+            return;
+        }
+
+        const cost = sysConfig.skin_price || 500;
+        const currency = sysConfig.currency_name || '티';
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "상점 구매",
+            content: `외형 해금 ➔ [${skinName}] 구매 (${cost}${currency} 소모)`
+        });
+
+        openWardrobe();
+
+        showUiAlert(
+            "🎉 해금 완료!",
+            "[<b style=\"color:var(--Highlight);\">" + skinName + "</b>] 스킨을 획득했습니다!<br>이제 클릭하여 장착할 수 있습니다.",
+            ""
+        );
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 저장 오류",
+            "스킨 해금 정보를 저장하지 못했습니다: " + err.message,
+            "openWardrobe()"
+        );
     }
-    currentStudent.unlocked_skins = "!" + mySkins.join(',');
-
-    // 📝 [Firebase 스킨 구매 로그 전송]
-    const cost = sysConfig.skin_price || 500;
-    const currency = sysConfig.currency_name || '티';
-    pushFirebaseLog('common', {
-        time: new Date().toISOString(),
-        name: currentStudent.name,
-        category: "상점 구매",
-        content: `외형 해금 ➔ [${skinName}] 구매 (${cost}${currency} 소모)`
-    });
-
-    // 3. 옷장 새로고침 (방금 산 스킨의 자물쇠가 즉시 풀림!)
-    openWardrobe();
-
-    // 4. 구매 성공 알림
-    showUiAlert("🎉 해금 완료!", "[<b style=\"color:var(--Highlight);\">" + skinName + "</b>] 스킨을 획득했습니다!<br>이제 클릭하여 장착할 수 있습니다.", "");
-    updateFastFirebaseStudent(currentStudent);
 }
 
 // ==========================================

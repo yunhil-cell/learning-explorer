@@ -2865,6 +2865,7 @@ function buyShopItem(studentName, itemName, cost) {
 }
 
 // 💡 [신규] 특정 학생 1명만 핀포인트로 독립 방에 동기화
+// 💡 특정 학생 1명: students 시트의 전체 컬럼을 Firebase 이름 키에 강제 반영
 function syncStudentToFirebase(studentName) {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData/students";
 
@@ -2884,9 +2885,11 @@ function syncStudentToFirebase(studentName) {
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][nameIdx]).trim() === String(studentName).trim()) {
         targetStudent = {};
-        headers.forEach(function(h, idx) { targetStudent[h] = data[i][idx]; });
 
-        // students 시트의 실제 학생 순번
+        headers.forEach(function(h, idx) {
+          if (h) targetStudent[h] = data[i][idx];
+        });
+
         targetOrder = i;
         break;
       }
@@ -2898,45 +2901,35 @@ function syncStudentToFirebase(studentName) {
     var sName = encodeURIComponent(cleanName);
     var studentUrl = baseUrl + "/" + sName + ".json";
 
-    // Firebase에 이미 존재하는 학생인지 확인
-    var existingRes = UrlFetchApp.fetch(studentUrl, {
+    targetStudent.name = cleanName;
+    targetStudent.sheet_order = targetOrder;
+
+    // 🛡️ 학생 루트 전체 PUT이 아니라 해당 학생 이름 키에 시트 컬럼 전체 PATCH
+    // 시트에서 직접 수정한 독서록/골드/스탯/리셋값 등을 강제로 반영
+    // 시트에 없는 Firebase 전용 필드는 보존
+    var response = UrlFetchApp.fetch(studentUrl, {
+      method: "PATCH",
+      contentType: "application/json",
+      payload: JSON.stringify(targetStudent),
       muteHttpExceptions: true
     });
 
-    var existingData = JSON.parse(existingRes.getContentText());
+    var status = response.getResponseCode();
 
-    if (existingData && existingData.name) {
-      // 🛡️ 기존 학생은 플레이 데이터 전체를 덮어쓰지 않고 순서만 반영
-      UrlFetchApp.fetch(studentUrl, {
-        method: "PATCH",
-        contentType: "application/json",
-        payload: JSON.stringify({
-          sheet_order: targetOrder
-        })
-      });
-
-      Logger.log("✅ [" + cleanName + "] 기존 학생 sheet_order 안전 동기화 완료");
-    } else {
-      // Firebase에 없는 신규 학생만 시트 데이터로 최초 생성
-      targetStudent.name = cleanName;
-      targetStudent.sheet_order = targetOrder;
-
-      UrlFetchApp.fetch(studentUrl, {
-        method: "PUT",
-        contentType: "application/json",
-        payload: JSON.stringify(targetStudent)
-      });
-
-      Logger.log("✅ [" + cleanName + "] 신규 학생 Firebase 최초 생성 완료");
+    if (status < 200 || status >= 300) {
+      return "Error: Firebase 동기화 실패 HTTP " + status;
     }
 
+    Logger.log("✅ [" + cleanName + "] students 시트 전체 컬럼 Firebase 강제 동기화 완료");
     return "Success";
   } catch (e) {
     return "Error: " + e.toString();
   }
 }
 
-// 💡 [마스터 동기화: 시트 ➔ 파이어베이스] 기획 데이터 + 신규 학생만 안전 반영
+// 💡 [교사용 마스터 동기화: 시트 ➔ 파이어베이스]
+// 기획 데이터 + students 시트의 모든 학생 컬럼을 각 학생 이름 키에 강제 반영
+// 학생 플레이 중 자동 호출 금지. 교사가 의도적으로 시트 수정 후 수동 실행하는 함수
 function syncToFirebase() {
   var baseUrl = "https://learning-explorer-default-rtdb.firebaseio.com/gameData";
   
@@ -2988,8 +2981,8 @@ function syncToFirebase() {
       Logger.log("⚠️ 주간 초기화 기준일 확인 실패: " + resetErr.toString());
     }
 
-    // 3. 시트가 원본인 기획 데이터만 Firebase에 반영
-    // 학생 플레이 데이터, 퀘스트/제출물/공지/로그/월드보스 실시간 상태는 제외
+    // 3. 시트가 원본인 기획 데이터 Firebase 반영
+    // 퀘스트/제출물/공지/로그/월드보스 실시간 상태는 제외
     var planningPayload = {
       system: fullData.system,
       skills: fullData.skills || [],
@@ -3011,36 +3004,11 @@ function syncToFirebase() {
       payload: JSON.stringify(planningPayload)
     });
 
-    // 4. 현재 Firebase 학생 목록 확인
-    var fbStudentsRes = UrlFetchApp.fetch(
-      baseUrl + "/students.json",
-      {
-        muteHttpExceptions: true
-      }
-    );
-
-    var rawFbStudents = JSON.parse(fbStudentsRes.getContentText()) || {};
-    var existingStudentsByName = {};
-
-    if (Array.isArray(rawFbStudents)) {
-      rawFbStudents.forEach(function(student) {
-        if (student && student.name) {
-          existingStudentsByName[String(student.name).trim()] = student;
-        }
-      });
-    } else {
-      Object.keys(rawFbStudents).forEach(function(key) {
-        var student = rawFbStudents[key];
-
-        if (student && student.name) {
-          existingStudentsByName[String(student.name).trim()] = student;
-        }
-      });
-    }
-
-    // 5. 기존 학생은 sheet_order만 갱신하고,
-    // Firebase에 존재하지 않는 신규 학생만 최초 생성
+    // 4. students 시트의 각 학생 전체 컬럼을
+    // 반드시 /students/{학생이름} 개별 방에 PATCH
+    // /students.json 전체 PUT은 절대 사용하지 않음
     var studentRequests = [];
+    var studentRequestNames = [];
 
     (fullData.students || []).forEach(function(student, index) {
       if (!student || !student.name) return;
@@ -3049,37 +3017,42 @@ function syncToFirebase() {
       var encodedName = encodeURIComponent(studentName);
       var sheetOrder = Number(student.sheet_order) || (index + 1);
 
-      if (existingStudentsByName[studentName]) {
-        studentRequests.push({
-          url: baseUrl + "/students/" + encodedName + ".json",
-          method: "PATCH",
-          contentType: "application/json",
-          payload: JSON.stringify({
-            sheet_order: sheetOrder
-          }),
-          muteHttpExceptions: true
-        });
-      } else {
-        var newStudent = Object.assign({}, student, {
-          name: studentName,
-          sheet_order: sheetOrder
-        });
+      var studentPayload = Object.assign({}, student, {
+        name: studentName,
+        sheet_order: sheetOrder
+      });
 
-        studentRequests.push({
-          url: baseUrl + "/students/" + encodedName + ".json",
-          method: "PUT",
-          contentType: "application/json",
-          payload: JSON.stringify(newStudent),
-          muteHttpExceptions: true
-        });
-      }
+      studentRequests.push({
+        url: baseUrl + "/students/" + encodedName + ".json",
+        method: "PATCH",
+        contentType: "application/json",
+        payload: JSON.stringify(studentPayload),
+        muteHttpExceptions: true
+      });
+
+      studentRequestNames.push(studentName);
     });
 
     if (studentRequests.length > 0) {
-      UrlFetchApp.fetchAll(studentRequests);
+      var responses = UrlFetchApp.fetchAll(studentRequests);
+      var failedStudents = [];
+
+      responses.forEach(function(response, index) {
+        var status = response.getResponseCode();
+
+        if (status < 200 || status >= 300) {
+          failedStudents.push(studentRequestNames[index] || "알 수 없음");
+        }
+      });
+
+      if (failedStudents.length > 0) {
+        throw new Error(
+          "학생 Firebase 반영 실패: " + failedStudents.join(", ")
+        );
+      }
     }
 
-    Logger.log("🎉 [시트 ➔ 파이어베이스] 기획 데이터, 신규 학생, 학생 순서 안전 동기화 완료!");
+    Logger.log("🎉 [시트 ➔ 파이어베이스] 기획 데이터 + students 시트 전체 학생 강제 동기화 완료!");
   } catch (e) {
     Logger.log("❌ 동기화 중 오류 발생: " + e.toString());
   }
@@ -3095,14 +3068,30 @@ function syncFromFirebase() {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 1. 학생(students) 탭 실시간 플레이 데이터 백업 (배열/객체 구조 무관 100% 이름 매핑)
+  // 1. 학생(students) 탭 실시간 플레이 데이터 백업 (이름 키 정본 우선)
   if (data.students) {
     var rawStudents = data.students;
-    var stList = Array.isArray(rawStudents) ? rawStudents : Object.values(rawStudents);
     var stMap = {};
-    stList.forEach(function(st) {
-      if (st && st.name) stMap[String(st.name).trim()] = st;
-    });
+
+    if (Array.isArray(rawStudents)) {
+      rawStudents.forEach(function(st) {
+        if (st && st.name) {
+          stMap[String(st.name).trim()] = st;
+        }
+      });
+    } else {
+      Object.keys(rawStudents).forEach(function(key) {
+        var st = rawStudents[key];
+        if (!st || !st.name) return;
+
+        var studentName = String(st.name).trim();
+        var isCanonicalNameKey = String(key).trim() === studentName;
+
+        if (isCanonicalNameKey || !stMap[studentName]) {
+          stMap[studentName] = st;
+        }
+      });
+    }
 
     var stSheet = ss.getSheetByName("students");
     if (stSheet) {

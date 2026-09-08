@@ -889,28 +889,29 @@ function initGameData(data) {
     // 💡 [필수 호출] 매주 월요일 자정 주간 횟수 자동 초기화 검사 및 실행
     checkAndPerformWeeklyReset(data);
 
-    // 💡 학생 개별 방 객체(Object Map)를 안전 변환 + [중복 제거(Deduplication)] + 시트 행 순서 정렬
+    // 💡 학생 개별 방 객체(Object Map)를 안전 변환 + 이름 키 정본 우선 + 시트 행 순서 정렬
     let studentsArray = [];
     if (data.students) {
-        const rawList = Array.isArray(data.students) ? data.students : Object.values(data.students);
         const uniqueStudentMap = {};
 
-        // 동일한 이름이 있으면 최신 데이터(독서록/레벨/스탯이 더 높은 쪽)를 우선 유지하여 중복 완전 제거
-        rawList.forEach(s => {
-            if (!s || !s.name || String(s.name).trim() === "") return;
-            const sName = String(s.name).trim();
-            if (!uniqueStudentMap[sName]) {
+        if (Array.isArray(data.students)) {
+            data.students.forEach(s => {
+                if (!s || !s.name || String(s.name).trim() === "") return;
+                const sName = String(s.name).trim();
                 uniqueStudentMap[sName] = s;
-            } else {
-                // 이미 존재한다면 경험치/독서록/스탯 합계가 더 높은 최신 레코드로 병합
-                const existing = uniqueStudentMap[sName];
-                const existingScore = (Number(existing.level) || 1) * 1000 + (Number(existing.reading_count) || 0);
-                const newScore = (Number(s.level) || 1) * 1000 + (Number(s.reading_count) || 0);
-                if (newScore >= existingScore) {
+            });
+        } else {
+            Object.entries(data.students).forEach(([key, s]) => {
+                if (!s || !s.name || String(s.name).trim() === "") return;
+
+                const sName = String(s.name).trim();
+                const isCanonicalNameKey = String(key).trim() === sName;
+
+                if (isCanonicalNameKey || !uniqueStudentMap[sName]) {
                     uniqueStudentMap[sName] = s;
                 }
-            }
-        });
+            });
+        }
 
         studentsArray = Object.values(uniqueStudentMap);
         studentsArray.sort((a, b) => (Number(a.sheet_order) || 999) - (Number(b.sheet_order) || 999));
@@ -1425,23 +1426,8 @@ function renderDashboard() {
     };
     const displayBlessing = blessingMap[s.blessing] || s.blessing;
 
-    // 💡 [수정] 기본 경험치 200 통일 및 로그인/대시보드 진입 시 자동 레벨업 검증
+    // 💡 경험치/레벨은 보상 지급 트랜잭션에서만 확정하고, 화면 렌더링 중에는 데이터를 수정하지 않음
     const expMax = Number(sysConfig.exp_max) || 200;
-    const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
-    let autoLeveled = false;
-
-    while ((Number(s.exp) || 0) >= expMax) {
-        s.exp = (Number(s.exp) || 0) - expMax;
-        s.level = (Number(s.level) || 1) + 1;
-        s.level_points = (Number(s.level_points) || 0) + pointsPerLevel;
-        autoLeveled = true;
-    }
-
-    if (autoLeveled) {
-        updateFastFirebaseStudent(s);
-        console.log(`🎉 [자동 승급] ${s.name} 모험가가 Lv.${s.level}(으)로 레벨업되었습니다.`);
-    }
-
     const expPercent = Math.min(100, ((Number(s.exp) || 0) / expMax) * 100);
 
     const remainStats = totalPoints + (Number(s.level_points) || 0) - used;

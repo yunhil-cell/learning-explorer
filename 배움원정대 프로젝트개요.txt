@@ -47,7 +47,7 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 
 ## 5. 서버와 프론트 역할 분리 및 실시간 데이터 처리
 가. `index.html` 및 모듈화된 프론트엔드 스크립트(`js_core`, `js_expedition`, `js_shop`, `js_battle`, `js_admin`)는 화면 표시, 전투 연출, 클라이언트 상태 관리, REST API 기반 Firebase 통신, 사용자 조작 흐름을 담당합니다.
-나. Google Spreadsheet는 교사용 마스터 백업 및 기획 DB 역할을 담당하며, `syncToFirebase()`(마스터 시트 ➔ Firebase 100% 동기화)와 `syncFromFirebase()`(5분 주기 배치 백업)로 운영됩니다.
+나. Google Spreadsheet는 교사용 백업 및 기획 DB 역할을 담당합니다. `syncToFirebase()`는 시스템/스킬/유물/스킨/상점/용병/몬스터 등 기획 데이터를 Firebase에 반영하고, 기존 학생은 `sheet_order`만 갱신하며 신규 학생만 최초 생성합니다. `syncFromFirebase()`는 Firebase의 학생 플레이 데이터와 웹 작성 데이터를 Google Spreadsheet로 백업합니다.
 다. 학생 모험 데이터는 Firebase Realtime Database 개별 학생 방(`students/{name}`)에 즉각 반영(`PUT`/`PATCH`)되어 딜레이 없는 플레이 경험을 보장합니다.
 라. 재화 차감, 보상 지급, 인벤토리 소모, 주간 횟수 차감은 전역 로딩 오버레이(`showGlobalLoading`)를 통해 조작 중복을 방지하며, 필요 시 시트 기준 상한선 검증 및 개별 필드 안전 갱신(`patchFirebaseStudentFields`)을 거쳐 어뷰징과 동시 접속 롤백을 차단합니다.
 
@@ -73,7 +73,7 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 ## 4. 실행 환경
 가. GitHub Pages(프론트엔드 정적 호스팅) + Firebase Realtime Database(실시간 NoSQL DB) + Google Apps Script / Sheets(마스터 백업 및 교사용 기획 DB) 기반 3계층 하이브리드 아키텍처
 나. 프론트엔드는 순수 JavaScript REST API(`fetch` 기반 `PUT`/`POST`/`GET`)로 Firebase와 직접 통신하여 `google.script.run` 의존성 없이 초고속 실시간 데이터 갱신 및 로그 수집을 수행
-다. Google Spreadsheet는 교사용 마스터 데이터베이스로 동작하며, `syncToFirebase()`(시트 데이터 100% Firebase 반영)와 `syncFromFirebase()`(5분 주기 Firebase ➔ 시트 6개 탭 완전 백업)를 통해 유기적으로 동기화
+다. Google Spreadsheet는 학생 플레이 데이터의 백업 및 기획 데이터 관리 용도로 동작하며, `syncToFirebase()`는 기획 데이터와 신규 학생/학생 순서만 Firebase에 안전 반영하고 `syncFromFirebase()`는 Firebase의 최신 플레이 데이터를 시트로 백업
 라. Google Drive 이미지는 썸네일 우회 URL(`lh3` 및 direct thumbnail)로 매핑하여 트래픽 및 권한 문제 방지
 마. 전역 클릭 차단 로딩 오버레이(`showGlobalLoading`)를 통해 비동기 통신 중 사용자 중복 조작을 물리적으로 차단
 바. 데이터 동기화 시 전체 학생 DB(`students.json`)의 일괄 `PUT`을 전면 금지하고, 개별 학생 1:1 독립 방 저장(`PUT`) 및 주간 횟수 필드 부분 갱신(`PATCH`)을 적용하여 동시 접속 롤백 및 `sheet_order` 순서 유실을 원천 차단
@@ -773,7 +773,7 @@ is_active
 라. `getMonsterSkillData()`: 몬스터 스킬 데이터 로드
 마. `getDungeonData()`: 던전 데이터 로드
 바. `getBossData()`: 보스 데이터 로드
-사. `syncToFirebase()`: 구글 시트에 작성된 54개 학생 컬럼 전체(스탯, 레벨, 보너스포인트, 골드, 독서록 등)와 기획 데이터를 Firebase에 100% 그대로 반영하는 마스터 동기화 함수 (분기 리셋 및 교사 수동 스탯 지급 완전 제어)
+사. `syncToFirebase()`: 구글 시트가 원본인 기획 데이터를 Firebase에 반영하고, 기존 학생은 `sheet_order`만 갱신하며 Firebase에 존재하지 않는 신규 학생만 전체 학생 객체로 최초 생성하는 안전 동기화 함수. 기존 학생의 스탯, 레벨, 골드, 독서록, 인벤토리 등 플레이 데이터는 절대 시트 값으로 덮어쓰지 않음
 아. `syncFromFirebase()`: Firebase의 최신 데이터를 구글 시트 6개 탭(`students`, `Quests`, `Submissions`, `Notices`, `ForgeLog`, `logs`)으로 일괄 백업하는 5분 주기 초고속 배치(Batch) 백업 함수
 
 ## 2. 학생 상태 저장

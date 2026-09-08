@@ -478,12 +478,14 @@ function promptExchange(studentName, currentMoney, maxExchange) {
     showUiPrompt("💱 환전 진행", studentName + " 학생에게 현실에서 지급할 <b>" + realCurrency + "</b> 개수를 적어주세요.<br><span style='font-size:0.8em; color:var(--TextLock);'>(최대 " + maxExchange + realCurrency + " 가능 / 1" + realCurrency + " 당 " + exchangeRate + gameCurrency + " 차감)</span>", "processExchange('" + studentName + "', val, " + maxExchange + ")", 3);
 }
 
-function processExchange(studentName, val, maxExchange) {
+async function processExchange(studentName, val, maxExchange) {
     const exchangeAmount = Number(val);
+
     if (isNaN(exchangeAmount) || exchangeAmount <= 0) {
         showUiAlert("❌ 오류", "올바른 숫자를 입력해주세요.", "openExchangeAdmin()");
         return;
     }
+
     if (exchangeAmount > maxExchange) {
         showUiAlert("❌ 한도 초과", "최대 " + maxExchange + "개까지만 환전 가능합니다.", "openExchangeAdmin()");
         return;
@@ -494,29 +496,62 @@ function processExchange(studentName, val, maxExchange) {
     const gameCurrency = sysConfig.game_money_currency || '골드';
     const realCurrency = sysConfig.currency_name || '티';
 
-    const targetStudent = window.allStudentsData.find(s => s.name === studentName);
+    showGlobalLoading("💱 환전 처리 중...");
 
-    // 💡 [신규 방어 로직] 환전 직전 한 번 더 잔액 확인!
-    const currentMoney = targetStudent ? (Number(targetStudent.game_money) || 0) : 0;
-    if (currentMoney < cost) {
-        showUiAlert("❌ 한도 초과", "환전할 잔액이 부족합니다.", "openExchangeAdmin()");
-        return;
-    }
+    try {
+        const tx = await runStudentAtomicTransaction(
+            studentName,
+            student => {
+                const currentMoney = Number(student.game_money) || 0;
 
-    if (targetStudent) {
-        targetStudent.game_money = currentMoney - cost;
-    }
+                if (currentMoney < cost) {
+                    return {
+                        abort: true,
+                        code: 'NO_MONEY'
+                    };
+                }
 
-    if (currentStudent && currentStudent.name === studentName) {
-        currentStudent.game_money = targetStudent.game_money;
-        if (document.getElementById('detailModal').style.display === 'flex') {
+                student.game_money = currentMoney - cost;
+
+                return {
+                    remainingMoney: student.game_money
+                };
+            }
+        );
+
+        hideGlobalLoading();
+
+        if (!tx.committed) {
+            showUiAlert(
+                "❌ 환전 실패",
+                "다른 접속에서 재화가 사용되어 현재 환전할 잔액이 부족합니다.",
+                "openExchangeAdmin()"
+            );
+            return;
+        }
+
+        if (
+            currentStudent &&
+            currentStudent.name === studentName &&
+            document.getElementById('detailModal').style.display === 'flex'
+        ) {
             renderDashboard();
         }
+
+        showUiAlert(
+            "🎉 환전 완료",
+            studentName + " 학생의 " + cost + gameCurrency + "를 차감했습니다.<br><br><b style='color:#10B981; font-size:1.2em;'>" + exchangeAmount + realCurrency + "</b>를 오프라인에서 지급해주세요!",
+            "openExchangeAdmin()"
+        );
+    } catch (err) {
+        hideGlobalLoading();
+
+        showUiAlert(
+            "❌ 환전 오류",
+            "환전 정보를 저장하지 못했습니다: " + err.message,
+            "openExchangeAdmin()"
+        );
     }
-
-    showUiAlert("🎉 환전 완료", studentName + " 학생의 " + cost + gameCurrency + "를 차감했습니다.<br><br><b style='color:#10B981; font-size:1.2em;'>" + exchangeAmount + realCurrency + "</b>를 오프라인에서 지급해주세요!", "openExchangeAdmin()");
-
-    patchFirebaseStudentFields(studentName, { game_money: targetStudent.game_money });
 }
 
 // 💡 2. 교사 모드 토글 (안내 문구 변경)
@@ -793,14 +828,57 @@ function createNewQuestAction() {
     btn.disabled = true;
     btn.style.background = "#555";
 
+    const newQuest = {
+        quest_id: 'Q' + new Date().getTime(),
+        title: title,
+        description: desc,
+        require_text: req,
+        reward_gold: gold,
+        reward_exp: exp,
+        reward_point: point,
+        is_active: true,
+        is_auto_approve: isAuto,
+        repeat_cycle: repeatCycle
+    };
+
+    runFirebasePathAtomicTransaction(
+        'https://learning-explorer-default-rtdb.firebaseio.com/gameData/quests.json',
+        currentData => {
+            const list = firebaseCollectionToArray(currentData);
+            list.push(newQuest);
+
+            return {
+                data: list
+            };
+        }
+    ).then(tx => {
+        window.questsData = firebaseCollectionToArray(tx.data);
+
+        showUiAlert(
+            "🎉 등록 완료!",
+            "새로운 의뢰가 길드 게시판에 등록되었습니다.",
+            "openQuestAdmin()"
+        );
+    }).catch(err => {
+        btn.disabled = false;
+        btn.innerText = "🚀 새로운 의뢰 등록하기";
+        btn.style.background = "#8B5CF6";
+
+        showUiAlert(
+            "❌ 등록 실패",
+            err.message || err,
+            ""
+        );
+    });
+}
+
 // 💡 퀘스트 활성화/마감 토글
 async function toggleQuestStatus(questId, isActive) {
     try {
         const tx = await runFirebasePathAtomicTransaction(
             'https://learning-explorer-default-rtdb.firebaseio.com/gameData/quests.json',
             currentData => {
-                const list =
-                    firebaseCollectionToArray(currentData);
+                const list = firebaseCollectionToArray(currentData);
 
                 const q = list.find(
                     x =>
@@ -831,8 +909,7 @@ async function toggleQuestStatus(questId, isActive) {
             );
         }
 
-        window.questsData =
-            firebaseCollectionToArray(tx.data);
+        window.questsData = firebaseCollectionToArray(tx.data);
 
         renderQuestAdmin('list');
     } catch (err) {
@@ -842,21 +919,6 @@ async function toggleQuestStatus(questId, isActive) {
             "openQuestAdmin()"
         );
     }
-}
-}
-
-// 💡 퀘스트 활성화/마감 토글
-function toggleQuestStatus(questId, isActive) {
-    const q = questsData.find(x => String(x.quest_id) === String(questId));
-    if (q) q.is_active = isActive;
-
-    fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/quests.json', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(window.questsData)
-    }).then(() => {
-        renderQuestAdmin('list');
-    });
 }
 
 // 💡 학생 제출물 승인/취소 (승인 시 보상 지급 로직 포함)

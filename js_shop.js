@@ -172,6 +172,85 @@ function openSkillShop() {
         '<button class="btn-main" style="background:var(--TextSub);" onclick="renderDashboard()">돌아가기</button>';
 }
 
+async function promptDrawSkills(isReroll) {
+    if (isReroll) {
+        drawSkills(true);
+        return;
+    }
+
+    const cost = Number(sysConfig.skill_price) || 50;
+    const gameCurrency = sysConfig.game_money_currency || '골드';
+
+    showGlobalLoading("📖 스킬 뽑기 비용 확인 중...");
+
+    try {
+        const tx = await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                const rawSkills = String(student.unlocked_skills || "").replace(/!/g, '');
+                const unlockedIds = rawSkills
+                    ? rawSkills.split(',').map(x => x.trim()).filter(Boolean)
+                    : [];
+
+                const hasUnowned = (skillsData || []).some(
+                    sk => sk && sk.skill_id && !unlockedIds.includes(String(sk.skill_id))
+                );
+
+                if (!hasUnowned) {
+                    return {
+                        abort: true,
+                        code: 'ALL_OWNED'
+                    };
+                }
+
+                const currentMoney = Number(student.game_money) || 0;
+
+                if (currentMoney < cost) {
+                    return {
+                        abort: true,
+                        code: 'NO_MONEY'
+                    };
+                }
+
+                student.game_money = currentMoney - cost;
+
+                return {};
+            }
+        );
+
+        hideGlobalLoading();
+
+        if (!tx.committed) {
+            if (tx.result.code === 'ALL_OWNED') {
+                showUiAlert(
+                    "✨ 마스터!",
+                    "더 이상 모을 스킬이 없습니다.<br>재화는 차감되지 않았습니다.",
+                    "renderDashboard()"
+                );
+            } else {
+                showUiAlert(
+                    "⚠️ 자금 부족",
+                    "현재 보유 재화가 부족합니다.<br><span style='font-size:0.9em; color:#aaa;'>(필요: " + cost + gameCurrency + ")</span>",
+                    "renderDashboard()"
+                );
+            }
+            return;
+        }
+
+        drawSkills(false);
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 뽑기 오류",
+            "스킬 뽑기 비용을 저장하지 못했습니다: " + err.message,
+            "renderDashboard()"
+        );
+    }
+}
+
 async function processDrawMercenary() {
     const body = document.getElementById('modalBody');
     body.innerHTML = '<h2 style="color:var(--Highlight);">🏰 용병 계약 작성 중...</h2><div style="margin:50px 0;"><span class="anim-pot">📜</span></div><p style="color:var(--TextSub);">미지의 용병이 계약서에 서명하고 있습니다!</p>';
@@ -458,24 +537,61 @@ function selectSkill(skillId, skillName) {
     showUiConfirm("✨ 지식 획득", "[<b style=\"color:var(--Highlight);\">" + skillName + "</b>] 스킬을 획득하시겠습니까?", "processSelectSkill('" + skillId + "', '" + skillName + "')");
 }
 
-function processSelectSkill(skillId, skillName) {
-    // 💡 [오류 수정] 모든 ! 제거 정규식 적용
-    const rawSkills = String(currentStudent.unlocked_skills || "").replace(/!/g, '');
-    let myUnlocked = rawSkills ? rawSkills.split(',').map(x => x.trim()).filter(Boolean) : [];
-    if (!myUnlocked.includes(String(skillId))) myUnlocked.push(skillId);
-    currentStudent.unlocked_skills = "!" + myUnlocked.join(',');
+async function processSelectSkill(skillId, skillName) {
+    showGlobalLoading("✨ 스킬 획득 정보 저장 중...");
 
-    // 📝 [Firebase 스킬 뽑기 로그 전송]
-    const cost = Number(sysConfig.skill_price) || 50;
-    pushFirebaseLog('common', {
-        time: new Date().toISOString(),
-        name: currentStudent.name,
-        category: "상점 구매",
-        content: `스킬 뽑기 ➔ [${skillName}] 획득 (${cost}골드 소모)`
-    });
+    try {
+        const tx = await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                const rawSkills = String(student.unlocked_skills || "").replace(/!/g, '');
+                const unlockedIds = rawSkills
+                    ? rawSkills.split(',').map(x => x.trim()).filter(Boolean)
+                    : [];
 
-    updateFastFirebaseStudent(currentStudent);
-    showUiAlert("🎉 획득 완료!", "[<b style=\"color:var(--Highlight);\">" + skillName + "</b>] 스킬을 얻었습니다!", "renderDashboard()");
+                const normalizedSkillId = String(skillId);
+                const wasAdded = !unlockedIds.includes(normalizedSkillId);
+
+                if (wasAdded) {
+                    unlockedIds.push(normalizedSkillId);
+                    student.unlocked_skills = "!" + unlockedIds.join(',');
+                }
+
+                return {
+                    wasAdded: wasAdded
+                };
+            }
+        );
+
+        const cost = Number(sysConfig.skill_price) || 50;
+
+        if (tx.result.wasAdded) {
+            pushFirebaseLog('common', {
+                time: new Date().toISOString(),
+                name: currentStudent.name,
+                category: "상점 구매",
+                content: `스킬 뽑기 ➔ [${skillName}] 획득 (${cost}골드 소모)`
+            });
+        }
+
+        hideGlobalLoading();
+
+        showUiAlert(
+            "🎉 획득 완료!",
+            "[<b style=\"color:var(--Highlight);\">" + skillName + "</b>] 스킬을 얻었습니다!",
+            "renderDashboard()"
+        );
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 저장 오류",
+            "스킬 획득 정보를 저장하지 못했습니다: " + err.message,
+            "renderDashboard()"
+        );
+    }
 }
 
 // ==========================================
@@ -493,25 +609,84 @@ function openRelicShop() {
         '<button class="btn-main" style="background:var(--TextSub);" onclick="renderDashboard()">돌아가기</button>';
 }
 
-function promptDrawRelic() {
-    // 💡 [연타 방지] 클릭 즉시 모달 내의 모든 버튼을 비활성화
+async function promptDrawRelic() {
     const btns = document.querySelectorAll('#modalBody .btn-main');
     btns.forEach(btn => btn.disabled = true);
 
     const cost = Number(sysConfig.relic_price) || 100;
     const gameCurrency = sysConfig.game_money_currency || '골드';
-    const currentMoney = Number(currentStudent.game_money) || 0;
 
-    if (currentMoney < cost) {
-        btns.forEach(btn => btn.disabled = false); // 실패 시 버튼 다시 활성화
-        showUiAlert("⚠️ 자금 부족", "소지한 재화가 부족합니다.<br><span style='font-size:0.9em; color:#aaa;'>(필요: " + cost + gameCurrency + " / 보유: " + currentMoney + gameCurrency + ")</span>", "");
-        return;
+    showGlobalLoading("🏺 유물 발굴 비용 확인 중...");
+
+    try {
+        const tx = await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                const rawRelics = String(student.unlocked_relics || "").replace(/!/g, '');
+                const unlockedIds = rawRelics
+                    ? rawRelics.split(',').map(x => x.trim()).filter(Boolean)
+                    : [];
+
+                const hasUnowned = (relicsData || []).some(
+                    relic => relic && relic.relic_id && !unlockedIds.includes(String(relic.relic_id))
+                );
+
+                if (!hasUnowned) {
+                    return {
+                        abort: true,
+                        code: 'ALL_OWNED'
+                    };
+                }
+
+                const currentMoney = Number(student.game_money) || 0;
+
+                if (currentMoney < cost) {
+                    return {
+                        abort: true,
+                        code: 'NO_MONEY'
+                    };
+                }
+
+                student.game_money = currentMoney - cost;
+
+                return {};
+            }
+        );
+
+        hideGlobalLoading();
+
+        if (!tx.committed) {
+            btns.forEach(btn => btn.disabled = false);
+
+            if (tx.result.code === 'ALL_OWNED') {
+                showUiAlert(
+                    "🏆 유물 마스터",
+                    "이미 모든 유물을 보유하고 있습니다.<br>재화는 차감되지 않았습니다.",
+                    "renderDashboard()"
+                );
+            } else {
+                showUiAlert(
+                    "⚠️ 자금 부족",
+                    "현재 보유 재화가 부족합니다.<br><span style='font-size:0.9em; color:#aaa;'>(필요: " + cost + gameCurrency + ")</span>",
+                    "renderDashboard()"
+                );
+            }
+            return;
+        }
+
+        drawRelic();
+    } catch (err) {
+        hideGlobalLoading();
+        btns.forEach(btn => btn.disabled = false);
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 발굴 오류",
+            "유물 발굴 비용을 저장하지 못했습니다: " + err.message,
+            "renderDashboard()"
+        );
     }
-
-    // 로컬 데이터 즉시 차감 및 화면 갱신
-    currentStudent.game_money = currentMoney - cost;
-    updateFastFirebaseStudent(currentStudent);
-    drawRelic();
 }
 
 function drawRelic() {
@@ -543,24 +718,61 @@ function selectRelic(relicId, relicName) {
     showUiConfirm("🏺 유물 획득", "[<b style=\"color:var(--Highlight);\">" + relicName + "</b>] 유물을 획득하시겠습니까?", "processSelectRelic('" + relicId + "', '" + relicName + "')");
 }
 
-function processSelectRelic(relicId, relicName) {
-    // 💡 [오류 수정] 모든 ! 제거 정규식 적용
-    const rawRelics = String(currentStudent.unlocked_relics || "").replace(/!/g, '');
-    let myRelics = rawRelics ? rawRelics.split(',').map(x => x.trim()).filter(Boolean) : [];
-    if (!myRelics.includes(String(relicId))) myRelics.push(relicId);
-    currentStudent.unlocked_relics = "!" + myRelics.join(',');
+async function processSelectRelic(relicId, relicName) {
+    showGlobalLoading("🏺 유물 획득 정보 저장 중...");
 
-    // 📝 [Firebase 유물 뽑기 로그 전송]
-    const cost = Number(sysConfig.relic_price) || 100;
-    pushFirebaseLog('common', {
-        time: new Date().toISOString(),
-        name: currentStudent.name,
-        category: "상점 구매",
-        content: `유물 뽑기 ➔ [${relicName}] 발굴 (${cost}골드 소모)`
-    });
+    try {
+        const tx = await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                const rawRelics = String(student.unlocked_relics || "").replace(/!/g, '');
+                const unlockedIds = rawRelics
+                    ? rawRelics.split(',').map(x => x.trim()).filter(Boolean)
+                    : [];
 
-    updateFastFirebaseStudent(currentStudent);
-    showUiAlert("🎉 발굴 완료!", "[<b style=\"color:var(--Highlight);\">" + relicName + "</b>] 유물을 얻었습니다!", "renderDashboard()");
+                const normalizedRelicId = String(relicId);
+                const wasAdded = !unlockedIds.includes(normalizedRelicId);
+
+                if (wasAdded) {
+                    unlockedIds.push(normalizedRelicId);
+                    student.unlocked_relics = "!" + unlockedIds.join(',');
+                }
+
+                return {
+                    wasAdded: wasAdded
+                };
+            }
+        );
+
+        const cost = Number(sysConfig.relic_price) || 100;
+
+        if (tx.result.wasAdded) {
+            pushFirebaseLog('common', {
+                time: new Date().toISOString(),
+                name: currentStudent.name,
+                category: "상점 구매",
+                content: `유물 뽑기 ➔ [${relicName}] 발굴 (${cost}골드 소모)`
+            });
+        }
+
+        hideGlobalLoading();
+
+        showUiAlert(
+            "🎉 발굴 완료!",
+            "[<b style=\"color:var(--Highlight);\">" + relicName + "</b>] 유물을 얻었습니다!",
+            "renderDashboard()"
+        );
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 저장 오류",
+            "유물 획득 정보를 저장하지 못했습니다: " + err.message,
+            "renderDashboard()"
+        );
+    }
 }
 
 // --- [복구] 스킬 리롤 처리 함수 ---
@@ -1047,7 +1259,7 @@ async function processUseItem(itemName, count = 1) {
     }
 }
 
-function processUseItem(itemName, count = 1) {
+function legacyProcessUseItemUnused(itemName, count = 1) {
     const useCount = Math.max(1, Number(count) || 1);
     const rawInv = String(currentStudent.inventory || "");
     let items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
@@ -1174,7 +1386,7 @@ function promptDrawMercenary() {
     processDrawMercenary();
 }
 
-function processDrawMercenary() {
+function legacyProcessDrawMercenaryUnused() {
     const body = document.getElementById('modalBody');
     body.innerHTML = '<h2 style="color:var(--Highlight);">🏰 용병 계약 작성 중...</h2><div style="margin:50px 0;"><span class="anim-pot">📜</span></div><p style="color:var(--TextSub);">미지의 용병이 계약서에 서명하고 있습니다!</p>';
 

@@ -323,7 +323,7 @@ function logBattle(message) {
 }
 
 // --- 4. 도망치기 ---
-function fleeBattle() {
+async function fleeBattle() {
     battleState.isAutoRunning = false;
     battleState.isFleeing = true;
     clearTimeout(battleState.turnTimer);
@@ -355,25 +355,46 @@ function fleeBattle() {
         return;
     }
 
-    let pTime = new Date().getTime();
-    currentStudent.last_defeat = pTime;
+    const pTime = new Date().getTime();
 
-    currentStudent.penalty_end_time = pTime + (2 * 60 * 60 * 1000);
-    currentStudent.flee_count = (Number(currentStudent.flee_count) || 0) + 1;
-    updateFastFirebaseStudent(currentStudent);
+    showGlobalLoading("🏃 후퇴 정보 저장 중...");
 
-    // 📝 [Firebase 사냥/보스전 도망 로그 전송]
-    pushFirebaseLog('common', {
-        time: new Date().toISOString(),
-        name: currentStudent.name,
-        category: battleState.isBoss ? "보스 도전" : "일반 사냥",
-        content: (battleState.monster ? battleState.monster.name : '몬스터') + " 전투 중 도망침 🏃 (2시간 패널티)"
-    });
+    try {
+        await runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                student.last_defeat = pTime;
+                student.penalty_end_time = pTime + (2 * 60 * 60 * 1000);
+                student.flee_count = (Number(student.flee_count) || 0) + 1;
 
-    if (battleState.isBoss) {
-        showUiAlert("🏃 보스전 이탈", "보스의 무시무시한 힘에 압도당해 도망쳤습니다!<br><br><span style='font-size:0.95em; color:#ff4d4d;'>(재정비를 위해 <b style='color:white;'>2시간 동안</b> 모든 사냥 및 보스전 진입이 금지됩니다.)</span>", "renderDashboard()");
-    } else {
-        showUiAlert("🏃 전략적 후퇴", "전투에서 안전하게 도망쳤습니다.<br><br><span style='font-size:0.95em; color:#ff4d4d;'>(재정비를 위해 <b style='color:white;'>2시간 동안</b> 모험을 떠날 수 없습니다.)</span>", "renderDashboard()");
+                return {};
+            }
+        );
+
+        hideGlobalLoading();
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: battleState.isBoss ? "보스 도전" : "일반 사냥",
+            content: (battleState.monster ? battleState.monster.name : '몬스터') + " 전투 중 도망침 🏃 (2시간 패널티)"
+        });
+
+        if (battleState.isBoss) {
+            showUiAlert("🏃 보스전 이탈", "보스의 무시무시한 힘에 압도당해 도망쳤습니다!<br><br><span style='font-size:0.95em; color:#ff4d4d;'>(재정비를 위해 <b style='color:white;'>2시간 동안</b> 모든 사냥 및 보스전 진입이 금지됩니다.)</span>", "renderDashboard()");
+        } else {
+            showUiAlert("🏃 전략적 후퇴", "전투에서 안전하게 도망쳤습니다.<br><br><span style='font-size:0.95em; color:#ff4d4d;'>(재정비를 위해 <b style='color:white;'>2시간 동안</b> 모험을 떠날 수 없습니다.)</span>", "renderDashboard()");
+        }
+    } catch (err) {
+        hideGlobalLoading();
+
+        await syncFreshCurrentStudent(true);
+
+        showUiAlert(
+            "❌ 저장 오류",
+            "후퇴 정보를 저장하지 못했습니다: " + err.message,
+            "renderDashboard()"
+        );
     }
 }
 
@@ -1228,19 +1249,41 @@ function showBattleResult(isWin) {
 
     if (!isWin) {
         const nowTime = new Date().getTime();
-        currentStudent.last_defeat = nowTime;
-        currentStudent.penalty_end_time = nowTime + (8 * 60 * 60 * 1000);
-        updateFastFirebaseStudent(currentStudent);
 
-        // 📝 [Firebase 사냥/보스전 패배 로그 전송]
-        pushFirebaseLog('common', {
-            time: new Date().toISOString(),
-            name: currentStudent.name,
-            category: battleState.isBoss ? "보스 도전" : "일반 사냥",
-            content: (battleState.monster ? battleState.monster.name : '몬스터') + "에게 패배 ☠️ (8시간 패널티)"
+        showGlobalLoading("☠️ 패배 정보 저장 중...");
+
+        runStudentAtomicTransaction(
+            currentStudent.name,
+            student => {
+                student.last_defeat = nowTime;
+                student.penalty_end_time = nowTime + (8 * 60 * 60 * 1000);
+
+                return {};
+            }
+        ).then(() => {
+            hideGlobalLoading();
+
+            // 📝 [Firebase 사냥/보스전 패배 로그 전송]
+            pushFirebaseLog('common', {
+                time: new Date().toISOString(),
+                name: currentStudent.name,
+                category: battleState.isBoss ? "보스 도전" : "일반 사냥",
+                content: (battleState.monster ? battleState.monster.name : '몬스터') + "에게 패배 ☠️ (8시간 패널티)"
+            });
+
+            showUiAlert("☠️ 전투 패배", "아쉽게도 쓰러지고 말았습니다...<br><br><span style='font-size:0.9em; color:#ff4d4d;'>(8시간 동안 전투에 진입할 수 없습니다)</span>", "document.getElementById('battleModal').style.display = 'none'; renderDashboard();");
+        }).catch(async err => {
+            hideGlobalLoading();
+
+            await syncFreshCurrentStudent(true);
+
+            showUiAlert(
+                "❌ 저장 오류",
+                "패배 정보를 저장하지 못했습니다: " + err.message,
+                "document.getElementById('battleModal').style.display = 'none'; renderDashboard();"
+            );
         });
 
-        showUiAlert("☠️ 전투 패배", "아쉽게도 쓰러지고 말았습니다...<br><br><span style='font-size:0.9em; color:#ff4d4d;'>(8시간 동안 전투에 진입할 수 없습니다)</span>", "document.getElementById('battleModal').style.display = 'none'; renderDashboard();");
         return;
     }
 
