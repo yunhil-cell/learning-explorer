@@ -159,7 +159,198 @@ async function processBuyItem(itemId) {
 // ==========================================
 // 🔮 스킬 상점 시스템 (UI 팝업 적용)
 // ==========================================
+// 뽑기 복구 기록은 Firebase 전용입니다. students 시트 컬럼을 추가하지 않습니다.
+let shopDrawBusy = false;
+const shopDrawViews = {};
+
+function getSavedShopDraw(student, kind) {
+    return student && student.draw_state && student.draw_state[kind] || null;
+}
+
+function shopDrawOwnedIds(student, kind) {
+    const field = kind === 'skill' ? 'unlocked_skills' : 'unlocked_relics';
+    return String(student[field] || '').replace(/!/g, '').split(',').map(x => x.trim()).filter(Boolean);
+}
+
+function shopDrawHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function shopDrawContext(kind, draw) {
+    return {
+        owner: String(currentStudent.name).trim(),
+        id: draw.id,
+        revision: Number(draw.revision) || 0
+    };
+}
+
+// 같은 화면의 중복 클릭은 차단하고, 다른 기기의 요청은 저장된 뽑기 ID로 검증합니다.
+async function runShopDrawAction(kind, action, itemId, context) {
+    if (shopDrawBusy || !currentStudent) return null;
+    const owner = String(currentStudent.name).trim();
+    if (context && context.owner !== owner) return null;
+    const previous = getSavedShopDraw(currentStudent, kind);
+    const previousId = previous ? previous.id : '';
+    const previousStatus = previous ? previous.status : '';
+    const idKey = kind === 'skill' ? 'skill_id' : 'relic_id';
+    const field = kind === 'skill' ? 'unlocked_skills' : 'unlocked_relics';
+    const catalog = kind === 'skill' ? skillsData : relicsData;
+    const requestId = window.crypto && window.crypto.randomUUID
+        ? window.crypto.randomUUID()
+        : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+    const createdAt = new Date().toISOString();
+    const cost = Number(kind === 'skill' ? sysConfig.skill_price : sysConfig.relic_price) || (kind === 'skill' ? 50 : 100);
+    // 충돌 재시도마다 무작위 결과를 다시 뽑지 않도록 순서는 요청당 한 번만 결정합니다.
+    const ordered = (catalog || []).filter(item => item && item[idKey]).slice();
+    for (let i = ordered.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+    }
+    shopDrawBusy = true;
+    showGlobalLoading('뽑기 정보를 저장하고 있습니다...');
+    try {
+        const tx = await runStudentAtomicTransaction(owner, student => {
+            const existing = getSavedShopDraw(student, kind);
+            const resume = () => ({ abort: true, draw: existing });
+            const owned = shopDrawOwnedIds(student, kind);
+            if (action === 'start') {
+                // 비용을 낸 미완료 뽑기가 있으면 재결제하지 않고 그대로 이어받습니다.
+                if (existing && (existing.status === 'pending' || existing.status === 'ready')) return resume();
+                if ((existing ? existing.id : '') !== previousId ||
+                    (existing ? existing.status : '') !== previousStatus) return resume();
+                if (!Number.isFinite(cost) || cost < 0) throw new Error('뽑기 가격 설정을 확인해주세요.');
+                const seen = new Set();
+                const choices = ordered.filter(item => {
+                    const id = String(item[idKey]);
+                    if (owned.includes(id) || seen.has(id)) return false;
+                    seen.add(id);
+                    return true;
+                }).slice(0, kind === 'skill' ? 3 : 1);
+                if (!choices.length) throw new Error('더 이상 모을 ' + (kind === 'skill' ? '스킬' : '유물') + '이 없습니다. 재화는 차감되지 않았습니다.');
+                const money = Number(student.game_money) || 0;
+                if (money < cost) throw new Error('보유 재화가 부족합니다. 재화는 차감되지 않았습니다.');
+                const draw = {
+                    id: requestId, status: kind === 'skill' ? 'pending' : 'ready',
+                    cost: cost, created_at: createdAt, choices: cloneStudentSyncData(choices),
+                    reroll_used: false, revision: 0
+                };
+                student.game_money = money - cost;
+                student.draw_state = Object.assign({}, student.draw_state || {}, { [kind]: draw });
+                if (kind === 'relic') {
+                    // 유물은 연출 전에 비용과 지급을 한 번에 확정합니다.
+                    draw.selected_id = String(choices[0][idKey]);
+                    student[field] = '!' + owned.concat(draw.selected_id).join(',');
+                    student.relic_pull_count = (Number(student.relic_pull_count) || 0) + 1;
+                }
+                return { draw: draw, event: 'start' };
+            }
+            if (!existing || !context || existing.id !== context.id) {
+                throw new Error('뽑기 상태가 변경되었습니다. 상점을 다시 열어 확인해주세요.');
+            }
+            // 완료된 요청의 재전송은 추가 지급/차감 없이 원래 결과를 돌려줍니다.
+            if (existing.status === 'completed' || existing.status === 'forfeited') return resume();
+            if ((Number(existing.revision) || 0) !== context.revision) return resume();
+            if (action === 'reroll' && kind === 'skill') {
+                if (existing.reroll_used) return resume();
+                const seen = new Set();
+                const choices = ordered.filter(item => {
+                    const id = String(item[idKey]);
+                    if (owned.includes(id) || seen.has(id)) return false;
+                    seen.add(id);
+                    return true;
+                }).slice(0, 3);
+                if (!choices.length) throw new Error('선택 가능한 스킬이 없습니다. 선생님께 확인해주세요.');
+                existing.choices = cloneStudentSyncData(choices);
+                existing.reroll_used = true;
+                existing.revision = context.revision + 1;
+            } else if (action === 'select' && kind === 'skill') {
+                const choice = (existing.choices || []).find(item => String(item.skill_id) === String(itemId));
+                if (!choice) throw new Error('저장된 후보에 없는 스킬입니다. 상점을 다시 열어주세요.');
+                if (owned.includes(String(itemId))) throw new Error('이미 보유한 스킬입니다. 다른 후보를 선택해주세요.');
+                student[field] = '!' + owned.concat(String(itemId)).join(',');
+                existing.selected_id = String(itemId);
+                existing.status = 'completed';
+            } else if (action === 'ack' && kind === 'relic') {
+                if (String(existing.selected_id) !== String(itemId)) throw new Error('저장된 유물과 선택한 유물이 다릅니다.');
+                existing.status = 'completed';
+            } else if (action === 'forfeit' && kind === 'skill') {
+                existing.status = 'forfeited';
+            } else {
+                throw new Error('올바르지 않은 뽑기 요청입니다.');
+            }
+            existing.updated_at = createdAt;
+            return { draw: existing, event: action };
+        });
+        const draw = getSavedShopDraw(tx.student, kind);
+        if (tx.committed && draw && tx.result.event) {
+            const picked = (draw.choices || []).find(item => String(item[idKey]) === String(draw.selected_id));
+            const currency = sysConfig.game_money_currency || '골드';
+            let content = '';
+            if (action === 'start' && kind === 'skill') content = `스킬 뽑기 시작 (${draw.cost}${currency} 소모, 선택 대기)`;
+            if (action === 'start' && kind === 'relic') content = `유물 뽑기 ➔ [${picked ? picked.name : draw.selected_id}] 발굴 (${draw.cost}${currency} 소모)`;
+            if (action === 'select') content = `스킬 뽑기 ➔ [${picked ? picked.name : draw.selected_id}] 획득 (결제한 뽑기 완료)`;
+            if (action === 'forfeit') content = '스킬 뽑기 포기 (기존 규칙에 따라 환불 없음)';
+            if (content) pushFirebaseLog('common', { time: createdAt, name: owner, category: '상점 구매', draw_id: draw.id, content: content });
+        }
+        if (!currentStudent || String(currentStudent.name).trim() !== owner) return null;
+        return draw;
+    } catch (err) {
+        console.error('뽑기 저장 확인 필요:', err);
+        if (currentStudent && String(currentStudent.name).trim() === owner) {
+            await syncFreshCurrentStudent(true);
+            showUiAlert('뽑기 확인', shopDrawHtml(err.message) + '<br>상점을 다시 열면 저장된 뽑기를 확인할 수 있습니다.', kind === 'skill' ? 'openSkillShop()' : 'openRelicShop()');
+        }
+        return null;
+    } finally {
+        shopDrawBusy = false;
+        hideGlobalLoading();
+    }
+}
+
+function showShopDrawOutcome(kind, draw) {
+    if (!draw) return;
+    if (draw.status === 'forfeited') {
+        showUiAlert('뽑기 종료', '포기한 뽑기입니다. 재화는 환불되지 않습니다.', 'renderDashboard()');
+        return;
+    }
+    const key = kind === 'skill' ? 'skill_id' : 'relic_id';
+    const picked = (draw.choices || []).find(item => String(item[key]) === String(draw.selected_id));
+    showUiAlert('획득 완료!', '[' + shopDrawHtml(picked ? picked.name : draw.selected_id) + '] 획득 정보가 저장되었습니다.', 'renderDashboard()');
+}
+
+function confirmShopDraw(kind, itemId, itemName, context) {
+    if (!context || !currentStudent || context.owner !== String(currentStudent.name).trim()) return;
+    showUiConfirm(kind === 'skill' ? '✨ 지식 획득' : '🏺 유물 획득',
+        '[' + shopDrawHtml(itemName) + '] ' + (kind === 'skill' ? '스킬을 획득하시겠습니까?' : '유물은 가방에 저장되었습니다. 확인하시겠습니까?'), '');
+    const buttons = document.getElementById('uiPopupButtons');
+    buttons.lastElementChild.onclick = function () {
+        this.disabled = true;
+        closeUiPopup();
+        if (kind === 'skill') processSelectSkill(itemId, itemName, context);
+        else processSelectRelic(itemId, itemName, context);
+    };
+}
+
+function promptForfeitSkill(context) {
+    if (!context || context.owner !== String(currentStudent.name).trim()) return;
+    showUiConfirm('스킬 뽑기 포기', '포기하면 이번 선택 기회가 사라지고 비용은 환불되지 않습니다.<br>나중에 고르려면 취소 후 창을 닫아주세요.', '');
+    document.getElementById('uiPopupButtons').lastElementChild.onclick = async function () {
+        this.disabled = true;
+        closeUiPopup();
+        const draw = await runShopDrawAction('skill', 'forfeit', '', context);
+        if (draw && draw.status === 'pending') drawSkills(false);
+        else if (draw) showShopDrawOutcome('skill', draw);
+    };
+}
+
 function openSkillShop() {
+    const pending = getSavedShopDraw(currentStudent, 'skill');
+    if (pending && pending.status === 'pending') {
+        drawSkills(false);
+        return;
+    }
     canReroll = true;
     const cost = Number(sysConfig.skill_price) || 50;
     const gameCurrency = sysConfig.game_money_currency || '골드'; // 💡 인게임 화폐 단위 로드
@@ -173,82 +364,11 @@ function openSkillShop() {
 }
 
 async function promptDrawSkills(isReroll) {
-    if (isReroll) {
-        drawSkills(true);
-        return;
-    }
-
-    const cost = Number(sysConfig.skill_price) || 50;
-    const gameCurrency = sysConfig.game_money_currency || '골드';
-
-    showGlobalLoading("📖 스킬 뽑기 비용 확인 중...");
-
-    try {
-        const tx = await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                const rawSkills = String(student.unlocked_skills || "").replace(/!/g, '');
-                const unlockedIds = rawSkills
-                    ? rawSkills.split(',').map(x => x.trim()).filter(Boolean)
-                    : [];
-
-                const hasUnowned = (skillsData || []).some(
-                    sk => sk && sk.skill_id && !unlockedIds.includes(String(sk.skill_id))
-                );
-
-                if (!hasUnowned) {
-                    return {
-                        abort: true,
-                        code: 'ALL_OWNED'
-                    };
-                }
-
-                const currentMoney = Number(student.game_money) || 0;
-
-                if (currentMoney < cost) {
-                    return {
-                        abort: true,
-                        code: 'NO_MONEY'
-                    };
-                }
-
-                student.game_money = currentMoney - cost;
-
-                return {};
-            }
-        );
-
-        hideGlobalLoading();
-
-        if (!tx.committed) {
-            if (tx.result.code === 'ALL_OWNED') {
-                showUiAlert(
-                    "✨ 마스터!",
-                    "더 이상 모을 스킬이 없습니다.<br>재화는 차감되지 않았습니다.",
-                    "renderDashboard()"
-                );
-            } else {
-                showUiAlert(
-                    "⚠️ 자금 부족",
-                    "현재 보유 재화가 부족합니다.<br><span style='font-size:0.9em; color:#aaa;'>(필요: " + cost + gameCurrency + ")</span>",
-                    "renderDashboard()"
-                );
-            }
-            return;
-        }
-
-        drawSkills(false);
-    } catch (err) {
-        hideGlobalLoading();
-
-        await syncFreshCurrentStudent(true);
-
-        showUiAlert(
-            "❌ 뽑기 오류",
-            "스킬 뽑기 비용을 저장하지 못했습니다: " + err.message,
-            "renderDashboard()"
-        );
-    }
+    if (isReroll) return doReroll();
+    const draw = await runShopDrawAction('skill', 'start');
+    if (!draw) return;
+    if (draw.status === 'pending') drawSkills(false);
+    else showShopDrawOutcome('skill', draw);
 }
 
 async function processDrawMercenary() {
@@ -505,99 +625,63 @@ async function processDrawMercenary() {
 }
 
 function drawSkills(isReroll) {
-    // 브라우저 confirm 창 제거됨 (UI 팝업에서 승인 후 넘어옴)
-    // 💡 [오류 수정] .replace('!', '') 대신 정규식 /!/g 를 사용하여 문자열 내의 모든 느낌표를 완벽히 제거
-    const rawSkills = String(currentStudent.unlocked_skills || "").replace(/!/g, '');
-    const myUnlocked = rawSkills ? rawSkills.split(',').map(x => x.trim()).filter(Boolean) : [];
-    let unowned = skillsData.filter(sk => sk.skill_id && !myUnlocked.includes(String(sk.skill_id)));
-
-    const body = document.getElementById('modalBody');
-    if (unowned.length === 0) {
-        body.innerHTML = '<h2 style="color:#4dff88;">✨ 마스터!</h2><p>더 이상 모을 스킬이 없습니다.</p><button class="btn-main" onclick="renderDashboard()">돌아가기</button>'; return;
+    const draw = getSavedShopDraw(currentStudent, 'skill');
+    if (!draw || draw.status !== 'pending') {
+        if (draw) showShopDrawOutcome('skill', draw);
+        else openSkillShop();
+        return;
     }
-
-    unowned.sort(() => 0.5 - Math.random());
-    const choices = unowned.slice(0, Math.min(3, unowned.length));
+    const choices = draw.choices || [];
+    const context = shopDrawContext('skill', draw);
+    shopDrawViews.skill = context;
+    canReroll = !draw.reroll_used;
+    const body = document.getElementById('modalBody');
 
     body.innerHTML = '<h2 style="color:var(--Highlight);">' + (isReroll ? '🔄 다시 집중하는 중...' : '✨ 지식을 탐구하는 중...') + '</h2><div style="font-size:80px; margin:40px 0;" class="anim-book">📚</div><p style="color:var(--TextSub);">어떤 스킬이 등장할까요?</p>';
 
+    const waitingHtml = body.innerHTML;
     setTimeout(() => {
+        if (!currentStudent || String(currentStudent.name).trim() !== context.owner ||
+            document.getElementById('detailModal').style.display !== 'flex' ||
+            body.innerHTML !== waitingHtml || shopDrawViews.skill !== context) return;
         let cardsHtml = choices.map((sk, index) => {
-            let blessClass = sk.blessing ? `blessing-${sk.blessing.trim()}` : 'blessing-None';
-            let iconDisplay = sk.icon_url ? '<img src="' + sk.icon_url + '" class="skill-icon-pixel ' + blessClass + '" style="width:60px; height:60px; margin: 0 auto 10px auto; display:block;">' : '<div class="skill-icon">🔮</div>';
-            return '<div class="skill-card anim-card" style="background:#F8FAFC; border: 2px solid var(--Highlight); color:var(--TextMain); animation-delay: ' + (index * 0.3) + 's;" onclick="selectSkill(\'' + sk.skill_id + '\', \'' + sk.name + '\')">' + iconDisplay + '<div class="skill-name" style="color:var(--Highlight);">' + sk.name + '</div><div class="skill-desc" style="color:var(--TextSub);">' + sk.description + '</div></div>';
+            const blessClass = sk.blessing ? 'blessing-' + String(sk.blessing).trim() : 'blessing-None';
+            const iconDisplay = sk.icon_url ? '<img src="' + shopDrawHtml(sk.icon_url) + '" class="skill-icon-pixel ' + shopDrawHtml(blessClass) + '" style="width:60px; height:60px; margin: 0 auto 10px auto; display:block;">' : '<div class="skill-icon">🔮</div>';
+            return '<div class="skill-card anim-card" style="background:#F8FAFC; border: 2px solid var(--Highlight); color:var(--TextMain); animation-delay: ' + (index * 0.3) + 's;">' + iconDisplay + '<div class="skill-name" style="color:var(--Highlight);">' + shopDrawHtml(sk.name) + '</div><div class="skill-desc" style="color:var(--TextSub);">' + shopDrawHtml(sk.description) + '</div></div>';
         }).join('');
 
         const rerollBtn = canReroll ? '<button class="btn-main btn-reroll" style="background:var(--Yellow); margin-top:20px;" onclick="doReroll()">리롤 (1회 무료)</button>' : '';
-        body.innerHTML = '<h2 style="color:var(--Highlight);">✨ 지식의 발견</h2><p style="color:var(--TextSub);">원하는 스킬 하나를 선택하세요!</p><div class="skill-cards-container">' + cardsHtml + '</div>' + rerollBtn + '<button class="btn-main" style="background:var(--TextSub); margin-top:10px;" onclick="renderDashboard()">포기하기</button>';
+        body.innerHTML = '<h2 style="color:var(--Highlight);">✨ 지식의 발견</h2><p style="color:var(--TextSub);">원하는 스킬 하나를 선택하세요!</p><div class="skill-cards-container">' + cardsHtml + '</div>' + rerollBtn + '<button class="btn-main" style="background:var(--TextSub); margin-top:10px;" >포기하기</button>';
+        body.querySelectorAll('.skill-card').forEach((card, index) => {
+            const sk = choices[index];
+            card.onclick = () => selectSkill(sk.skill_id, sk.name, context);
+        });
+        const reroll = body.querySelector('.btn-reroll');
+        if (reroll) reroll.onclick = () => doReroll(context);
+        body.lastElementChild.onclick = () => promptForfeitSkill(context);
     }, 1200);
 }
 
-function selectSkill(skillId, skillName) {
-    showUiConfirm("✨ 지식 획득", "[<b style=\"color:var(--Highlight);\">" + skillName + "</b>] 스킬을 획득하시겠습니까?", "processSelectSkill('" + skillId + "', '" + skillName + "')");
+function selectSkill(skillId, skillName, context = shopDrawViews.skill) {
+    confirmShopDraw('skill', skillId, skillName, context);
 }
 
-async function processSelectSkill(skillId, skillName) {
-    showGlobalLoading("✨ 스킬 획득 정보 저장 중...");
-
-    try {
-        const tx = await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                const rawSkills = String(student.unlocked_skills || "").replace(/!/g, '');
-                const unlockedIds = rawSkills
-                    ? rawSkills.split(',').map(x => x.trim()).filter(Boolean)
-                    : [];
-
-                const normalizedSkillId = String(skillId);
-                const wasAdded = !unlockedIds.includes(normalizedSkillId);
-
-                if (wasAdded) {
-                    unlockedIds.push(normalizedSkillId);
-                    student.unlocked_skills = "!" + unlockedIds.join(',');
-                }
-
-                return {
-                    wasAdded: wasAdded
-                };
-            }
-        );
-
-        const cost = Number(sysConfig.skill_price) || 50;
-
-        if (tx.result.wasAdded) {
-            pushFirebaseLog('common', {
-                time: new Date().toISOString(),
-                name: currentStudent.name,
-                category: "상점 구매",
-                content: `스킬 뽑기 ➔ [${skillName}] 획득 (${cost}골드 소모)`
-            });
-        }
-
-        hideGlobalLoading();
-
-        showUiAlert(
-            "🎉 획득 완료!",
-            "[<b style=\"color:var(--Highlight);\">" + skillName + "</b>] 스킬을 얻었습니다!",
-            "renderDashboard()"
-        );
-    } catch (err) {
-        hideGlobalLoading();
-
-        await syncFreshCurrentStudent(true);
-
-        showUiAlert(
-            "❌ 저장 오류",
-            "스킬 획득 정보를 저장하지 못했습니다: " + err.message,
-            "renderDashboard()"
-        );
-    }
+async function processSelectSkill(skillId, skillName, context = shopDrawViews.skill) {
+    const draw = await runShopDrawAction('skill', 'select', skillId, context);
+    if (!draw) return;
+    if (draw.status === 'pending') drawSkills(false);
+    else showShopDrawOutcome('skill', draw);
 }
 
 // ==========================================
 // 🏺 유물 상점 시스템 (UI 팝업 적용)
 // ==========================================
 function openRelicShop() {
+    const pending = getSavedShopDraw(currentStudent, 'relic');
+    if (pending && pending.status === 'ready') {
+        drawRelic();
+        return;
+    }
     const body = document.getElementById('modalBody');
     const cost = Number(sysConfig.relic_price) || 100;
     const gameCurrency = sysConfig.game_money_currency || '골드'; // 💡 인게임 화폐 단위 로드
@@ -610,175 +694,58 @@ function openRelicShop() {
 }
 
 async function promptDrawRelic() {
-    const btns = document.querySelectorAll('#modalBody .btn-main');
-    btns.forEach(btn => btn.disabled = true);
-
-    const cost = Number(sysConfig.relic_price) || 100;
-    const gameCurrency = sysConfig.game_money_currency || '골드';
-
-    showGlobalLoading("🏺 유물 발굴 비용 확인 중...");
-
-    try {
-        const tx = await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                const rawRelics = String(student.unlocked_relics || "").replace(/!/g, '');
-                const unlockedIds = rawRelics
-                    ? rawRelics.split(',').map(x => x.trim()).filter(Boolean)
-                    : [];
-
-                const hasUnowned = (relicsData || []).some(
-                    relic => relic && relic.relic_id && !unlockedIds.includes(String(relic.relic_id))
-                );
-
-                if (!hasUnowned) {
-                    return {
-                        abort: true,
-                        code: 'ALL_OWNED'
-                    };
-                }
-
-                const currentMoney = Number(student.game_money) || 0;
-
-                if (currentMoney < cost) {
-                    return {
-                        abort: true,
-                        code: 'NO_MONEY'
-                    };
-                }
-
-                student.game_money = currentMoney - cost;
-
-                return {};
-            }
-        );
-
-        hideGlobalLoading();
-
-        if (!tx.committed) {
-            btns.forEach(btn => btn.disabled = false);
-
-            if (tx.result.code === 'ALL_OWNED') {
-                showUiAlert(
-                    "🏆 유물 마스터",
-                    "이미 모든 유물을 보유하고 있습니다.<br>재화는 차감되지 않았습니다.",
-                    "renderDashboard()"
-                );
-            } else {
-                showUiAlert(
-                    "⚠️ 자금 부족",
-                    "현재 보유 재화가 부족합니다.<br><span style='font-size:0.9em; color:#aaa;'>(필요: " + cost + gameCurrency + ")</span>",
-                    "renderDashboard()"
-                );
-            }
-            return;
-        }
-
-        drawRelic();
-    } catch (err) {
-        hideGlobalLoading();
-        btns.forEach(btn => btn.disabled = false);
-
-        await syncFreshCurrentStudent(true);
-
-        showUiAlert(
-            "❌ 발굴 오류",
-            "유물 발굴 비용을 저장하지 못했습니다: " + err.message,
-            "renderDashboard()"
-        );
-    }
+    const draw = await runShopDrawAction('relic', 'start');
+    if (!draw) return;
+    if (draw.status === 'ready') drawRelic();
+    else showShopDrawOutcome('relic', draw);
 }
 
 function drawRelic() {
-    const rawRelics = String(currentStudent.unlocked_relics || "").replace(/!/g, '');
-    const myRelics = rawRelics ? rawRelics.split(',').map(x => x.trim()).filter(Boolean) : [];
-    let unowned = relicsData.filter(r => r.relic_id && !myRelics.includes(String(r.relic_id)));
-
-    const body = document.getElementById('modalBody');
-    if (unowned.length === 0) {
-        body.innerHTML = '<h2>🏆 유물 마스터</h2><p>모든 유물을 손에 넣었습니다!</p><button class="btn-main" onclick="renderDashboard()">돌아가기</button>';
+    const draw = getSavedShopDraw(currentStudent, 'relic');
+    if (!draw || draw.status !== 'ready') {
+        if (draw) showShopDrawOutcome('relic', draw);
+        else openRelicShop();
         return;
     }
+    const picked = (draw.choices || [])[0];
+    if (!picked) return;
+    const context = shopDrawContext('relic', draw);
+    shopDrawViews.relic = context;
+    const body = document.getElementById('modalBody');
 
     body.innerHTML = '<h2 style="color:var(--Highlight);">🏺 유물 발굴 중...</h2><div style="margin:50px 0;"><span class="anim-pot">🏺</span></div><p style="color:var(--TextSub);">항아리 속에서 고대의 기운이 느껴집니다!</p>';
 
+    const waitingHtml = body.innerHTML;
     setTimeout(() => {
-        const picked = unowned[Math.floor(Math.random() * unowned.length)];
+        if (!currentStudent || String(currentStudent.name).trim() !== context.owner ||
+            document.getElementById('detailModal').style.display !== 'flex' ||
+            body.innerHTML !== waitingHtml || shopDrawViews.relic !== context) return;
         const translator = (typeof relicEffectTranslator !== 'undefined') ? relicEffectTranslator : {};
         const effName = translator[picked.effect_type] || picked.effect_type;
 
-        let valStr = (picked.effect_type.includes('mult') || (picked.effect_type.includes('up') && !picked.effect_type.match(/^(hp|atk|def|luk|gold)_up$/))) ? (picked.value * 100) + '%' : picked.value;
-        if (picked.effect_type === 'gold_up') valStr += (sysConfig.currency_name || '골드');
-
-        body.innerHTML = '<h2 style="color:var(--Highlight);">✨ 유물 발견!</h2><div class="relic-card" style="background:#F8FAFC; border: 2px solid var(--Highlight);"><img src="' + picked.icon_url + '" class="relic-pop"><h3 style="color:var(--Highlight); margin:15px 0;">' + picked.name + '</h3><p style="font-size:0.9em; color:var(--TextMain); line-height:1.5;">' + picked.description + '</p><div style="font-size:0.8em; color:var(--TextSub); margin-top:10px; font-weight:bold;">효과: ' + effName + ' (+' + valStr + ')</div></div><button class="btn-main" style="background:var(--Highlight); margin-top:20px;" onclick="selectRelic(\'' + picked.relic_id + '\', \'' + picked.name + '\')">가방에 보관하기</button>';
+        const effectType = String(picked.effect_type || '');
+        let valStr = (effectType.includes('mult') || (effectType.includes('up') && !effectType.match(/^(hp|atk|def|luk|gold)_up$/))) ? (picked.value * 100) + '%' : picked.value;
+        if (effectType === 'gold_up') valStr += (sysConfig.game_money_currency || '골드');
+        body.innerHTML = '<h2 style="color:var(--Highlight);">✨ 유물 발견!</h2><div class="relic-card" style="background:#F8FAFC; border: 2px solid var(--Highlight);"><img src="' + shopDrawHtml(picked.icon_url) + '" class="relic-pop"><h3 style="color:var(--Highlight); margin:15px 0;">' + shopDrawHtml(picked.name) + '</h3><p style="font-size:0.9em; color:var(--TextMain); line-height:1.5;">' + shopDrawHtml(picked.description) + '</p><div style="font-size:0.8em; color:var(--TextSub); margin-top:10px; font-weight:bold;">효과: ' + shopDrawHtml(effName) + ' (+' + shopDrawHtml(valStr) + ')</div></div><button class="btn-main" style="background:var(--Highlight); margin-top:20px;">가방 저장 완료 · 확인</button>';
+        body.lastElementChild.onclick = () => selectRelic(picked.relic_id, picked.name, context);
     }, 1500);
 }
 
-function selectRelic(relicId, relicName) {
-    showUiConfirm("🏺 유물 획득", "[<b style=\"color:var(--Highlight);\">" + relicName + "</b>] 유물을 획득하시겠습니까?", "processSelectRelic('" + relicId + "', '" + relicName + "')");
+function selectRelic(relicId, relicName, context = shopDrawViews.relic) {
+    confirmShopDraw('relic', relicId, relicName, context);
 }
 
-async function processSelectRelic(relicId, relicName) {
-    showGlobalLoading("🏺 유물 획득 정보 저장 중...");
-
-    try {
-        const tx = await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                const rawRelics = String(student.unlocked_relics || "").replace(/!/g, '');
-                const unlockedIds = rawRelics
-                    ? rawRelics.split(',').map(x => x.trim()).filter(Boolean)
-                    : [];
-
-                const normalizedRelicId = String(relicId);
-                const wasAdded = !unlockedIds.includes(normalizedRelicId);
-
-                if (wasAdded) {
-                    unlockedIds.push(normalizedRelicId);
-                    student.unlocked_relics = "!" + unlockedIds.join(',');
-                }
-
-                return {
-                    wasAdded: wasAdded
-                };
-            }
-        );
-
-        const cost = Number(sysConfig.relic_price) || 100;
-
-        if (tx.result.wasAdded) {
-            pushFirebaseLog('common', {
-                time: new Date().toISOString(),
-                name: currentStudent.name,
-                category: "상점 구매",
-                content: `유물 뽑기 ➔ [${relicName}] 발굴 (${cost}골드 소모)`
-            });
-        }
-
-        hideGlobalLoading();
-
-        showUiAlert(
-            "🎉 발굴 완료!",
-            "[<b style=\"color:var(--Highlight);\">" + relicName + "</b>] 유물을 얻었습니다!",
-            "renderDashboard()"
-        );
-    } catch (err) {
-        hideGlobalLoading();
-
-        await syncFreshCurrentStudent(true);
-
-        showUiAlert(
-            "❌ 저장 오류",
-            "유물 획득 정보를 저장하지 못했습니다: " + err.message,
-            "renderDashboard()"
-        );
-    }
+async function processSelectRelic(relicId, relicName, context = shopDrawViews.relic) {
+    const draw = await runShopDrawAction('relic', 'ack', relicId, context);
+    if (draw) showShopDrawOutcome('relic', draw);
 }
 
 // --- [복구] 스킬 리롤 처리 함수 ---
-function doReroll() {
-    canReroll = false;
-    drawSkills(true); // 비용 확인 없이 바로 섞어서 다시 보여줍니다.
+async function doReroll(context = shopDrawViews.skill) {
+    const draw = await runShopDrawAction('skill', 'reroll', '', context);
+    if (!draw) return;
+    if (draw.status === 'pending') drawSkills(true);
+    else showShopDrawOutcome('skill', draw);
 }
 
 // ==========================================

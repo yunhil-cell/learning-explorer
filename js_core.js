@@ -97,62 +97,40 @@ async function updateFastFirebaseStudent(student) {
     const studentName = String(student.name).trim();
     const sName = encodeURIComponent(studentName);
 
-    // 호출 순간의 상태를 고정하여 이후 로컬 변경과 섞이지 않도록 함
-    const capturedStudent = cloneStudentSyncData(student);
+    // 대기열에 넣기 전에 변경 의도를 고정합니다. 앞선 저장 결과와 재비교하지 않습니다.
+    const baseline = studentServerSnapshots[studentName];
+    if (!baseline) {
+        await syncFreshCurrentStudent(true);
+        showUiAlert("저장 확인", "최신 정보를 불러왔습니다. 변경 작업을 다시 시도해주세요.", "");
+        return null;
+    }
+    const capturedBase = cloneStudentSyncData(baseline);
+    const changedFields = getChangedStudentFields(
+        cloneStudentSyncData(student), capturedBase
+    );
+    if (Object.keys(changedFields).length === 0) return null;
 
-    return queueStudentWrite(studentName, async () => {
-        let serverSnapshot = studentServerSnapshots[studentName];
-
-        // 기준 상태가 없는 예외 상황에서는 Firebase 최신 데이터를 먼저 읽음
-        if (!serverSnapshot) {
-            const freshResponse = await fetch(
-                `https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`
-            );
-
-            if (!freshResponse.ok) {
-                throw new Error("학생 최신 데이터 확인 실패: HTTP " + freshResponse.status);
-            }
-
-            const freshData = await freshResponse.json();
-
-            serverSnapshot = freshData && freshData.name
-                ? freshData
-                : { name: studentName };
-
-            rememberStudentServerState(serverSnapshot);
+    try {
+        // 변경한 필드 자체가 다른 접속에서 수정되었다면 과거 절대값으로 덮지 않습니다.
+        return await runStudentAtomicTransaction(studentName, draft => {
+            Object.keys(changedFields).forEach(key => {
+                const fresh = JSON.stringify(draft[key]);
+                if (fresh !== JSON.stringify(capturedBase[key]) &&
+                    fresh !== JSON.stringify(changedFields[key])) {
+                    throw new Error("다른 작업에서 데이터가 변경되었습니다. 다시 시도해주세요.");
+                }
+            });
+            Object.assign(draft, changedFields);
+            return {};
+        });
+    } catch (err) {
+        console.error("학생 변경 정보 저장 실패:", err);
+        await syncFreshCurrentStudent(true);
+        if (currentStudent && String(currentStudent.name).trim() === studentName) {
+            showUiAlert("저장 확인", err.message, "renderDashboard()");
         }
-
-        // 학생 전체를 보내지 않고 실제 변경된 필드만 계산
-        const changedFields = getChangedStudentFields(
-            capturedStudent,
-            serverSnapshot
-        );
-
-        if (Object.keys(changedFields).length === 0) {
-            return null;
-        }
-
-        const response = await fetch(
-            `https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`,
-            {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(changedFields)
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error("학생 데이터 저장 실패: HTTP " + response.status);
-        }
-
-        // 저장에 성공한 필드만 Firebase 기준 상태에 반영
-        rememberStudentServerFields(studentName, changedFields);
-
-        return response;
-    }).catch(e => {
-        console.error("파이어베이스 학생 데이터 저장 실패:", e);
-        throw e;
-    });
+        return null;
+    }
 }
 
 // 🛡️ [신규 - 타인 데이터 간섭 원천 차단] 지정한 필드만 부분 수정하는 PATCH 함수
@@ -719,63 +697,57 @@ function getKSTDateString(dateObj = new Date()) {
 // 💡 [4번 해결] 파티 던전 등 동시 접속 시 다른 학생의 보상 덮어쓰기를 방어하는 초경량 1인 동기화
 async function syncFreshCurrentStudent(silent = true) {
     if (!currentStudent || !currentStudent.name) return;
-
     const studentName = String(currentStudent.name).trim();
     const sName = encodeURIComponent(studentName);
-
     try {
-        // 🛡️ 이 학생의 Firebase 저장이 진행 중이면 완료 후 최신값을 읽음
-        if (studentWriteQueues[studentName]) {
-            await studentWriteQueues[studentName].catch(() => {});
-        }
-
-        // 기다리는 동안 다른 학생으로 전환되었으면 이전 학생 데이터로 화면을 덮지 않음
-        if (
-            !currentStudent ||
-            String(currentStudent.name).trim() !== studentName
-        ) {
-            return;
-        }
-
-        const res = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`);
-
-        if (!res.ok) {
-            throw new Error("학생 최신 데이터 조회 실패: HTTP " + res.status);
-        }
-
-        const freshData = await res.json();
-
-        if (freshData && freshData.name) {
-            // 🛡️ Firebase에서 방금 확인한 최신 상태를 저장 비교 기준으로 갱신
+        return await queueStudentWrite(studentName, async () => {
+            const res = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
+                cache: 'no-store'
+            });
+            if (!res.ok) throw new Error("학생 최신 데이터 조회 실패: HTTP " + res.status);
+            const freshData = await res.json();
+            if (!freshData || String(freshData.name || '').trim() !== studentName) return;
             rememberStudentServerState(freshData);
-
-            currentStudent = freshData;
-
             if (window.allStudentsData) {
-                const idx = window.allStudentsData.findIndex(s => s && String(s.name).trim() === String(freshData.name).trim());
+                const idx = window.allStudentsData.findIndex(s => s && String(s.name).trim() === studentName);
                 if (idx > -1) window.allStudentsData[idx] = freshData;
             }
-
-            // 대시보드가 열려있을 때만 UI 재렌더링
+            // 응답을 기다리는 사이 학생이 바뀌었으면 현재 화면에는 반영하지 않습니다.
+            if (!currentStudent || String(currentStudent.name).trim() !== studentName) return;
+            currentStudent = freshData;
             const modal = document.getElementById('detailModal');
-            if (!silent && modal && modal.style.display === 'flex') {
+            const body = document.getElementById('modalBody');
+            const busy = ['uiPopup', 'subModal', 'battleModal', 'globalLoadingOverlay'].some(id => {
+                const el = document.getElementById(id);
+                return el && el.style.display === 'flex';
+            });
+            if (!silent && !busy && modal && modal.style.display === 'flex' &&
+                body && body.querySelector('.dash-layout')) {
                 renderDashboard();
             }
-        }
-    } catch (e) {
-        console.error("1인 실시간 학생 동기화 실패:", e);
+            return freshData;
+        });
+    } catch (err) {
+        console.error("1인 실시간 학생 동기화 실패:", err);
     }
 }
 
-// 💡 [4번 트리거] 탭 복귀 및 20초 주기 백그라운드 자동 동기화 리스너 등록
-window.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') syncFreshCurrentStudent(false);
-});
-window.addEventListener('focus', () => syncFreshCurrentStudent(false));
-setInterval(() => syncFreshCurrentStudent(false), 20000); // 20초 무음 핑
+// 자동 동기화는 데이터만 갱신합니다. 뽑기/전투/입력 화면을 다시 그리지 않습니다.
+let studentBackgroundSyncRunning = false;
+async function syncStudentInBackground() {
+    if (studentBackgroundSyncRunning || document.visibilityState !== 'visible') return;
+    studentBackgroundSyncRunning = true;
+    try {
+        await syncFreshCurrentStudent(true);
+    } finally {
+        studentBackgroundSyncRunning = false;
+    }
+}
+document.addEventListener('visibilitychange', syncStudentInBackground);
+window.addEventListener('focus', syncStudentInBackground);
+setInterval(syncStudentInBackground, 20000);
 let originalStats = { hp: 5, atk: 5, def: 5, luk: 5 };
 let currentEquipType = 'weapon';
-
 let sysConfig = {};
 let mercenariesData = []; // 💡 [신규] 동료(용병) 데이터 전역 변수
 let worldBossesData = []; // 💡 [신규] 월드 보스 데이터 전역 변수 🐲

@@ -47,9 +47,9 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 
 ## 5. 서버와 프론트 역할 분리 및 실시간 데이터 처리
 가. `index.html` 및 모듈화된 프론트엔드 스크립트(`js_core`, `js_expedition`, `js_shop`, `js_battle`, `js_admin`)는 화면 표시, 전투 연출, 클라이언트 상태 관리, REST API 기반 Firebase 통신, 사용자 조작 흐름을 담당합니다.
-나. Google Spreadsheet는 교사용 백업 및 기획 DB 역할을 담당합니다. `syncToFirebase()`는 시스템/스킬/유물/스킨/상점/용병/몬스터 등 기획 데이터를 Firebase에 반영하고, 기존 학생은 `sheet_order`만 갱신하며 신규 학생만 최초 생성합니다. `syncFromFirebase()`는 Firebase의 학생 플레이 데이터와 웹 작성 데이터를 Google Spreadsheet로 백업합니다.
-다. 학생 모험 데이터는 Firebase Realtime Database 개별 학생 방(`students/{name}`)에 즉각 반영(`PUT`/`PATCH`)되어 딜레이 없는 플레이 경험을 보장합니다.
-라. 재화 차감, 보상 지급, 인벤토리 소모, 주간 횟수 차감은 전역 로딩 오버레이(`showGlobalLoading`)를 통해 조작 중복을 방지하며, 필요 시 시트 기준 상한선 검증 및 개별 필드 안전 갱신(`patchFirebaseStudentFields`)을 거쳐 어뷰징과 동시 접속 롤백을 차단합니다.
+나. Google Spreadsheet는 교사용 백업, 기획 DB 및 학생 데이터 일괄 관리 콘솔 역할을 담당합니다. `syncFromFirebase()`는 Firebase의 최신 플레이 데이터를 Google Spreadsheet로 백업하고, `syncToFirebase()`는 교사가 시트에서 수정한 전체 학생 데이터와 기획 데이터를 Firebase에 강제 반영하며, `syncStudentToFirebase(studentName)`은 특정 학생 1명의 시트 데이터를 Firebase에 강제 반영합니다.
+다. 평상시 학생 플레이 데이터의 실시간 기준은 Firebase Realtime Database의 개별 학생 이름 키(`students/{name}`)이며, 웹앱의 저장은 필드 단위 `PATCH` 또는 ETag + `If-Match` 기반 조건부 `PUT` 원자 트랜잭션으로 처리합니다. Google Spreadsheet의 학생 데이터는 백업 자료이면서 교사가 의도적으로 수정 후 Firebase에 반영할 수 있는 관리 데이터입니다.
+라. 재화 차감, 보상 지급, 인벤토리 소모, 주간 횟수 차감 등 동시 접속에 민감한 데이터는 원자 트랜잭션 또는 제한된 필드 `PATCH` 방식으로 처리합니다. 오래된 시트 데이터나 클라이언트 캐시를 이용한 학생 전체 DB(`students.json`)의 무조건 일괄 `PUT`은 금지합니다. 단, 3인 레이드처럼 여러 학생을 하나의 연산으로 동시에 확정해야 하는 경우에는 Firebase 최신값을 GET하고 ETag를 확인한 뒤 `If-Match`를 사용하는 조건부 원자 `PUT`만 예외적으로 허용합니다. 일반적인 학생 저장과 교사용 시트 강제 반영은 반드시 `students/{name}` 이름 키 단위로 처리합니다.
 
 ---
 
@@ -73,10 +73,10 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 ## 4. 실행 환경
 가. GitHub Pages(프론트엔드 정적 호스팅) + Firebase Realtime Database(실시간 NoSQL DB) + Google Apps Script / Sheets(마스터 백업 및 교사용 기획 DB) 기반 3계층 하이브리드 아키텍처
 나. 프론트엔드는 순수 JavaScript REST API(`fetch` 기반 `PUT`/`POST`/`GET`)로 Firebase와 직접 통신하여 `google.script.run` 의존성 없이 초고속 실시간 데이터 갱신 및 로그 수집을 수행
-다. Google Spreadsheet는 학생 플레이 데이터의 백업 및 기획 데이터 관리 용도로 동작하며, `syncToFirebase()`는 기획 데이터와 신규 학생/학생 순서만 Firebase에 안전 반영하고 `syncFromFirebase()`는 Firebase의 최신 플레이 데이터를 시트로 백업
+다. Google Spreadsheet는 학생 플레이 데이터의 백업, 기획 데이터 관리 및 교사용 일괄 수정 콘솔로 동작합니다. `syncFromFirebase()`는 Firebase의 최신 플레이 데이터를 시트로 백업하고, `syncToFirebase()`는 교사가 시트에서 수정한 전체 학생 데이터와 기획 데이터를 Firebase에 강제 반영하며, `syncStudentToFirebase(studentName)`은 지정한 학생 1명의 시트 데이터만 Firebase에 선택적으로 강제 반영합니다.
 라. Google Drive 이미지는 썸네일 우회 URL(`lh3` 및 direct thumbnail)로 매핑하여 트래픽 및 권한 문제 방지
 마. 전역 클릭 차단 로딩 오버레이(`showGlobalLoading`)를 통해 비동기 통신 중 사용자 중복 조작을 물리적으로 차단
-바. 데이터 동기화 시 전체 학생 DB(`students.json`)의 일괄 `PUT`을 전면 금지하고, 개별 학생 1:1 독립 방 저장(`PUT`) 및 주간 횟수 필드 부분 갱신(`PATCH`)을 적용하여 동시 접속 롤백 및 `sheet_order` 순서 유실을 원천 차단
+바. 학생 데이터는 `students/{학생이름}`의 1:1 독립 이름 키 구조를 기본으로 사용합니다. 평상시 필드 저장과 교사용 시트 강제 반영은 개별 학생 `PATCH`를 사용하고, 재화·보상·인벤토리·횟수 등 중요한 연산은 ETag + `If-Match` 기반 원자 트랜잭션으로 처리합니다. 오래된 데이터로 `students.json` 전체를 무조건 덮어쓰는 방식과 숫자키(`0`, `1`, `2`...) 학생 구조는 금지하며, 여러 학생의 동시 확정이 필요한 레이드 등에서는 최신 ETag를 이용한 조건부 루트 원자 트랜잭션만 예외적으로 허용합니다.
 사. 학생은 웹 주소(GitHub Pages)로 접속하며, 교사는 웹 내 교사 모드 및 Google Sheets를 통해 데이터 관리
 
 ---
@@ -123,9 +123,9 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 바. 서든데스 시스템: 장기전 방지를 위해 일반/보스전(10턴/20턴), 파티 레이드(5라운드/10라운드) 경과 시 회복량 50% 감소 및 피해량 20%~50% 폭증
 
 ## 7. 보상 및 기록
-가. 전투 보상, 퀘스트 보상, 전리품 상자, 아이템 사용은 시트에 저장됩니다.
-나. 주요 기록은 `logs`와 `ForgeLog`에 남깁니다.
-다. 보상 지급과 차감은 운영 추적이 가능해야 합니다.
+가. 전투 보상, 퀘스트 보상, 전리품 상자, 아이템 사용 등 학생의 실시간 플레이 결과는 Firebase Realtime Database에 즉시 저장하며, 이후 `syncFromFirebase()`를 통해 Google Spreadsheet에 백업합니다.
+나. 주요 활동 기록은 Firebase의 `logs`와 `forgeLogs`에 실시간 기록하고, `syncFromFirebase()`를 통해 Google Spreadsheet의 `logs`와 `ForgeLog` 시트에 백업합니다.
+다. 보상 지급과 차감은 운영 추적이 가능해야 하며, 동시 실행 위험이 있는 보상·차감은 원자 트랜잭션으로 처리합니다.
 
 ---
 
@@ -223,7 +223,7 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 가. 상점 데이터는 `shop` 시트에서 관리합니다.
 나. 상점 UI 상단에는 `스킬 뽑기`, `유물 뽑기`, `동료 뽑기`, `대장간 진입` 4개 핵심 버튼(2x2 그리드)이 배치됩니다.
 다. 동료 뽑기는 C(50%), B(35%), A(12%), S(3%) 기본 등급 확률과 미보유 중복 방지 및 상위 등급 자동 승급 알고리즘으로 동작합니다.
-라. 아이템 구매 및 뽑기 진행 시 백엔드 `LockService`와 잔액 재검증을 거쳐 버튼 연타 및 중복 결제를 차단합니다.
+라. 아이템 구매 및 스킬·유물·동료 뽑기 진행 시 전역 로딩으로 중복 조작을 차단하고, Firebase 최신 학생 데이터를 기준으로 `runStudentAtomicTransaction()` 원자 트랜잭션 안에서 잔액과 보유 여부를 다시 검증하여 중복 결제와 동시 접속 데이터 손실을 방지합니다.
 마. 동료 뽑기 가격(`merc_price`) 및 등급별 확률(`merc_prob_c`, `b`, `a`, `s`)은 `system` 시트 설정에서 수동 변경이 가능합니다.
 바. 아이템 효과는 `effect_type` 기준으로 분기하며, 구매한 소비성 아이템은 인벤토리에 수량 또는 개별 항목으로 저장됩니다.
 
@@ -279,10 +279,11 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 가. 던전 데이터는 `dungeons` 시트에서 관리합니다.
 나. 던전은 3인 파티 기반 콘텐츠입니다.
 다. 파티원 전원의 `weekly_raid` 횟수를 사전 검증하며, 1명이라도 횟수가 없으면 진입을 차단합니다.
-라. **3인 안전 개별 저장 및 동기화:**
-  * 성공(풀클리어/중도탈출): 참여한 3명 각자의 경험치 가산, 개별 레벨업 검증, 전리품 상자 지급, `weekly_raid` 1회 차감을 `Promise.all` 기반 3인 독립 방에 안전하게 개별 저장
-  * 패배(전멸) 및 도망: 참여한 3명 전원의 `weekly_raid` 1회 차감 및 던전 실패 로그 전송
-마. 동시 처리 충돌 방지를 위해 LockService 및 독립 방 1:1 통신 구조를 사용합니다.
+라. **3인 원자 저장 및 동기화:**
+  * 입장 시 참여한 3명의 Firebase 최신 `weekly_raid` 값을 한 번에 검증하고, 1명이라도 횟수가 부족하면 전체 입장을 취소합니다.
+  * 성공 시 참여한 3명의 경험치 가산, 레벨업 검증, 전리품 상자 지급 등 여러 학생에게 동시에 영향을 주는 결과를 Firebase `students` 루트 ETag + `If-Match` 조건부 원자 트랜잭션으로 한 번에 확정합니다.
+  * 실패 또는 도망 시에도 해당 콘텐츠 규칙에 따라 주간 횟수와 실패 로그를 일관되게 처리합니다.
+마. 3명의 데이터가 일부만 저장되는 상태를 방지하기 위해, 여러 학생을 동시에 변경해야 하는 레이드 연산은 `runFirebasePathAtomicTransaction()`을 사용하여 최신 Firebase 상태 기준으로 전체 성공 또는 전체 재시도 방식으로 처리합니다.
 
 ※ 상세 컬럼 구성은 「VI. 데이터베이스 시트 구성」에서 일괄 관리합니다.
 
@@ -406,11 +407,11 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 다. 레벨업 시 `level`과 `level_points`를 함께 갱신합니다.
 라. 퀘스트 보상, 전투 보상, 던전 보상 등에서 경험치가 지급될 수 있습니다.
 
-## 4. Optimistic UI 규칙
-가. 사용자 경험을 위해 프론트에서는 먼저 `currentStudent`를 갱신하고 `renderDashboard()`를 호출할 수 있습니다.
-나. 이후 `google.script.run`으로 서버 저장을 요청합니다.
-다. 단, 재화 차감, 보상 지급, 전리품 상자 개봉, 던전 결과처럼 어뷰징 가능성이 있는 기능은 서버 검증을 반드시 포함합니다.
-라. 서버 응답이 실패하면 프론트 상태를 다시 동기화하거나 오류 메시지를 표시해야 합니다.
+## 4. 프론트 상태 및 Firebase 저장 규칙
+가. 단순 UI 상태는 필요에 따라 `currentStudent`에 먼저 반영할 수 있으나, 재화·보상·인벤토리·경험치·횟수 등 중요 데이터는 로컬 객체만 수정한 상태를 최종값으로 간주하지 않습니다.
+나. 현재 웹앱의 주요 저장 경로는 `google.script.run`이 아니라 Firebase REST API 직접 통신을 사용합니다.
+다. 단순 독립 필드는 필요한 필드만 `PATCH`하고, 재화 차감, 보상 지급, 전리품 상자 개봉, 아이템 소모, 뽑기, 던전 결과처럼 동시 실행 위험이 있는 기능은 `runStudentAtomicTransaction()` 또는 `runFirebasePathAtomicTransaction()`을 사용합니다.
+라. Firebase 저장이 실패하거나 동시 충돌이 발생하면 최신 학생 데이터를 다시 불러와 로컬 `currentStudent` 및 전체 학생 캐시를 동기화하고 오류 메시지를 표시합니다.
 
 ## 5. 로그 기록 규칙
 가. 웹 프론트엔드(`js_core.js`, `js_expedition.js`, `js_shop.js`, `js_battle.js`)는 `pushFirebaseLog()` 함수를 통해 대장간 강화 시도(`forgeLogs`), 상점 구매/상자 개봉/아이템 사용/전투 승리(`logs`) 이벤트를 Firebase REST API로 실시간 전송합니다.
@@ -419,9 +420,11 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 라. 교사는 웹 [📜 로그 확인] 뷰어 및 구글 시트 양쪽에서 모든 로그를 추적할 수 있습니다.
 
 ## 6. 동시성 제어 및 어뷰징 방어 규칙
-가. 보상 지급, 전리품 상자 개봉, 퀘스트 제출, 던전 결과 처리, 재화 차감(`updateGameMoney`), 경험치 획득(`gainExpAndCheckLevelUp`) 등 중복 실행 위험이 있는 함수는 `LockService`를 사용합니다.
-나. 스탯 저장(`updateStudentStats`), 퀘스트 완수(`autoCompleteQuest`), 던전/타워 정산 시 프론트엔드가 보낸 수치를 그대로 믿지 않고 서버(시트) 기준 재계산 및 상한선 커트를 통해 F12 개발자 도구 조작을 차단합니다.
-다. `LockService`를 제거하면 중복 보상, 중복 제출, 인벤토리 꼬임이 발생할 수 있으므로 임의로 제거하지 않습니다.
+가. 재화 차감, 보상 지급, 전리품 상자 개봉, 아이템 소모, 스킬·유물·동료 획득, 퀘스트 보상, 전투·던전·탑·월드보스 결과 등 중복 실행 또는 동시 수정 위험이 있는 데이터는 Firebase 최신값을 기준으로 원자 처리합니다.
+나. 학생 1명의 중요 데이터 변경은 `runStudentAtomicTransaction()`을 우선 사용하고, 퀘스트·공지·제출물 또는 3인 레이드처럼 하나의 Firebase 경로 전체를 동시에 확정해야 하는 경우 `runFirebasePathAtomicTransaction()`을 사용합니다.
+다. 원자 트랜잭션은 Firebase REST의 ETag와 `If-Match`를 사용하며 HTTP 412 충돌 발생 시 최신 데이터를 다시 읽어 재시도합니다. 오래된 `currentStudent`, 시트 값 또는 캐시를 기준으로 재화·보유 목록·횟수의 절대값을 그대로 덮어쓰지 않습니다.
+라. 단순 표시값이나 서로 독립적인 필드는 필요한 필드만 `PATCH`하며, 학생 전체 객체를 불필요하게 저장하지 않습니다.
+마. Google Apps Script의 기존 `LockService` 기반 함수가 남아 있을 수 있으나, 현재 GitHub Pages 웹앱의 핵심 실시간 플레이 경로에서는 Firebase 원자 트랜잭션을 동시성 제어의 기준으로 사용합니다.
 
 ---
 
@@ -773,8 +776,10 @@ is_active
 라. `getMonsterSkillData()`: 몬스터 스킬 데이터 로드
 마. `getDungeonData()`: 던전 데이터 로드
 바. `getBossData()`: 보스 데이터 로드
-사. `syncToFirebase()`: 구글 시트가 원본인 기획 데이터를 Firebase에 반영하고, 기존 학생은 `sheet_order`만 갱신하며 Firebase에 존재하지 않는 신규 학생만 전체 학생 객체로 최초 생성하는 안전 동기화 함수. 기존 학생의 스탯, 레벨, 골드, 독서록, 인벤토리 등 플레이 데이터는 절대 시트 값으로 덮어쓰지 않음
-아. `syncFromFirebase()`: Firebase의 최신 데이터를 구글 시트 6개 탭(`students`, `Quests`, `Submissions`, `Notices`, `ForgeLog`, `logs`)으로 일괄 백업하는 5분 주기 초고속 배치(Batch) 백업 함수
+사. `syncToFirebase()`: 교사가 Google Spreadsheet에서 수정한 `students` 시트의 전체 학생 컬럼을 각 학생의 Firebase 이름 키(`students/{name}`)에 개별 `PATCH` 방식으로 강제 반영하고, 시스템·스킬·유물·스킨·상점·용병·몬스터 등 기획 데이터도 함께 반영하는 전체 관리 동기화 함수. 평상시 학생 플레이 중 자동 호출하지 않으며, 독서록 수정·운영값 일괄 조정·소프트 리셋·하드 리셋 등 교사가 의도적으로 시트 값을 Firebase에 적용할 때 수동 실행함
+아. `syncStudentToFirebase(studentName)`: `students` 시트에서 지정한 학생 1명의 전체 컬럼을 해당 Firebase 이름 키(`students/{name}`)에 개별 `PATCH`하여 독서록, 재화, 스탯, 경험치, 인벤토리, 강화 상태 등 시트에서 수정한 값을 특정 학생에게만 강제 반영하는 핀포인트 관리 동기화 함수
+자. `syncFromFirebase()`: Firebase의 최신 학생 플레이 데이터와 웹 작성 데이터를 Google Spreadsheet의 관련 시트로 일괄 백업하는 Firebase ➔ Sheets 동기화 함수. 평상시 백업 방향으로 사용하며, 교사가 시트 값을 수정한 뒤 Firebase에 반영하기 전에는 다시 실행하지 않도록 주의함
+차. 교사용 시트 수정의 권장 순서는 `syncFromFirebase()` ➔ 시트 수정 ➔ 전체 수정 시 `syncToFirebase()`, 특정 학생 수정 시 `syncStudentToFirebase(studentName)`입니다.
 
 ## 2. 학생 상태 저장
 가. `updateStudentStats()`: 스탯 보정값 시트에 저장 (어뷰징 방지 포함)
