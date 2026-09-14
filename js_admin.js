@@ -374,21 +374,6 @@ async function executeForceResetWeekly() {
     const maxTower = Number(sysConfig.max_weekly_tower) || 1;
 
     const students = window.allStudentsData || [];
-    students.forEach(s => {
-        if (!s || !s.name) return;
-        s.weekly_battles = maxBattles;
-        s.weekly_boss = maxBoss;
-        s.weekly_raid = maxRaid;
-        s.weekly_tower = maxTower;
-    });
-
-    if (currentStudent) {
-        currentStudent.weekly_battles = maxBattles;
-        currentStudent.weekly_boss = maxBoss;
-        currentStudent.weekly_raid = maxRaid;
-        currentStudent.weekly_tower = maxTower;
-    }
-
     const resetPayload = {
         weekly_battles: maxBattles,
         weekly_boss: maxBoss,
@@ -397,7 +382,6 @@ async function executeForceResetWeekly() {
     };
 
     try {
-        // 💡 [롤백 방어] 옛날 캐시로 학생 전체를 덮어쓰지 않고 주간 횟수 필드만 개별 PATCH
         const currentMondayKey = getKSTMondayKey();
         const updatePromises = students.map(s => {
             if (!s || !s.name) return Promise.resolve();
@@ -408,21 +392,50 @@ async function executeForceResetWeekly() {
                 body: JSON.stringify(resetPayload)
             });
         });
-        await Promise.all([
-            ...updatePromises,
-            fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(currentMondayKey)
-            })
-        ]);
+
+        // 🛡️ 1. 학생 전원의 PATCH 응답 상태 엄격 검증
+        const responses = await Promise.all(updatePromises);
+        const hasFailed = responses.some(res => res && !res.ok);
+        if (hasFailed) {
+            throw new Error("일부 학생의 주간 횟수 초기화 요청이 실패했습니다.");
+        }
+
+        // 🛡️ 2. 기준 날짜 저장 성공 여부까지 확실히 검증
+        const dateRes = await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentMondayKey)
+        });
+
+        if (!dateRes.ok) {
+            throw new Error("기준 날짜 저장에 실패했습니다: HTTP " + dateRes.status);
+        }
+
+        // 🛡️ 3. 서버 저장이 모두 성공한 후에만 화면/메모리 갱신!
+        students.forEach(s => {
+            if (!s || !s.name) return;
+            s.weekly_battles = maxBattles;
+            s.weekly_boss = maxBoss;
+            s.weekly_raid = maxRaid;
+            s.weekly_tower = maxTower;
+        });
+
+        if (currentStudent) {
+            currentStudent.weekly_battles = maxBattles;
+            currentStudent.weekly_boss = maxBoss;
+            currentStudent.weekly_raid = maxRaid;
+            currentStudent.weekly_tower = maxTower;
+        }
+
         if (sysConfig) sysConfig.last_weekly_reset = currentMondayKey;
         hideGlobalLoading();
         showUiAlert("🎉 초기화 완료", "전체 학생의 주간 횟수가 성공적으로 초기화되었습니다!", "renderClassroomDashboard('overview')");
         renderButtons(students);
     } catch(e) {
         hideGlobalLoading();
-        showUiAlert("❌ 오류", "초기화 실패: " + e, "");
+        // 실패 시 서버 최신 데이터를 다시 불러와 화면 롤백
+        if (typeof fetchFastGameData === 'function') fetchFastGameData();
+        showUiAlert("❌ 초기화 실패", e.message, "");
     }
 }
 

@@ -1038,6 +1038,91 @@ function promptUseItem(itemName) {
     document.getElementById('uiPopup').style.display = 'flex';
 }
 
+// 💡 [완전 무결점] 서버 최신 DB 기준 차감 및 합산 원자 트랜잭션 (데이터 유실 100% 방지)
+async function openLootBox(boxName, boxId) {
+    const targetBox = (lootBoxesData || []).find(b => String(b.box_id) === String(boxId) || b.box_name === boxName);
+    if (!targetBox) {
+        showUiAlert("오류", "상자 정보를 찾을 수 없습니다.", "");
+        return;
+    }
+
+    showGlobalLoading("📦 상자를 개봉하는 중...");
+
+    // 1. 가챠 추첨
+    const minM = Number(targetBox.min_money) || 0;
+    const maxM = Number(targetBox.max_money) || 0;
+    const stLuk = Number(currentStudent.luk_points) || 5;
+    const lukRatio = Math.min(1.0, stLuk / 100);
+    const earnedGold = Math.floor(minM + (maxM - minM) * Math.min(1.0, Math.random() + (lukRatio * 0.5)));
+
+    const realCurrency = sysConfig.currency_name || '티';
+    let rawPicked = [];
+    if (Math.random() * 100 <= (Number(targetBox.prob_1) || 0)) rawPicked.push(targetBox.item_1);
+    if (Math.random() * 100 <= (Number(targetBox.prob_2) || 0)) rawPicked.push(targetBox.item_2);
+    if (Math.random() * 100 <= (Number(targetBox.prob_3) || 0)) rawPicked.push(targetBox.item_3);
+    if (rawPicked.length === 0 && targetBox.item_1) rawPicked.push(targetBox.item_1);
+
+    let earnedItems = [];
+    rawPicked.forEach(itemStr => {
+        if (!itemStr || String(itemStr).trim() === '') return;
+        let count = 1;
+        let pName = String(itemStr).trim();
+        if (pName.includes('*')) {
+            const parts = pName.split('*');
+            pName = parts[0].trim();
+            count = parseInt(parts[1]) || 1;
+        }
+        const rmMatch = pName.match(/^(\d+)\s*RM$/i);
+        if (rmMatch) pName = `[현실 재화] ${rmMatch[1]}${realCurrency} 교환권`;
+        for (let i = 0; i < count; i++) earnedItems.push(pName);
+    });
+
+    try {
+        // 🛡️ [Lost Update 방지] 서버의 최신 골드와 인벤토리를 기준으로 차감 및 합산
+        const tx = await runStudentAtomicTransaction(currentStudent.name, student => {
+            let serverItems = student.inventory ? String(student.inventory).split(',').map(x => x.trim()).filter(Boolean) : [];
+            const idx = serverItems.indexOf(boxName);
+            if (idx === -1) {
+                return { abort: true, code: 'NO_BOX' };
+            }
+
+            // 상자 1개 삭제 및 새 아이템 추가
+            serverItems.splice(idx, 1);
+            serverItems.push(...earnedItems);
+
+            // 최신 골드에 누적
+            student.game_money = (Number(student.game_money) || 0) + earnedGold;
+            student.inventory = serverItems.join(',');
+
+            return {};
+        });
+
+        hideGlobalLoading();
+
+        if (!tx.committed) {
+            showUiAlert("⚠️ 사용 불가", "가방에 해당 상자가 없습니다.", "openInventory()");
+            return;
+        }
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "상자 개봉",
+            content: `${boxName} 개봉 ➔ +${earnedGold}골드 / ${earnedItems.join(', ')}`
+        });
+
+        let rewardMsg = `<b style="color:var(--TextGold); font-size:1.2em;">+${earnedGold} ${sysConfig.game_money_currency || '골드'}</b>`;
+        if (earnedItems.length > 0) {
+            rewardMsg += `<br><br>획득 아이템:<br><span style="color:var(--Highlight); font-weight:bold;">${earnedItems.join(', ')}</span>`;
+        }
+
+        showUiAlert("🎉 개봉 완료!", `[${boxName}]에서 보상이 나왔습니다!<br><br>${rewardMsg}`, "openInventory()");
+    } catch (err) {
+        hideGlobalLoading();
+        showUiAlert("❌ 오류", "상자 개봉 처리 중 오류가 발생했습니다: " + err.message, "openInventory()");
+    }
+}
+
 // 💡 [신규] 전리품 상자 개봉 애니메이션 및 결과 출력
 async function processUseItem(itemName, count = 1) {
     const useCount = Math.max(1, Number(count) || 1);

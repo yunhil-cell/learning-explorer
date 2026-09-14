@@ -968,14 +968,23 @@ async function checkAndPerformWeeklyReset(data) {
             });
         });
 
-        await Promise.all([
-            ...updatePromises,
-            fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(currentMondayKey)
-            })
-        ]);
+        // 🛡️ 자동 초기화 시에도 학생 전원 응답 상태 검증 후 날짜 저장
+        const responses = await Promise.all(updatePromises);
+        const hasFailed = responses.some(res => res && !res.ok);
+        if (hasFailed) {
+            throw new Error("일부 학생의 자동 초기화 요청 실패");
+        }
+
+        const dateRes = await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentMondayKey)
+        });
+
+        if (!dateRes.ok) {
+            throw new Error("기준 날짜 저장 실패: HTTP " + dateRes.status);
+        }
+
         console.log("✅ Firebase 주간 횟수 정기 초기화 완료!");
     } catch (e) {
         console.error("❌ 주간 초기화 Firebase 저장 실패:", e);

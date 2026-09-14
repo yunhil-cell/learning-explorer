@@ -71,61 +71,34 @@ async function enterBattle(monsterId, isBoss = false) {
     const targetMonster = isBoss ? bossList.find(b => String(b.boss_id).trim() === String(monsterId).trim()) : monsterList.find(m => String(m.monster_id).trim() === String(monsterId).trim());
     if (!targetMonster) return alert("대상의 정보를 찾을 수 없습니다.");
 
-    // 🛡️ 일반 사냥 입장 횟수를 Firebase 최신값 기준으로 원자 차감
+    // 🛡️ 일반 사냥 입장 횟수만 핀포인트(단독) 차감 (다른 학생/다른 횟수 간섭 100% 차단)
     if (!isBoss) {
         const maxW = Number(sysConfig.max_weekly_battles) || 2;
+        const curW = (currentStudent.weekly_battles !== undefined && currentStudent.weekly_battles !== "")
+            ? Number(currentStudent.weekly_battles)
+            : maxW;
+
+        if (curW <= 0) {
+            showUiAlert('🚫 입장 불가', '이번 주 모험 횟수를 모두 소진했습니다.<br><span style="font-size:0.8em; color:#aaa;">(매주 월요일 자정 초기화)</span>', '');
+            return;
+        }
 
         showGlobalLoading("⚔️ 사냥터 입장 처리 중...");
-
         try {
-            const tx = await runStudentAtomicTransaction(
-                currentStudent.name,
-                student => {
-                    const currentW =
-                        (student.weekly_battles !== undefined && student.weekly_battles !== "")
-                            ? Number(student.weekly_battles)
-                            : maxW;
-
-                    if (currentW <= 0) {
-                        return {
-                            abort: true,
-                            code: 'NO_BATTLE_CHANCE'
-                        };
-                    }
-
-                    student.weekly_battles = currentW - 1;
-
-                    return {};
-                }
-            );
-
+            const nextW = Math.max(0, curW - 1);
+            await patchFirebaseStudentFields(currentStudent.name, { weekly_battles: nextW });
+            currentStudent.weekly_battles = nextW;
             hideGlobalLoading();
-
-            if (!tx.committed) {
-                showUiAlert(
-                    '🚫 입장 불가',
-                    '이번 주 모험 횟수를 모두 소진했습니다.<br><span style="font-size:0.8em; color:#aaa;">(매주 월요일 자정 초기화)</span>',
-                    ''
-                );
-
-                return;
-            }
         } catch (err) {
             hideGlobalLoading();
-
-            await syncFreshCurrentStudent(true);
-
-            showUiAlert(
-                "❌ 입장 오류",
-                "사냥터 입장 횟수를 저장하지 못했습니다: " + err.message,
-                "renderDashboard()"
-            );
-
+            showUiAlert("❌ 입장 오류", "사냥터 입장 처리에 실패했습니다: " + err.message, "renderDashboard()");
             return;
         }
     }
 
     battleState.isTower = false;
+    // 💡 [중복 지급 방지] 이번 전투 고유 세션 ID 생성
+    battleState.sessionId = 'BAT_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     closeSubModal();
     document.getElementById('singlePlayerContainer').style.display = 'block';
     document.getElementById('partyPlayerContainer').style.display = 'none';
@@ -360,16 +333,15 @@ async function fleeBattle() {
     showGlobalLoading("🏃 후퇴 정보 저장 중...");
 
     try {
-        await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                student.last_defeat = pTime;
-                student.penalty_end_time = pTime + (2 * 60 * 60 * 1000);
-                student.flee_count = (Number(student.flee_count) || 0) + 1;
+        // 💡 패널티 데이터만 핀포인트 PATCH
+        const fleePayload = {
+            last_defeat: pTime,
+            penalty_end_time: pTime + (2 * 60 * 60 * 1000),
+            flee_count: (Number(currentStudent.flee_count) || 0) + 1
+        };
 
-                return {};
-            }
-        );
+        await patchFirebaseStudentFields(currentStudent.name, fleePayload);
+        Object.assign(currentStudent, fleePayload);
 
         hideGlobalLoading();
 
@@ -1252,15 +1224,13 @@ function showBattleResult(isWin) {
 
         showGlobalLoading("☠️ 패배 정보 저장 중...");
 
-        runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                student.last_defeat = nowTime;
-                student.penalty_end_time = nowTime + (8 * 60 * 60 * 1000);
+        const defeatPayload = {
+            last_defeat: nowTime,
+            penalty_end_time: nowTime + (8 * 60 * 60 * 1000)
+        };
 
-                return {};
-            }
-        ).then(() => {
+        patchFirebaseStudentFields(currentStudent.name, defeatPayload).then(() => {
+            Object.assign(currentStudent, defeatPayload);
             hideGlobalLoading();
 
             // 📝 [Firebase 사냥/보스전 패배 로그 전송]
@@ -1428,145 +1398,126 @@ async function claimReward(rowIdx, colIdx) {
             '<button class="btn-main" style="margin-top:20px; background:#555;" disabled>보상 기록 중... ⏳</button>';
 
         const combinedRewardStr = battleState.pickedRewards.join(',');
+        await saveBattleRewardsSafely(combinedRewardStr);
+    }
+}
 
-        showGlobalLoading("🏆 전투 보상 기록 중...");
+// 💡 [완전 무결점] 레벨 참조 버그 해결 + 15세션 멱등성 보장 보상 저장 함수
+async function saveBattleRewardsSafely(combinedRewardStr) {
+    showGlobalLoading("🏆 전투 보상 기록 중...");
 
-        const mName = battleState.monster.name;
-        const star = Number(battleState.monster.difficulty) || 1;
-        const expGain = mName.includes('[보스]') ? (star * 30) : (star * 10);
+    const btnContainer = document.getElementById('uiPopupButtons');
+    if (btnContainer) {
+        btnContainer.innerHTML = '<button class="btn-main" style="margin-top:20px; background:#555;" disabled>보상 기록 중... ⏳</button>';
+    }
 
-        const expMax = Number(sysConfig.exp_max) || 200;
-        const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
+    const currentSessionId = battleState.sessionId || ('BAT_' + Date.now());
+    const mName = battleState.monster.name;
+    const star = Number(battleState.monster.difficulty) || 1;
+    const expGain = mName.includes('[보스]') ? (star * 30) : (star * 10);
+    const expMax = Number(sysConfig.exp_max) || 200;
+    const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
 
-        try {
-            const tx = await runStudentAtomicTransaction(
-                currentStudent.name,
-                student => {
-                    // 1. 선택한 전리품을 Firebase 최신 상태에 직접 누적
-                    battleState.pickedRewards.forEach(r => {
-                        let itemName = r;
-                        let count = 1;
+    try {
+        const tx = await runStudentAtomicTransaction(currentStudent.name, student => {
+            // 🛡️ 멱등성 다중 검증: 최근 처리된 전투 세션 맵 확인 (중복 지급 완벽 차단)
+            let processedBattles = student.processed_battles || {};
+            if (processedBattles[currentSessionId]) {
+                return { alreadyProcessed: true, newLv: Number(student.level) || 1 };
+            }
 
-                        if (r.includes('*')) {
-                            let parts = r.split('*');
-                            itemName = parts[0].trim();
-                            count = parseInt(parts[1]) || 1;
-                        }
+            // 💡 [버그 완전 해결] 레벨업 계산 전 최신 학생 데이터의 기존 레벨을 안전하게 보관!
+            const previousLevel = Number(student.level) || 1;
+            let curLv = previousLevel;
+            let curExp = (Number(student.exp) || 0) + expGain;
+            let curLp = Number(student.level_points) || 0;
+            let curMoney = Number(student.game_money) || 0;
 
-                        for (let i = 0; i < count; i++) {
-                            let match = String(itemName).match(/^(\d+)(.*)$/);
+            while (curExp >= expMax) {
+                curExp -= expMax;
+                curLv += 1;
+                curLp += pointsPerLevel;
+            }
 
-                            if (match) {
-                                let amount = Number(match[1]);
-                                let textPart = match[2].trim();
+            let items = student.inventory ? String(student.inventory).split(',').map(x => x.trim()).filter(Boolean) : [];
 
-                                if (
-                                    !textPart.includes('권') &&
-                                    !textPart.includes('도전') &&
-                                    !textPart.includes('티켓') &&
-                                    !textPart.includes('단장')
-                                ) {
-                                    student.game_money =
-                                        (Number(student.game_money) || 0) +
-                                        amount;
-                                } else {
-                                    let items = student.inventory
-                                        ? String(student.inventory).split(',')
-                                        : [];
-
-                                    items.push(itemName);
-                                    student.inventory = items.join(',');
-                                }
-                            } else {
-                                let items = student.inventory
-                                    ? String(student.inventory).split(',')
-                                    : [];
-
-                                items.push(itemName);
-                                student.inventory = items.join(',');
-                            }
-                        }
-                    });
-
-                    // 2. 몬스터 도감 누적
-                    if (battleState.monster) {
-                        const mId =
-                            battleState.monster.monster_id ||
-                            battleState.monster.boss_id;
-
-                        if (mId) {
-                            const rawMonsters =
-                                String(student.monster_data || "").replace(/!/g, '');
-
-                            let myMonsters = rawMonsters
-                                ? rawMonsters.split(',').map(x => x.trim()).filter(Boolean)
-                                : [];
-
-                            myMonsters.push(mId);
-                            student.monster_data = "!" + myMonsters.join(',');
-                        }
-                    }
-
-                    // 3. 경험치 및 레벨업
-                    student.exp =
-                        (Number(student.exp) || 0) +
-                        expGain;
-
-                    let leveledUp = false;
-
-                    while (student.exp >= expMax) {
-                        student.exp -= expMax;
-                        student.level =
-                            (Number(student.level) || 1) + 1;
-
-                        student.level_points =
-                            (Number(student.level_points) || 0) +
-                            pointsPerLevel;
-
-                        leveledUp = true;
-                    }
-
-                    return {
-                        leveledUp: leveledUp,
-                        level: Number(student.level) || 1
-                    };
+            battleState.pickedRewards.forEach(r => {
+                let itemName = r;
+                let count = 1;
+                if (r.includes('*')) {
+                    let parts = r.split('*');
+                    itemName = parts[0].trim();
+                    count = parseInt(parts[1]) || 1;
                 }
-            );
-
-            hideGlobalLoading();
-
-            pushFirebaseLog('common', {
-                time: new Date().toISOString(),
-                name: currentStudent.name,
-                category: battleState.isBoss ? "보스 도전" : "일반 사냥",
-                content: mName + " 처치 -> " + combinedRewardStr +
-                    (tx.result.leveledUp ? " (Lv." + tx.result.level + " 레벨업)" : "")
+                for (let i = 0; i < count; i++) {
+                    let match = String(itemName).match(/^(\d+)(.*)$/);
+                    if (match) {
+                        let amount = Number(match[1]);
+                        let textPart = match[2].trim();
+                        if (!textPart.includes('권') && !textPart.includes('도전') && !textPart.includes('티켓') && !textPart.includes('단장')) {
+                            curMoney += amount;
+                        } else {
+                            items.push(itemName);
+                        }
+                    } else {
+                        items.push(itemName);
+                    }
+                }
             });
 
-            if (tx.result.leveledUp) {
-                showUiAlert(
-                    "🎊 레벨 업!!",
-                    "축하합니다! <b>Lv." + tx.result.level + "</b>(이)가 되었습니다.<br>추가 스탯 포인트 <b>" + pointsPerLevel + "pt</b>를 획득했습니다!",
-                    "closeUiPopup(); document.getElementById('battleModal').style.display='none'; renderDashboard();"
-                );
-            } else {
-                document.getElementById('uiPopupButtons').innerHTML =
-                    '<button class="btn-main" style="margin-top:20px;" onclick="closeUiPopup(); document.getElementById(\'battleModal\').style.display = \'none\'; renderDashboard();">확인 (전투 종료)</button>';
+            let curMonsters = student.monster_data ? String(student.monster_data).replace(/!/g, '') : '';
+            let myMonsters = curMonsters ? curMonsters.split(',').map(x => x.trim()).filter(Boolean) : [];
+            const mId = battleState.monster.monster_id || battleState.monster.boss_id;
+            if (mId) myMonsters.push(mId);
 
-                renderDashboard();
+            // 세션 히스토리 기록 (최대 15개 유지)
+            processedBattles[currentSessionId] = Date.now();
+            const sessionKeys = Object.keys(processedBattles);
+            if (sessionKeys.length > 15) {
+                delete processedBattles[sessionKeys[0]];
             }
-        } catch (err) {
-            battleState.rewardSaving = false;
 
-            hideGlobalLoading();
+            student.game_money = curMoney;
+            student.inventory = items.join(',');
+            student.exp = curExp;
+            student.level = curLv;
+            student.level_points = curLp;
+            student.monster_data = "!" + myMonsters.join(',');
+            student.processed_battles = processedBattles;
 
-            await syncFreshCurrentStudent(true);
+            return { leveledUp: curLv > previousLevel, newLv: curLv };
+        });
 
-            showUiAlert(
-                "❌ 저장 오류",
-                "전투 보상을 저장하지 못했습니다: " + err.message,
-                "renderDashboard()"
-            );
+        hideGlobalLoading();
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: battleState.isBoss ? "보스 도전" : "일반 사냥",
+            content: mName + " 처치 -> " + combinedRewardStr + (tx.result.leveledUp ? " (Lv." + tx.result.newLv + " 레벨업)" : "")
+        });
+
+        // 성공 시 확정 [확인] 버튼 노출
+        if (btnContainer) {
+            btnContainer.innerHTML =
+                '<button class="btn-main" style="margin-top:20px; background:var(--Highlight);" onclick="closeUiPopup(); document.getElementById(\'battleModal\').style.display = \'none\'; renderDashboard();">확인 (전투 종료)</button>';
+        }
+        renderDashboard();
+        battleState.rewardSaving = false;
+
+    } catch (err) {
+        battleState.rewardSaving = false;
+        hideGlobalLoading();
+
+        // 💡 팝업 메시지와 재시도 버튼을 덮어쓰지 않고 화면에 온전히 유지
+        document.getElementById('uiPopupTitle').innerHTML = "⚠️ 보상 저장 지연";
+        document.getElementById('uiPopupMessage').innerHTML = 
+            "<span style='color:#F59E0B; font-weight:bold;'>네트워크 지연으로 보상 저장이 완료되지 않았습니다.</span><br><br>" +
+            "획득한 보상은 안전하게 보존되어 있으니,<br>아래 <b>[보상 저장 다시 시도]</b> 버튼을 눌러주세요!";
+        
+        if (btnContainer) {
+            btnContainer.innerHTML =
+                '<button class="btn-main" style="margin-top:20px; background:#F59E0B; color:black; font-weight:bold;" onclick="saveBattleRewardsSafely(\'' + combinedRewardStr.replace(/'/g, "\\'") + '\')">🔄 보상 저장 다시 시도</button>';
         }
     }
 }
@@ -1769,64 +1720,34 @@ async function enterRaid(dungeonId) {
     showGlobalLoading("🏰 파티원 탐험 기회 확인 중...");
 
     try {
-        // 각 학생별 기존 저장 큐가 있다면 먼저 완료시킴
-        await Promise.all(
-            raidParty.map(sName =>
-                studentWriteQueues[sName]
-                    ? studentWriteQueues[sName].catch(() => {})
-                    : Promise.resolve()
-            )
-        );
-
         const maxWeeklyRaid = Number(sysConfig.max_weekly_raid) || 1;
 
+        // 🛡️ [All-or-Nothing 3인 원자 트랜잭션] 3명 전원 동시 확정 또는 전원 안전 취소 (짝짝이 차감 원천 방지)
         const tx = await runFirebasePathAtomicTransaction(
             'https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json',
             studentsRoot => {
-                const currentCounts = {};
-
-                // 1. 3명 모두 자격부터 확인
+                // 1. 3명 모두의 최신 횟수 동시 검증
                 for (let i = 0; i < raidParty.length; i++) {
                     const sName = raidParty[i];
-
-                    const student = getStudentFromFirebaseRoot(
-                        studentsRoot,
-                        sName
-                    );
-
+                    const student = getStudentFromFirebaseRoot(studentsRoot, sName);
                     if (!student) {
-                        return {
-                            abort: true,
-                            code: 'STUDENT_NOT_FOUND',
-                            studentName: sName
-                        };
+                        return { abort: true, code: 'STUDENT_NOT_FOUND', studentName: sName };
                     }
-
-                    const currentRaid =
-                        (student.weekly_raid !== undefined && student.weekly_raid !== "")
-                            ? Number(student.weekly_raid)
-                            : maxWeeklyRaid;
-
-                    if (currentRaid <= 0) {
-                        return {
-                            abort: true,
-                            code: 'NO_RAID_CHANCE',
-                            studentName: sName
-                        };
+                    const curRaid = (student.weekly_raid !== undefined && student.weekly_raid !== "")
+                        ? Number(student.weekly_raid)
+                        : maxWeeklyRaid;
+                    if (curRaid <= 0) {
+                        return { abort: true, code: 'NO_RAID_CHANCE', studentName: sName };
                     }
-
-                    currentCounts[sName] = currentRaid;
                 }
 
-                // 2. 세 명 모두 가능할 때만 한 번에 차감
+                // 2. 3명 모두 가능할 때만 한 번에 3명 차감 (1명이라도 통신 끊기면 전체 취소)
                 raidParty.forEach(sName => {
-                    const student = getStudentFromFirebaseRoot(
-                        studentsRoot,
-                        sName
-                    );
-
-                    student.weekly_raid =
-                        currentCounts[sName] - 1;
+                    const student = getStudentFromFirebaseRoot(studentsRoot, sName);
+                    const curRaid = (student.weekly_raid !== undefined && student.weekly_raid !== "")
+                        ? Number(student.weekly_raid)
+                        : maxWeeklyRaid;
+                    student.weekly_raid = curRaid - 1;
                 });
 
                 return {};
@@ -1838,27 +1759,18 @@ async function enterRaid(dungeonId) {
         if (!tx.committed) {
             showUiAlert(
                 '🚫 출발 불가',
-                (tx.result.studentName || '파티원') +
-                    ' 모험가의 파티 던전 탐험 기회가 부족하거나 최신 데이터를 확인할 수 없습니다.',
+                (tx.result.studentName || '파티원') + ' 모험가의 파티 던전 탐험 기회가 부족하여 입장이 안전하게 취소되었습니다.',
                 ''
             );
-
             return;
         }
 
-        applyFirebaseStudentRootToLocal(
-            tx.data,
-            raidParty
-        );
+        // 로컬 상태 안전 동기화
+        applyFirebaseStudentRootToLocal(tx.data, raidParty);
+
     } catch (err) {
         hideGlobalLoading();
-
-        showUiAlert(
-            "❌ 입장 오류",
-            "파티 던전 입장 정보를 저장하지 못했습니다: " + err.message,
-            "renderDashboard()"
-        );
-
+        showUiAlert("❌ 입장 오류", "파티 던전 입장 처리에 실패했습니다: " + err.message, "renderDashboard()");
         return;
     }
 
@@ -1871,12 +1783,14 @@ async function enterRaid(dungeonId) {
     document.getElementById('partyPlayerContainer').style.display = 'flex';
     document.getElementById('battlePlayerName').innerText = "모험가 파티";
 
+    // 💡 [ID 보존] 새 battleState 객체 리터럴 내부에 raidSessionId를 직접 보존!
     battleState = {
+        raidSessionId: 'RAID_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
         isRaid: true,
         isFleeing: false,
         party: [],
         currentTurnIdx: 0,
-        raidRound: 1, // 💡 서든데스 연산을 위해 반드시 초기화 선언 필요! (누락 시 NaN 버그 발생)
+        raidRound: 1,
         monster: null,
         monsterMaxHp: 0,
         monsterCurrentHp: 0,
@@ -2656,94 +2570,60 @@ async function finishRaid(isSuccess) {
     const partyNames = battleState.party.map(p => String(p.name).trim());
 
     try {
-        await Promise.all(
-            partyNames.map(sName =>
-                studentWriteQueues[sName]
-                    ? studentWriteQueues[sName].catch(() => {})
-                    : Promise.resolve()
-            )
-        );
-
-        const tx = await runFirebasePathAtomicTransaction(
-            'https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json',
-            studentsRoot => {
-                const leveledUpMembers = [];
-
-                for (let i = 0; i < partyNames.length; i++) {
-                    const student = getStudentFromFirebaseRoot(
-                        studentsRoot,
-                        partyNames[i]
-                    );
-
-                    if (!student) {
-                        return {
-                            abort: true,
-                            code: 'STUDENT_NOT_FOUND',
-                            studentName: partyNames[i]
-                        };
-                    }
-                }
-
-                partyNames.forEach(sName => {
-                    const student = getStudentFromFirebaseRoot(
-                        studentsRoot,
-                        sName
-                    );
-
-                    student.exp =
-                        (Number(student.exp) || 0) +
-                        sharedRaidExp;
-
-                    let memberLeveled = false;
-
-                    while (student.exp >= expMax) {
-                        student.exp -= expMax;
-                        student.level =
-                            (Number(student.level) || 1) + 1;
-
-                        student.level_points =
-                            (Number(student.level_points) || 0) +
-                            pointsPerLevel;
-
-                        memberLeveled = true;
-                    }
-
-                    if (memberLeveled) {
-                        leveledUpMembers.push(
-                            `${student.name}(Lv.${student.level})`
-                        );
-                    }
-
-                    if (boxToGive) {
-                        let items = student.inventory
-                            ? String(student.inventory).split(',')
-                            : [];
-
-                        items.push(boxToGive);
-                        student.inventory = items.join(',');
-                    }
-                });
-
-                return {
-                    leveledUpMembers: leveledUpMembers
-                };
-            }
-        );
-
-        if (!tx.committed) {
-            throw new Error(
-                (tx.result.studentName || '') +
-                " 학생의 최신 데이터를 확인할 수 없습니다."
-            );
+        const leveledUpMembers = [];
+        // 🛡️ [중복 방지 강화] 입장 시 발급된 정산 ID가 없으면 임의 생성하지 않고 안전 중단
+        if (!battleState.raidSessionId) {
+            throw new Error("유효한 레이드 세션 ID가 없어 보상을 확정할 수 없습니다.");
         }
+        const currentRaidSessionId = battleState.raidSessionId;
 
-        applyFirebaseStudentRootToLocal(
-            tx.data,
-            partyNames
+        // 🛡️ 파티원 3명 각각 원자 트랜잭션 + 세션 검증 (중복 지급 차단 및 미지급 안전 복구)
+        await Promise.all(
+            partyNames.map(async sName => {
+                await runStudentAtomicTransaction(sName, student => {
+                    // 🛡️ 이미 해당 레이드 보상을 받은 학생이면 중복 지급 중단
+                    let processedRaids = student.processed_raids || {};
+                    if (processedRaids[currentRaidSessionId]) {
+                        return { alreadyProcessed: true };
+                    }
+
+                    const previousLevel = Number(student.level) || 1;
+                    let curLv = previousLevel;
+                    let curExp = (Number(student.exp) || 0) + sharedRaidExp;
+                    let curLp = Number(student.level_points) || 0;
+
+                    while (curExp >= expMax) {
+                        curExp -= expMax;
+                        curLv += 1;
+                        curLp += pointsPerLevel;
+                    }
+
+                    if (curLv > previousLevel) {
+                        leveledUpMembers.push(`${student.name}(Lv.${curLv})`);
+                    }
+
+                    let items = student.inventory ? String(student.inventory).split(',').map(x => x.trim()).filter(Boolean) : [];
+                    if (boxToGive) {
+                        items.push(boxToGive);
+                    }
+
+                    // 세션 기록 누적 (최대 15개 보관)
+                    processedRaids[currentRaidSessionId] = Date.now();
+                    const raidKeys = Object.keys(processedRaids);
+                    if (raidKeys.length > 15) {
+                        delete processedRaids[raidKeys[0]];
+                    }
+
+                    student.exp = curExp;
+                    student.level = curLv;
+                    student.level_points = curLp;
+                    student.inventory = items.join(',');
+                    student.processed_raids = processedRaids;
+
+                    return {};
+                });
+            })
         );
-
-        const leveledUpMembers =
-            tx.result.leveledUpMembers || [];
 
         if (leveledUpMembers.length > 0) {
             msg +=
@@ -2869,84 +2749,50 @@ async function startBossBattle(bossId, type) {
 
     battleState.bossEntryType = type;
 
-    showGlobalLoading("💀 보스 레이드 입장 처리 중...");
-
     const bossGrade = String(boss.require || boss.Require || '하급').trim();
     const reqTicket = bossGrade + ' 보스 도전권';
     const maxBoss = Number(sysConfig.max_weekly_boss) || 3;
 
+    const curBoss = (currentStudent.weekly_boss !== undefined && currentStudent.weekly_boss !== "")
+        ? Number(currentStudent.weekly_boss)
+        : maxBoss;
+
+    if (curBoss <= 0) {
+        showUiAlert("🚫 도전 불가", "이번 주 보스 도전 기회를 모두 소진했습니다.", "renderDashboard()");
+        return;
+    }
+
+    const rawInv = String(currentStudent.inventory || "");
+    let items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
+    const ticketIdx = items.indexOf(reqTicket);
+
+    if (ticketIdx === -1) {
+        showUiAlert("🚫 도전 불가", "가방에 <b style='color:var(--Red);'>" + reqTicket + "</b>이(가) 없습니다!", "renderDashboard()");
+        return;
+    }
+
+    showGlobalLoading("💀 보스 레이드 입장 처리 중...");
+
     try {
-        const tx = await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                const curBoss =
-                    (student.weekly_boss !== undefined && student.weekly_boss !== "")
-                        ? Number(student.weekly_boss)
-                        : maxBoss;
+        items.splice(ticketIdx, 1);
+        const nextBoss = Math.max(0, curBoss - 1);
+        const nextInv = items.join(',');
 
-                if (curBoss <= 0) {
-                    return {
-                        abort: true,
-                        code: 'NO_BOSS_CHANCE'
-                    };
-                }
+        // 💡 weekly_boss와 inventory만 핀포인트 PATCH (다른 횟수 간섭 0%)
+        const bossEntryPayload = {
+            weekly_boss: nextBoss,
+            inventory: nextInv
+        };
 
-                const rawInv = String(student.inventory || "");
-
-                let items = rawInv
-                    ? rawInv.split(',').map(x => x.trim()).filter(Boolean)
-                    : [];
-
-                const ticketIdx = items.indexOf(reqTicket);
-
-                if (ticketIdx === -1) {
-                    return {
-                        abort: true,
-                        code: 'NO_TICKET'
-                    };
-                }
-
-                items.splice(ticketIdx, 1);
-
-                student.inventory = items.join(',');
-                student.weekly_boss = curBoss - 1;
-
-                return {};
-            }
-        );
+        await patchFirebaseStudentFields(currentStudent.name, bossEntryPayload);
+        Object.assign(currentStudent, bossEntryPayload);
 
         hideGlobalLoading();
-
-        if (!tx.committed) {
-            if (tx.result.code === 'NO_TICKET') {
-                showUiAlert(
-                    "🚫 도전 불가",
-                    "가방에 <b style='color:var(--Red);'>" + reqTicket + "</b>이(가) 없습니다!",
-                    "renderDashboard()"
-                );
-            } else {
-                showUiAlert(
-                    "🚫 도전 불가",
-                    "이번 주 보스 도전 기회를 모두 소진했습니다.",
-                    "renderDashboard()"
-                );
-            }
-
-            return;
-        }
-
         closeSubModal();
         await enterBattle(bossId, true);
     } catch (err) {
         hideGlobalLoading();
-
-        await syncFreshCurrentStudent(true);
-
-        showUiAlert(
-            "❌ 입장 오류",
-            "보스전 입장 정보를 저장하지 못했습니다: " + err.message,
-            "renderDashboard()"
-        );
+        showUiAlert("❌ 입장 오류", "보스전 입장 처리에 실패했습니다: " + err.message, "renderDashboard()");
     }
 }
 
@@ -2962,55 +2808,26 @@ function checkAndStartTower() {
 }
 
 async function startTower() {
-    // 🛡️ Firebase 최신값 기준 도전 횟수 원자 차감
+    // 🛡️ 도전의 탑 입장 횟수만 핀포인트(단독) 차감
     const maxTower = Number(sysConfig.max_weekly_tower) || 1;
+    const curTower = (currentStudent.weekly_tower !== undefined && currentStudent.weekly_tower !== "")
+        ? Number(currentStudent.weekly_tower)
+        : maxTower;
+
+    if (curTower <= 0) {
+        showUiAlert('🚫 입장 불가', '이번 주 도전의 탑 기회를 모두 소진했습니다.', 'renderDashboard()');
+        return;
+    }
 
     showGlobalLoading("🗼 도전의 탑 입장 처리 중...");
-
     try {
-        const tx = await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                const curTower =
-                    (student.weekly_tower !== undefined && student.weekly_tower !== "")
-                        ? Number(student.weekly_tower)
-                        : maxTower;
-
-                if (curTower <= 0) {
-                    return {
-                        abort: true,
-                        code: 'NO_TOWER_CHANCE'
-                    };
-                }
-
-                student.weekly_tower = curTower - 1;
-
-                return {};
-            }
-        );
-
+        const nextTower = Math.max(0, curTower - 1);
+        await patchFirebaseStudentFields(currentStudent.name, { weekly_tower: nextTower });
+        currentStudent.weekly_tower = nextTower;
         hideGlobalLoading();
-
-        if (!tx.committed) {
-            showUiAlert(
-                '🚫 입장 불가',
-                '이번 주 도전의 탑 기회를 모두 소진했습니다.',
-                'renderDashboard()'
-            );
-
-            return;
-        }
     } catch (err) {
         hideGlobalLoading();
-
-        await syncFreshCurrentStudent(true);
-
-        showUiAlert(
-            "❌ 입장 오류",
-            "도전의 탑 입장 횟수를 저장하지 못했습니다: " + err.message,
-            "renderDashboard()"
-        );
-
+        showUiAlert("❌ 입장 오류", "도전의 탑 입장 처리에 실패했습니다: " + err.message, "renderDashboard()");
         return;
     }
 
@@ -3254,45 +3071,33 @@ async function endTowerAndReward(isMaxClear = false) {
     showGlobalLoading("🗼 도전의 탑 결과 저장 중...");
 
     try {
-        await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                student.max_tower_floor = Math.max(
-                    Number(student.max_tower_floor) || 0,
-                    clearedFloors
-                );
+        // 1. 해당 학생의 최신 가방/도감만 가볍게 조회
+        const encName = encodeURIComponent(String(currentStudent.name).trim());
+        const res = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${encName}.json`);
+        const fresh = await res.json() || currentStudent;
 
-                if (rmAmount > 0) {
-                    let items = student.inventory
-                        ? String(student.inventory).split(',')
-                        : [];
+        let items = fresh.inventory ? String(fresh.inventory).split(',').map(x => x.trim()).filter(Boolean) : [];
+        if (rmAmount > 0) {
+            items.push(`[현실 재화] ${rmAmount}${realCurrency} 교환권`);
+        }
 
-                    items.push(
-                        `[현실 재화] ${rmAmount}${realCurrency} 교환권`
-                    );
+        let curMonsters = fresh.monster_data ? String(fresh.monster_data).replace(/!/g, '') : '';
+        let myMonsters = curMonsters ? curMonsters.split(',').map(x => x.trim()).filter(Boolean) : [];
+        if (battleState.towerMonsterIds.length > 0) {
+            myMonsters.push(...battleState.towerMonsterIds);
+        }
 
-                    student.inventory = items.join(',');
-                }
+        const maxFloor = Math.max(Number(fresh.max_tower_floor) || 0, clearedFloors);
 
-                if (battleState.towerMonsterIds.length > 0) {
-                    const rawMonsters =
-                        String(student.monster_data || "").replace(/!/g, '');
+        // 2. 탑 결과 필드만 핀포인트 PATCH (다른 학생 간섭 0%)
+        const towerPayload = {
+            max_tower_floor: maxFloor,
+            inventory: items.join(','),
+            monster_data: "!" + myMonsters.join(',')
+        };
 
-                    let myMonsters = rawMonsters
-                        ? rawMonsters.split(',').map(x => x.trim()).filter(Boolean)
-                        : [];
-
-                    myMonsters.push(
-                        ...battleState.towerMonsterIds
-                    );
-
-                    student.monster_data =
-                        "!" + myMonsters.join(',');
-                }
-
-                return {};
-            }
-        );
+        await patchFirebaseStudentFields(currentStudent.name, towerPayload);
+        Object.assign(currentStudent, towerPayload);
 
         pushFirebaseLog('common', {
             time: new Date().toISOString(),
@@ -3336,47 +3141,21 @@ async function startWorldBossRaid(wbId) {
 
     const todayStr = getKSTDateString();
 
+    if (String(currentStudent.last_wb_date || '') === todayStr) {
+        showUiAlert("🚫 오늘 출전 완료", "월드 보스는 하루에 한 번만 도전할 수 있습니다.", "renderDashboard()");
+        return;
+    }
+
     showGlobalLoading("🐲 월드 보스 출전 정보 확인 중...");
 
     try {
-        const tx = await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                if (String(student.last_wb_date || '') === todayStr) {
-                    return {
-                        abort: true,
-                        code: 'ALREADY_ENTERED'
-                    };
-                }
-
-                student.last_wb_date = todayStr;
-
-                return {};
-            }
-        );
-
+        // 💡 last_wb_date 1개만 핀포인트 PATCH (사냥 횟수나 스탯 덮어쓰기 원천 차단)
+        await patchFirebaseStudentFields(currentStudent.name, { last_wb_date: todayStr });
+        currentStudent.last_wb_date = todayStr;
         hideGlobalLoading();
-
-        if (!tx.committed) {
-            showUiAlert(
-                "🚫 오늘 출전 완료",
-                "월드 보스는 하루에 한 번만 도전할 수 있습니다.",
-                "renderDashboard()"
-            );
-
-            return;
-        }
     } catch (err) {
         hideGlobalLoading();
-
-        await syncFreshCurrentStudent(true);
-
-        showUiAlert(
-            "❌ 출전 오류",
-            "월드 보스 출전 정보를 저장하지 못했습니다: " + err.message,
-            "renderDashboard()"
-        );
-
+        showUiAlert("❌ 출전 오류", "월드 보스 출전 처리에 실패했습니다: " + err.message, "renderDashboard()");
         return;
     }
 
@@ -3705,63 +3484,46 @@ async function finishWorldBossSession(isSurvived) {
             }
         );
 
-        // 2. 학생 개인 일일 보상도 별도의 중복 방지 필드로 원자 정산
-        const studentTx = await runStudentAtomicTransaction(
-            currentStudent.name,
-            student => {
-                if (
-                    String(student.last_wb_reward_date || '') ===
-                    todayStr
-                ) {
-                    return {
-                        abort: true,
-                        code: 'ALREADY_REWARDED'
-                    };
-                }
-
-                student.last_wb_date = todayStr;
-
-                student.wb_total_damage =
-                    (Number(student.wb_total_damage) || 0) +
-                    finalDamage;
-
-                student.game_money =
-                    (Number(student.game_money) || 0) +
-                    rewardGold;
-
-                student.exp =
-                    (Number(student.exp) || 0) +
-                    rewardExp;
-
-                let leveledUp = false;
-
-                while (student.exp >= expMax) {
-                    student.exp -= expMax;
-                    student.level =
-                        (Number(student.level) || 1) + 1;
-
-                    student.level_points =
-                        (Number(student.level_points) || 0) +
-                        pointsPerLevel;
-
-                    leveledUp = true;
-                }
-
-                student.last_wb_reward_date = todayStr;
-
-                return {
-                    leveledUp: leveledUp,
-                    level: Number(student.level) || 1
-                };
-            }
-        );
-
         if (wbTx.data) {
             worldBossState = wbTx.data;
         }
 
-        // 최초 정상 정산 때만 로그 생성
-        if (wbTx.committed || studentTx.committed) {
+        // 🛡️ [핵심 분리] 공용 보스가 이미 처리되었더라도 학생이 오늘 보상을 못 받았다면 반드시 지급!
+        let studentLeveledUp = false;
+        const studentTx = await runStudentAtomicTransaction(currentStudent.name, student => {
+            // 학생이 오늘 이미 개인 보상까지 다 받았다면 중복 지급 차단
+            if (String(student.last_wb_reward_date || '') === todayStr) {
+                return { abort: true, code: 'ALREADY_REWARDED' };
+            }
+
+            const previousLevel = Number(student.level) || 1;
+            let curLv = previousLevel;
+            let curExp = (Number(student.exp) || 0) + rewardExp;
+            let curLp = Number(student.level_points) || 0;
+            let curMoney = Number(student.game_money) || 0;
+
+            while (curExp >= expMax) {
+                curExp -= expMax;
+                curLv += 1;
+                curLp += pointsPerLevel;
+            }
+
+            student.wb_total_damage = (Number(student.wb_total_damage) || 0) + finalDamage;
+            student.game_money = curMoney + rewardGold;
+            student.exp = curExp;
+            student.level = curLv;
+            student.level_points = curLp;
+            student.last_wb_reward_date = todayStr;
+
+            return { leveledUp: curLv > previousLevel, newLv: curLv };
+        });
+
+        if (studentTx.committed && studentTx.result.leveledUp) {
+            studentLeveledUp = true;
+        }
+
+        // 최초 정상 지급 시에만 로그 기록
+        if (studentTx.committed) {
             pushFirebaseLog('common', {
                 time: new Date().toISOString(),
                 name: currentStudent.name,
@@ -3773,12 +3535,7 @@ async function finishWorldBossSession(isSurvived) {
         }
 
         hideGlobalLoading();
-
         updateWorldBossBanner(activeBoss);
-
-        const leveledUp =
-            studentTx.committed &&
-            studentTx.result.leveledUp;
 
         const outcomeTitle =
             isSurvived
@@ -3789,7 +3546,7 @@ async function finishWorldBossSession(isSurvived) {
             `오늘 가한 총 피해량: <b style="color:#EF4444; font-size:1.3em;">${finalDamage.toLocaleString()} 딜</b><br>` +
             `내 누적 기여도: <b style="color:#FBBF24;">${(Number(currentStudent.wb_total_damage) || 0).toLocaleString()} 딜</b><br><br>` +
             `🎁 <b>일일 참여 보상 지급</b>: <span style="color:#34D399;">+${rewardGold} 골드</span> / <span style="color:#60A5FA;">+${rewardExp} EXP</span>` +
-            (leveledUp
+            (studentLeveledUp
                 ? `<br><br>🎊 <b>Lv.${currentStudent.level}</b>로 레벨업했습니다!`
                 : '');
 

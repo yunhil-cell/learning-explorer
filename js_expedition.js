@@ -598,42 +598,48 @@ function showSkillDetail(skillId) {
 }
 
 function equipSkill(skillId) {
-    // 💡 [개편] 대표 스킬 장착 시 동료 스킬(party_s1, party_s2)과의 중복 검사 및 자동 해제
+    // 💡 [개편] 대표 스킬 장착 시 동료 스킬과의 중복 해제 및 핀포인트 저장
+    let patchData = { equipped_1: skillId };
     if (skillId !== '') {
         if (String(currentStudent.party_s1) === String(skillId)) {
-            currentStudent.party_s1 = ''; // 동료 1 슬롯에서 자동 해제
+            currentStudent.party_s1 = '';
+            patchData.party_s1 = '';
         }
         if (String(currentStudent.party_s2) === String(skillId)) {
-            currentStudent.party_s2 = ''; // 동료 2 슬롯에서 자동 해제
+            currentStudent.party_s2 = '';
+            patchData.party_s2 = '';
         }
     }
 
     currentStudent.equipped_1 = skillId;
-
     renderDashboard();
-    updateFastFirebaseStudent(currentStudent);
+    patchFirebaseStudentFields(currentStudent.name, patchData);
 }
 
-// 4. 실제 유물 장착 처리
-// 💡 데이터 이름도 원래 시트에 맞춰 relic_1, relic_2로 바꿨습니다.
+// 4. 실제 유물 장착 처리 (핀포인트 저장)
 function equipRelic(relicId) {
-    // 아이템을 장착하려는 경우 중복 검사
     if (relicId !== '') {
         if (currentTargetSlot === 1 && String(currentStudent.relic_2) === String(relicId)) {
             showUiAlert("⚠️ 장착 실패", "이미 두 번째 슬롯에 장착 중인 유물입니다.", "");
-            return; // 진행 중단
+            return;
         }
         if (currentTargetSlot === 2 && String(currentStudent.relic_1) === String(relicId)) {
             showUiAlert("⚠️ 장착 실패", "이미 첫 번째 슬롯에 장착 중인 유물입니다.", "");
-            return; // 진행 중단
+            return;
         }
     }
 
-    if (currentTargetSlot === 1) currentStudent.relic_1 = relicId;
-    else currentStudent.relic_2 = relicId;
+    let patchData = {};
+    if (currentTargetSlot === 1) {
+        currentStudent.relic_1 = relicId;
+        patchData.relic_1 = relicId;
+    } else {
+        currentStudent.relic_2 = relicId;
+        patchData.relic_2 = relicId;
+    }
 
     renderDashboard();
-    updateFastFirebaseStudent(currentStudent);
+    patchFirebaseStudentFields(currentStudent.name, patchData);
 }
 
 // --- [복구] 유물 장착 UI (카드 그리드 구조 적용) ---
@@ -816,7 +822,7 @@ function equipSkin(skinId) {
     currentStudent.equipped_skin = skinId;
     renderDashboard();
     showUiAlert("✨ 외형 변경 완료!", "캐릭터의 스킨이 성공적으로 변경되었습니다!", "");
-    updateFastFirebaseStudent(currentStudent);
+    patchFirebaseStudentFields(currentStudent.name, { equipped_skin: skinId });
 }
 
 // --- 💡 신규: 스킨 구매(해금) 시스템 ---
@@ -1316,6 +1322,6 @@ function equipTitle(title) {
     const actualTitle = title === '칭호 없음' ? '' : title;
     currentStudent.equipped_title = actualTitle;
     renderDashboard();
-    updateFastFirebaseStudent(currentStudent);
+    patchFirebaseStudentFields(currentStudent.name, { equipped_title: actualTitle });
     showUiAlert("🏷️ 칭호 변경", "칭호가 [" + title + "](으)로 변경되었습니다!", "");
 }
