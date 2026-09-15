@@ -2832,6 +2832,7 @@ async function startTower() {
     }
 
     battleState.isTower = true;
+    battleState.towerSessionId = 'TOWER_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     battleState.towerFloor = 1;
     battleState.towerBossCount = 0;
     battleState.towerMonsterIds = [];
@@ -3070,34 +3071,43 @@ async function endTowerAndReward(isMaxClear = false) {
 
     showGlobalLoading("🗼 도전의 탑 결과 저장 중...");
 
+    const currentTowerSessionId = battleState.towerSessionId || ('TOWER_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+
     try {
-        // 1. 해당 학생의 최신 가방/도감만 가볍게 조회
-        const encName = encodeURIComponent(String(currentStudent.name).trim());
-        const res = await fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${encName}.json`);
-        const fresh = await res.json() || currentStudent;
+        // 🛡️ [원자 트랜잭션 전환] 서버 최신 인벤토리/최고층/도감 데이터를 기준으로 충돌 없이 안전 정산
+        const tx = await runStudentAtomicTransaction(currentStudent.name, student => {
+            let processedTowers = student.processed_towers || {};
+            if (processedTowers[currentTowerSessionId]) {
+                return { alreadyProcessed: true };
+            }
 
-        let items = fresh.inventory ? String(fresh.inventory).split(',').map(x => x.trim()).filter(Boolean) : [];
-        if (rmAmount > 0) {
-            items.push(`[현실 재화] ${rmAmount}${realCurrency} 교환권`);
-        }
+            let items = student.inventory ? String(student.inventory).split(',').map(x => x.trim()).filter(Boolean) : [];
+            if (rmAmount > 0) {
+                items.push(`[현실 재화] ${rmAmount}${realCurrency} 교환권`);
+            }
 
-        let curMonsters = fresh.monster_data ? String(fresh.monster_data).replace(/!/g, '') : '';
-        let myMonsters = curMonsters ? curMonsters.split(',').map(x => x.trim()).filter(Boolean) : [];
-        if (battleState.towerMonsterIds.length > 0) {
-            myMonsters.push(...battleState.towerMonsterIds);
-        }
+            let curMonsters = student.monster_data ? String(student.monster_data).replace(/!/g, '') : '';
+            let myMonsters = curMonsters ? curMonsters.split(',').map(x => x.trim()).filter(Boolean) : [];
+            if (battleState.towerMonsterIds && battleState.towerMonsterIds.length > 0) {
+                myMonsters.push(...battleState.towerMonsterIds);
+            }
 
-        const maxFloor = Math.max(Number(fresh.max_tower_floor) || 0, clearedFloors);
+            const currentMax = Number(student.max_tower_floor) || 0;
+            const finalMax = Math.max(currentMax, clearedFloors);
 
-        // 2. 탑 결과 필드만 핀포인트 PATCH (다른 학생 간섭 0%)
-        const towerPayload = {
-            max_tower_floor: maxFloor,
-            inventory: items.join(','),
-            monster_data: "!" + myMonsters.join(',')
-        };
+            processedTowers[currentTowerSessionId] = Date.now();
+            const towerKeys = Object.keys(processedTowers);
+            if (towerKeys.length > 15) {
+                delete processedTowers[towerKeys[0]];
+            }
 
-        await patchFirebaseStudentFields(currentStudent.name, towerPayload);
-        Object.assign(currentStudent, towerPayload);
+            student.max_tower_floor = finalMax;
+            student.inventory = items.join(',');
+            student.monster_data = "!" + myMonsters.join(',');
+            student.processed_towers = processedTowers;
+
+            return {};
+        });
 
         pushFirebaseLog('common', {
             time: new Date().toISOString(),

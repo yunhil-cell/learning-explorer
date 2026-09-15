@@ -1238,7 +1238,21 @@ function saveBlessing(bId) {
     }
 
     renderDashboard();
-    updateFastFirebaseStudent(currentStudent);
+    patchFirebaseStudentFields(currentStudent.name, {
+        blessing: bId,
+        password: currentStudent.password,
+        hp_points: currentStudent.hp_points,
+        atk_points: currentStudent.atk_points,
+        def_points: currentStudent.def_points,
+        luk_points: currentStudent.luk_points,
+        level: currentStudent.level,
+        exp: currentStudent.exp,
+        level_points: currentStudent.level_points,
+        bonus_points: currentStudent.bonus_points,
+        game_money: currentStudent.game_money,
+        equipped_skin: currentStudent.equipped_skin,
+        unlocked_skins: currentStudent.unlocked_skins
+    });
 }
 
 // ==========================================
@@ -1613,6 +1627,7 @@ function renderDashboard() {
         '      <div style="width:' + expPercent + '%; background:#FBBF24; height:100%; box-shadow:0 0 5px #FBBF24;"></div>' +
         '    </div>' +
         '    <div style="font-size: 0.9em; color: var(--TextSub); font-weight:bold;">EXP: ' + (s.exp || 0) + ' / ' + expMax + '</div>' +
+        (isTeacherMode ? '    <button class="small-btn" style="width:100%; margin-top:8px; padding:6px 0; background:#EF4444; color:white; font-weight:bold; border:none; border-radius:6px; font-size:0.85em; cursor:pointer;" onclick="openTeacherDirectEditor()">🛠️ 교사 직접 조정</button>' : '') +
         '  </div>' +
 
         '  <div style="flex: 2; display: flex; flex-direction: column;">' +

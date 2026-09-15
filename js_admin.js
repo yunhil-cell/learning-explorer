@@ -1646,3 +1646,345 @@ function renderLogAdmin(tab = 'forge', filterStudent = 'ALL', filterSub = 'ALL')
         '  <button style="flex:1; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>' +
         '</div>';
 }
+
+// ==========================================
+// 🛠️ 교사 전용 학생 데이터 직접 조정 시스템
+// ==========================================
+function openTeacherDirectEditor(tab = 'currency') {
+    if (!checkTeacherAuth()) return;
+    if (!currentStudent) {
+        showUiAlert("⚠️ 오류", "선택된 학생이 없습니다.", "");
+        return;
+    }
+
+    const subModal = document.getElementById('subModal');
+    const subBody = document.getElementById('subModalBody');
+
+    subModal.querySelector('.modal-content').style.background = '#0F172A';
+    subModal.querySelector('.modal-content').style.borderColor = '#EF4444';
+    subModal.style.display = 'flex';
+
+    renderTeacherDirectEditor(tab);
+}
+
+function renderTeacherDirectEditor(tab = 'currency') {
+    const subBody = document.getElementById('subModalBody');
+    const s = currentStudent;
+    const gameCurrency = sysConfig.game_money_currency || '골드';
+    const realCurrency = sysConfig.currency_name || '티';
+    const expMax = Number(sysConfig.exp_max) || 200;
+
+    const tabsHtml =
+        '<div style="display:flex; border-bottom:1px solid #334155; margin-bottom:15px;">' +
+        '  <div style="flex:1; padding:10px; cursor:pointer; font-weight:bold; text-align:center; color:' + (tab === 'currency' ? '#EF4444' : '#9CA3AF') + '; border-bottom:' + (tab === 'currency' ? '3px solid #EF4444' : 'none') + ';" onclick="renderTeacherDirectEditor(\'currency\')">💰 골드 & 경험치</div>' +
+        '  <div style="flex:1; padding:10px; cursor:pointer; font-weight:bold; text-align:center; color:' + (tab === 'items' ? '#EF4444' : '#9CA3AF') + '; border-bottom:' + (tab === 'items' ? '3px solid #EF4444' : 'none') + ';" onclick="renderTeacherDirectEditor(\'items\')">🎒 인벤토리 지급/회수</div>' +
+        '</div>';
+
+    let contentHtml = '';
+
+    if (tab === 'currency') {
+        contentHtml =
+            '<div style="text-align:left; color:#E2E8F0;">' +
+            // 1. 골드 조정 패널
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px; margin-bottom:15px;">' +
+            '    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">' +
+            '      <span style="font-weight:bold; color:#FBBF24;">💰 골드 조정</span>' +
+            '      <span style="font-size:0.9em; color:#CBD5E1;">현재 보유: <b style="color:#FBBF24;">' + (Number(s.game_money) || 0).toLocaleString() + ' ' + gameCurrency + '</b></span>' +
+            '    </div>' +
+            '    <div style="display:flex; gap:8px; align-items:center;">' +
+            '      <input type="number" id="directGoldAmount" placeholder="지급(+) 또는 차감(-) 수치 입력" style="flex:1; padding:10px; border-radius:8px; border:1px solid #334155; background:#0F172A; color:white; font-size:1em;">' +
+            '      <button class="small-btn" style="background:#10B981; color:white; padding:10px 16px; font-weight:bold; border:none; font-size:0.95em;" onclick="applyTeacherMoneyChange()">적용</button>' +
+            '    </div>' +
+            '    <div style="font-size:0.75em; color:#94A3B8; margin-top:5px;">예: 100 입력 시 100골드 추가 지급, -50 입력 시 50골드 차감</div>' +
+            '  </div>' +
+
+            // 2. 경험치 조정 패널
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px; margin-bottom:10px;">' +
+            '    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">' +
+            '      <span style="font-weight:bold; color:#60A5FA;">✨ 경험치 조정</span>' +
+            '      <span style="font-size:0.9em; color:#CBD5E1;">현재 상태: <b style="color:#FBBF24;">Lv.' + (s.level || 1) + '</b> (' + (s.exp || 0) + ' / ' + expMax + ' EXP)</span>' +
+            '    </div>' +
+            '    <div style="display:flex; gap:8px; align-items:center;">' +
+            '      <input type="number" id="directExpAmount" placeholder="지급(+) 또는 차감(-) 수치 입력" style="flex:1; padding:10px; border-radius:8px; border:1px solid #334155; background:#0F172A; color:white; font-size:1em;">' +
+            '      <button class="small-btn" style="background:#3B82F6; color:white; padding:10px 16px; font-weight:bold; border:none; font-size:0.95em;" onclick="applyTeacherExpChange()">적용</button>' +
+            '    </div>' +
+            '    <div style="font-size:0.75em; color:#94A3B8; margin-top:5px;">경험치 추가 시 기준치를 넘으면 레벨업 및 포인트가 자동 부여됩니다.</div>' +
+            '  </div>' +
+            '</div>';
+    } else {
+        // 인벤토리 목록 파싱
+        const rawInv = String(s.inventory || "");
+        const items = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
+        const itemCount = {};
+        items.forEach(item => { itemCount[item] = (itemCount[item] || 0) + 1; });
+
+        // 프리셋 아이템 목록
+        const presetItems = [
+            `[현실 재화] 10${realCurrency} 교환권`,
+            `[현실 재화] 20${realCurrency} 교환권`,
+            `[현실 재화] 30${realCurrency} 교환권`,
+            "하급 보스 도전권",
+            "중급 보스 도전권",
+            "상급 보스 도전권",
+            "부상 치료제",
+            "보스 도전기회 추가 티켓",
+            "초급 전리품 상자",
+            "중급 전리품 상자",
+            "고급 전리품 상자"
+        ];
+
+        const presetOptions = presetItems.map(p => `<option value="${p}">${p}</option>`).join('');
+
+        let currentItemsHtml = '';
+        if (Object.keys(itemCount).length === 0) {
+            currentItemsHtml = '<div style="color:#64748B; padding:15px; text-align:center;">가방에 보유한 아이템이 없습니다.</div>';
+        } else {
+            currentItemsHtml = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:8px; max-height:160px; overflow-y:auto; padding-right:4px;">';
+            for (const [name, count] of Object.entries(itemCount)) {
+                currentItemsHtml +=
+                    '<div style="background:#0F172A; border:1px solid #334155; border-radius:6px; padding:6px 10px; display:flex; justify-content:space-between; align-items:center;">' +
+                    '  <div style="font-size:0.85em; color:white; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:105px;" title="' + name + '">' + name + ' <b style="color:#10B981;">x' + count + '</b></div>' +
+                    '  <button class="small-btn" style="background:#EF4444; color:white; border:none; padding:3px 6px; font-size:0.75em;" onclick="applyTeacherItemRemove(\'' + name.replace(/'/g, "\\'") + '\')">회수</button>' +
+                    '</div>';
+            }
+            currentItemsHtml += '</div>';
+        }
+
+        contentHtml =
+            '<div style="text-align:left; color:#E2E8F0;">' +
+            // 1. 아이템 지급
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px; margin-bottom:12px;">' +
+            '    <div style="font-weight:bold; color:#10B981; margin-bottom:8px;">🎁 신규 아이템 지급</div>' +
+            '    <div style="display:flex; gap:8px; margin-bottom:8px;">' +
+            '      <select id="directItemPreset" style="flex:2; padding:9px; border-radius:8px; border:1px solid #334155; background:#0F172A; color:white; font-size:0.9em;" onchange="if(this.value) document.getElementById(\'directItemCustom\').value = this.value;">' +
+            '        <option value="">-- 프리셋 아이템 선택 --</option>' + presetOptions +
+            '      </select>' +
+            '      <input type="number" id="directItemQty" value="1" min="1" max="99" style="width:65px; padding:9px; border-radius:8px; border:1px solid #334155; background:#0F172A; color:#FBBF24; font-weight:bold; text-align:center; font-size:0.95em;">' +
+            '    </div>' +
+            '    <div style="display:flex; gap:8px;">' +
+            '      <input type="text" id="directItemCustom" placeholder="직접 아이템명 입력 가능 (예: 간식추첨권)" style="flex:1; padding:9px; border-radius:8px; border:1px solid #334155; background:#0F172A; color:white; font-size:0.9em;">' +
+            '      <button class="small-btn" style="background:#10B981; color:white; padding:9px 15px; font-weight:bold; border:none; font-size:0.9em;" onclick="applyTeacherItemGrant()">지급</button>' +
+            '    </div>' +
+            '  </div>' +
+
+            // 2. 보유 아이템 회수
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px;">' +
+            '    <div style="font-weight:bold; color:#EF4444; margin-bottom:8px;">🗑️ 현재 가방 아이템 회수 (누르면 1개씩 삭제)</div>' +
+            currentItemsHtml +
+            '  </div>' +
+            '</div>';
+    }
+
+    subBody.innerHTML =
+        '<h2 style="color:#EF4444; margin-bottom: 5px;">🛠️ 학생 데이터 직접 관리</h2>' +
+        '<p style="color:#CBD5E1; font-size:0.85em; margin-bottom:12px;">대상 학생: <b style="color:white; font-size:1.1em;">[' + s.name + ']</b></p>' +
+        tabsHtml +
+        contentHtml +
+        '<div style="margin-top:15px;">' +
+        '  <button style="width:100%; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>' +
+        '</div>';
+}
+
+// 1. 골드 직접 지급/차감 실행
+async function applyTeacherMoneyChange() {
+    const input = document.getElementById('directGoldAmount');
+    if (!input) return;
+    const amount = Number(input.value);
+
+    if (isNaN(amount) || amount === 0) {
+        showUiAlert("⚠️ 알림", "변경할 골드 수치를 정확히 입력해주세요.", "");
+        return;
+    }
+
+    const sName = currentStudent.name;
+    const gameCurrency = sysConfig.game_money_currency || '골드';
+
+    showGlobalLoading("💰 골드 수정 처리 중...");
+
+    try {
+        const tx = await runStudentAtomicTransaction(sName, student => {
+            const curMoney = Number(student.game_money) || 0;
+            const nextMoney = Math.max(0, curMoney + amount);
+            student.game_money = nextMoney;
+            return { oldMoney: curMoney, newMoney: nextMoney };
+        });
+
+        hideGlobalLoading();
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: sName,
+            category: "교사 모드",
+            content: `골드 직접 조정: ${amount > 0 ? '+' : ''}${amount}${gameCurrency} (잔액: ${tx.result.newMoney}${gameCurrency})`
+        });
+
+        renderDashboard();
+        renderTeacherDirectEditor('currency');
+
+        showUiAlert("✅ 처리 완료", `${sName} 학생의 골드가 <b>${tx.result.newMoney.toLocaleString()} ${gameCurrency}</b>로 갱신되었습니다.`, "");
+    } catch (err) {
+        hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
+        showUiAlert("❌ 오류", "골드 수정 실패: " + err.message, "");
+    }
+}
+
+// 2. 경험치 직접 지급/차감 실행 (레벨업/레벨포인트 원자 연산)
+async function applyTeacherExpChange() {
+    const input = document.getElementById('directExpAmount');
+    if (!input) return;
+    const amount = Number(input.value);
+
+    if (isNaN(amount) || amount === 0) {
+        showUiAlert("⚠️ 알림", "변경할 경험치 수치를 정확히 입력해주세요.", "");
+        return;
+    }
+
+    const sName = currentStudent.name;
+    const expMax = Number(sysConfig.exp_max) || 200;
+    const pointsPerLevel = Number(sysConfig.points_per_level) || 3;
+
+    showGlobalLoading("✨ 경험치 수정 처리 중...");
+
+    try {
+        const tx = await runStudentAtomicTransaction(sName, student => {
+            const previousLevel = Number(student.level) || 1;
+            let curLv = previousLevel;
+            let curExp = (Number(student.exp) || 0) + amount;
+            let curLp = Number(student.level_points) || 0;
+
+            if (curExp < 0) curExp = 0;
+
+            while (curExp >= expMax) {
+                curExp -= expMax;
+                curLv += 1;
+                curLp += pointsPerLevel;
+            }
+
+            student.exp = curExp;
+            student.level = curLv;
+            student.level_points = curLp;
+
+            return {
+                leveledUp: curLv > previousLevel,
+                newLv: curLv,
+                newExp: curExp
+            };
+        });
+
+        hideGlobalLoading();
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: sName,
+            category: "교사 모드",
+            content: `경험치 직접 조정: ${amount > 0 ? '+' : ''}${amount} EXP -> Lv.${tx.result.newLv} (${tx.result.newExp}/${expMax} EXP)`
+        });
+
+        renderDashboard();
+        renderTeacherDirectEditor('currency');
+
+        const lvMsg = tx.result.leveledUp ? `<br><br>🎊 <b>Lv.${tx.result.newLv}</b>(으)로 레벨업했습니다!` : '';
+        showUiAlert("✅ 처리 완료", `${sName} 학생의 경험치가 반영되었습니다.${lvMsg}`, "");
+    } catch (err) {
+        hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
+        showUiAlert("❌ 오류", "경험치 수정 실패: " + err.message, "");
+    }
+}
+
+// 3. 아이템 직접 지급 실행
+async function applyTeacherItemGrant() {
+    const customInput = document.getElementById('directItemCustom');
+    const qtyInput = document.getElementById('directItemQty');
+
+    const itemName = customInput ? customInput.value.trim() : '';
+    const qty = Math.max(1, Number(qtyInput ? qtyInput.value : 1) || 1);
+
+    if (!itemName) {
+        showUiAlert("⚠️ 알림", "지급할 아이템명을 선택하거나 입력해주세요.", "");
+        return;
+    }
+
+    if (itemName.includes(',')) {
+        showUiAlert("⚠️ 오류", "아이템 이름에는 쉼표(,)를 사용할 수 없습니다.", "");
+        return;
+    }
+
+    const sName = currentStudent.name;
+
+    showGlobalLoading("🎁 아이템 지급 처리 중...");
+
+    try {
+        await runStudentAtomicTransaction(sName, student => {
+            let items = student.inventory ? String(student.inventory).split(',').map(x => x.trim()).filter(Boolean) : [];
+            for (let i = 0; i < qty; i++) {
+                items.push(itemName);
+            }
+            student.inventory = items.join(',');
+            return {};
+        });
+
+        hideGlobalLoading();
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: sName,
+            category: "교사 모드",
+            content: `아이템 직접 지급: [${itemName}] x${qty}`
+        });
+
+        renderDashboard();
+        renderTeacherDirectEditor('items');
+
+        showUiAlert("✅ 지급 완료", `${sName} 학생의 가방에 <b>[${itemName}] ${qty}개</b>가 안전하게 지급되었습니다.`, "");
+    } catch (err) {
+        hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
+        showUiAlert("❌ 오류", "아이템 지급 실패: " + err.message, "");
+    }
+}
+
+// 4. 아이템 회수/삭제 실행 (1개씩)
+async function applyTeacherItemRemove(itemName) {
+    const sName = currentStudent.name;
+
+    showGlobalLoading("🗑️ 아이템 회수 처리 중...");
+
+    try {
+        const tx = await runStudentAtomicTransaction(sName, student => {
+            let items = student.inventory ? String(student.inventory).split(',').map(x => x.trim()).filter(Boolean) : [];
+            const idx = items.indexOf(itemName);
+            if (idx === -1) {
+                return { abort: true, code: 'NO_ITEM' };
+            }
+            items.splice(idx, 1);
+            student.inventory = items.join(',');
+            return {};
+        });
+
+        hideGlobalLoading();
+
+        if (!tx.committed) {
+            showUiAlert("⚠️ 알림", "해당 아이템을 더 이상 보유하고 있지 않습니다.", "");
+            renderTeacherDirectEditor('items');
+            return;
+        }
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: sName,
+            category: "교사 모드",
+            content: `아이템 직접 회수: [${itemName}] 1개 삭제`
+        });
+
+        renderDashboard();
+        renderTeacherDirectEditor('items');
+
+        showUiAlert("✅ 회수 완료", `[${itemName}] 1개를 가방에서 회수했습니다.`, "");
+    } catch (err) {
+        hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
+        showUiAlert("❌ 오류", "아이템 회수 실패: " + err.message, "");
+    }
+}
