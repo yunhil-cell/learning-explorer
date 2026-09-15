@@ -1138,7 +1138,7 @@ function showPasswordSetupPrompt() {
     }, 100);
 }
 
-// 💡 4. 핀번호 설정 검증 및 저장
+// 💡 4. 핀번호 설정 검증 및 저장 (핀포인트 PATCH 전환)
 function processPasswordSetup(pin) {
     if (!/^\d{4}$/.test(pin)) {
         showUiAlert('❌ 오류', '비밀번호는 반드시 <b>숫자 4자리</b>여야 합니다.', 'showPasswordSetupPrompt()');
@@ -1149,7 +1149,7 @@ function processPasswordSetup(pin) {
     closeUiPopup();
 
     openStudentDetailAfterAuth();
-    updateFastFirebaseStudent(currentStudent);
+    patchFirebaseStudentFields(currentStudent.name, { password: '!' + pin });
 }
 
 // 💡 2. 로그인 팝업 (엔터키 지원)
@@ -2271,13 +2271,13 @@ async function autoCompleteStudentQuest(questId, rewardGold, rewardPoint, reward
 function openNoticeBoard() {
     const activeNotices = noticesData.filter(n => String(n.is_active).toLowerCase() === 'true');
 
-    // 로그인 상태라면 읽음 처리 점검
+    // 로그인 상태라면 읽음 처리 점검 (핀포인트 PATCH 전환)
     if (currentStudent && activeNotices.length > 0) {
         const latestNoticeId = activeNotices[activeNotices.length - 1].notice_id;
         if (String(currentStudent.last_read_notice) !== String(latestNoticeId)) {
             document.getElementById('noticeBadge').style.display = 'none';
             currentStudent.last_read_notice = latestNoticeId;
-            updateFastFirebaseStudent(currentStudent);
+            patchFirebaseStudentFields(currentStudent.name, { last_read_notice: latestNoticeId });
         }
     }
 

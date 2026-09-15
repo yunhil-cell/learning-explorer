@@ -1699,7 +1699,7 @@ function renderTeacherDirectEditor(tab = 'currency') {
             '  </div>' +
 
             // 2. 경험치 조정 패널
-            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px; margin-bottom:10px;">' +
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px; margin-bottom:15px;">' +
             '    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">' +
             '      <span style="font-weight:bold; color:#60A5FA;">✨ 경험치 조정</span>' +
             '      <span style="font-size:0.9em; color:#CBD5E1;">현재 상태: <b style="color:#FBBF24;">Lv.' + (s.level || 1) + '</b> (' + (s.exp || 0) + ' / ' + expMax + ' EXP)</span>' +
@@ -1709,6 +1709,15 @@ function renderTeacherDirectEditor(tab = 'currency') {
             '      <button class="small-btn" style="background:#3B82F6; color:white; padding:10px 16px; font-weight:bold; border:none; font-size:0.95em;" onclick="applyTeacherExpChange()">적용</button>' +
             '    </div>' +
             '    <div style="font-size:0.75em; color:#94A3B8; margin-top:5px;">경험치 추가 시 기준치를 넘으면 레벨업 및 포인트가 자동 부여됩니다.</div>' +
+            '  </div>' +
+
+            // 3. 스탯 초기화 패널 (독서록 차감 등으로 인한 초과 투자 해결용)
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:15px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">' +
+            '    <div>' +
+            '      <div style="font-weight:bold; color:#A78BFA; margin-bottom:3px;">📊 스탯 즉시 초기화 (5/5/5/5)</div>' +
+            '      <div style="font-size:0.8em; color:#94A3B8;">독서록 감소나 오류로 스탯이 초과 분배되었을 때 기본값으로 리셋합니다.</div>' +
+            '    </div>' +
+            '    <button class="small-btn" style="background:#8B5CF6; color:white; padding:10px 14px; font-weight:bold; border:none; font-size:0.9em; white-space:nowrap;" onclick="applyTeacherStatReset()">스탯 초기화</button>' +
             '  </div>' +
             '</div>';
     } else {
@@ -1986,5 +1995,49 @@ async function applyTeacherItemRemove(itemName) {
         hideGlobalLoading();
         await syncFreshCurrentStudent(true);
         showUiAlert("❌ 오류", "아이템 회수 실패: " + err.message, "");
+    }
+}
+
+// 5. 스탯 즉시 초기화 실행 (5/5/5/5 리셋 및 포인트 전액 원상복구)
+async function applyTeacherStatReset() {
+    const sName = currentStudent.name;
+
+    showUiConfirm(
+        "📊 스탯 초기화",
+        `<b>[${sName}]</b> 학생의 건강/공격/방어/행운 스탯을 모두 <b>5</b>로 초기화하시겠습니까?<br><br><span style="color:var(--TextSub); font-size:0.85em;">(투자되었던 모든 스탯 포인트가 다시 잔여 포인트로 온전히 반환됩니다.)</span>`,
+        "executeTeacherStatReset()"
+    );
+}
+
+async function executeTeacherStatReset() {
+    const sName = currentStudent.name;
+    showGlobalLoading("📊 스탯 초기화 처리 중...");
+
+    try {
+        await runStudentAtomicTransaction(sName, student => {
+            student.hp_points = 5;
+            student.atk_points = 5;
+            student.def_points = 5;
+            student.luk_points = 5;
+            return {};
+        });
+
+        hideGlobalLoading();
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: sName,
+            category: "교사 모드",
+            content: "스탯 직접 초기화: HP/ATK/DEF/LUK 5로 리셋 (포인트 전액 반환)"
+        });
+
+        renderDashboard();
+        renderTeacherDirectEditor('currency');
+
+        showUiAlert("✅ 초기화 완료", `${sName} 학생의 스탯이 5/5/5/5로 초기화되었으며, 사용 가능한 포인트가 정상 복구되었습니다.`, "");
+    } catch (err) {
+        hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
+        showUiAlert("❌ 오류", "스탯 초기화 실패: " + err.message, "");
     }
 }

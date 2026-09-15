@@ -2466,7 +2466,7 @@ function handleRaidMonsterDefeat() {
             let myMonsters = rawMonsters ? rawMonsters.split(',').map(x => x.trim()).filter(Boolean) : [];
             myMonsters.push(mId);
             currentStudent.monster_data = "!" + myMonsters.join(',');
-            updateFastFirebaseStudent(currentStudent);
+            patchFirebaseStudentFields(currentStudent.name, { monster_data: currentStudent.monster_data });
         }
     }
 
