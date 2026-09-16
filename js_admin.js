@@ -1674,10 +1674,13 @@ function renderTeacherDirectEditor(tab = 'currency') {
     const realCurrency = sysConfig.currency_name || '티';
     const expMax = Number(sysConfig.exp_max) || 200;
 
+    const getTabStyle = (t) => `flex:1; padding:10px 5px; cursor:pointer; font-weight:bold; text-align:center; font-size:0.9em; color:${tab === t ? '#EF4444' : '#9CA3AF'}; border-bottom:${tab === t ? '3px solid #EF4444' : 'none'}; white-space:nowrap;`;
+
     const tabsHtml =
-        '<div style="display:flex; border-bottom:1px solid #334155; margin-bottom:15px;">' +
-        '  <div style="flex:1; padding:10px; cursor:pointer; font-weight:bold; text-align:center; color:' + (tab === 'currency' ? '#EF4444' : '#9CA3AF') + '; border-bottom:' + (tab === 'currency' ? '3px solid #EF4444' : 'none') + ';" onclick="renderTeacherDirectEditor(\'currency\')">💰 골드 & 경험치</div>' +
-        '  <div style="flex:1; padding:10px; cursor:pointer; font-weight:bold; text-align:center; color:' + (tab === 'items' ? '#EF4444' : '#9CA3AF') + '; border-bottom:' + (tab === 'items' ? '3px solid #EF4444' : 'none') + ';" onclick="renderTeacherDirectEditor(\'items\')">🎒 인벤토리 지급/회수</div>' +
+        '<div style="display:flex; border-bottom:1px solid #334155; margin-bottom:15px; overflow-x:auto;">' +
+        '  <div style="' + getTabStyle('currency') + '" onclick="renderTeacherDirectEditor(\'currency\')">💰 골드/경험치</div>' +
+        '  <div style="' + getTabStyle('attempts') + '" onclick="renderTeacherDirectEditor(\'attempts\')">⚔️ 도전 횟수 & 치료</div>' +
+        '  <div style="' + getTabStyle('items') + '" onclick="renderTeacherDirectEditor(\'items\')">🎒 인벤토리 지급/회수</div>' +
         '</div>';
 
     let contentHtml = '';
@@ -1718,6 +1721,62 @@ function renderTeacherDirectEditor(tab = 'currency') {
             '      <div style="font-size:0.8em; color:#94A3B8;">독서록 감소나 오류로 스탯이 초과 분배되었을 때 기본값으로 리셋합니다.</div>' +
             '    </div>' +
             '    <button class="small-btn" style="background:#8B5CF6; color:white; padding:10px 14px; font-weight:bold; border:none; font-size:0.9em; white-space:nowrap;" onclick="applyTeacherStatReset()">스탯 초기화</button>' +
+            '  </div>' +
+            '</div>';
+    } else if (tab === 'attempts') {
+        const maxBattles = Number(sysConfig.max_weekly_battles) || 2;
+        const maxBoss = Number(sysConfig.max_weekly_boss) || 3;
+        const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
+        const maxTower = Number(sysConfig.max_weekly_tower) || 1;
+
+        const curBattles = s.weekly_battles !== undefined ? Number(s.weekly_battles) : maxBattles;
+        const curBoss = s.weekly_boss !== undefined ? Number(s.weekly_boss) : maxBoss;
+        const curRaid = s.weekly_raid !== undefined ? Number(s.weekly_raid) : maxRaid;
+        const curTower = s.weekly_tower !== undefined ? Number(s.weekly_tower) : maxTower;
+
+        // 부상/패널티 상태 확인
+        const now = Date.now();
+        const penaltyEnd = Number(s.penalty_end_time) || 0;
+        const isInjured = penaltyEnd > now;
+        let injuryText = '<b style="color:#10B981;">정상 (부상 없음)</b>';
+
+        if (isInjured) {
+            const remainMs = penaltyEnd - now;
+            const remainH = Math.floor(remainMs / (1000 * 60 * 60));
+            const remainM = Math.floor((remainMs % (1000 * 60 * 60)) / (1000 * 60));
+            injuryText = `<b style="color:#EF4444;">치료 중 (${remainH}시간 ${remainM}분 남음)</b>`;
+        }
+
+        const getAttemptRow = (title, key, currentVal, maxVal) =>
+            '<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px dashed #334155;">' +
+            '  <div>' +
+            '    <div style="font-weight:bold; color:white; font-size:0.95em;">' + title + '</div>' +
+            '    <div style="font-size:0.8em; color:#94A3B8;">현재: <b style="color:#FBBF24; font-size:1.1em;">' + currentVal + '</b> / 기준: ' + maxVal + '회</div>' +
+            '  </div>' +
+            '  <div style="display:flex; gap:6px;">' +
+            '    <button class="small-btn" style="width:34px; height:34px; font-size:1.1em; background:#334155; border:none; border-radius:6px;" onclick="applyTeacherAttemptChange(\'' + key + '\', -1)">-</button>' +
+            '    <button class="small-btn" style="width:34px; height:34px; font-size:1.1em; background:#10B981; border:none; border-radius:6px;" onclick="applyTeacherAttemptChange(\'' + key + '\', 1)">+</button>' +
+            '  </div>' +
+            '</div>';
+
+        contentHtml =
+            '<div style="text-align:left; color:#E2E8F0;">' +
+            // 1. 부상 즉시 치료 패널
+            '  <div style="background:#1E293B; border:1px solid ' + (isInjured ? '#EF4444' : '#334155') + '; border-radius:10px; padding:12px 15px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">' +
+            '    <div>' +
+            '      <div style="font-weight:bold; color:white; margin-bottom:2px;">🩹 모험가 부상 상태: ' + injuryText + '</div>' +
+            '      <div style="font-size:0.75em; color:#94A3B8;">패널티 시간을 즉시 0으로 제거하여 바로 사냥에 참여시킵니다.</div>' +
+            '    </div>' +
+            '    <button class="small-btn" style="background:' + (isInjured ? '#EF4444' : '#475569') + '; color:white; padding:8px 12px; font-weight:bold; border:none; font-size:0.85em; white-space:nowrap;" onclick="applyTeacherCureInjury()"' + (!isInjured ? ' disabled style="opacity:0.6;"' : '') + '>즉시 완치</button>' +
+            '  </div>' +
+
+            // 2. 주간 콘텐츠 4종 횟수 조정 패널
+            '  <div style="background:#1E293B; border:1px solid #334155; border-radius:10px; padding:10px 15px;">' +
+            '    <div style="font-weight:bold; color:#FBBF24; margin-bottom:5px; font-size:0.95em;">⚔️ 주간 도전 기회 조정 (+ / -)</div>' +
+            getAttemptRow('⚔️ 일반 사냥', 'weekly_battles', curBattles, maxBattles) +
+            getAttemptRow('💀 보스 도전', 'weekly_boss', curBoss, maxBoss) +
+            getAttemptRow('🏰 파티 던전', 'weekly_raid', curRaid, maxRaid) +
+            getAttemptRow('🗼 도전의 탑', 'weekly_tower', curTower, maxTower) +
             '  </div>' +
             '</div>';
     } else {
@@ -2039,5 +2098,79 @@ async function executeTeacherStatReset() {
         hideGlobalLoading();
         await syncFreshCurrentStudent(true);
         showUiAlert("❌ 오류", "스탯 초기화 실패: " + err.message, "");
+    }
+}
+
+// 6. 주간 도전 횟수 1회 가감 (+1 / -1)
+async function applyTeacherAttemptChange(attemptKey, delta) {
+    const sName = currentStudent.name;
+    const labelMap = {
+        'weekly_battles': '일반 사냥',
+        'weekly_boss': '보스 도전',
+        'weekly_raid': '파티 던전',
+        'weekly_tower': '도전의 탑'
+    };
+    const title = labelMap[attemptKey] || '도전 기회';
+
+    showGlobalLoading(`${title} 횟수 변경 중...`);
+
+    try {
+        const tx = await runStudentAtomicTransaction(sName, student => {
+            const currentVal = Number(student[attemptKey]) || 0;
+            const nextVal = Math.max(0, currentVal + delta);
+            student[attemptKey] = nextVal;
+            return { newCount: nextVal };
+        });
+
+        hideGlobalLoading();
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: sName,
+            category: "교사 모드",
+            content: `${title} 횟수 직접 조정: ${delta > 0 ? '+' : ''}${delta}회 (현재: ${tx.result.newCount}회)`
+        });
+
+        renderDashboard();
+        renderTeacherDirectEditor('attempts');
+
+        showUiAlert("✅ 횟수 조정 완료", `<b>${sName}</b> 학생의 ${title} 기회가 <b>${tx.result.newCount}회</b>로 변경되었습니다.`, "");
+    } catch (err) {
+        hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
+        showUiAlert("❌ 오류", "횟수 변경 실패: " + err.message, "");
+    }
+}
+
+// 7. 부상/패널티 즉시 완치
+async function applyTeacherCureInjury() {
+    const sName = currentStudent.name;
+
+    showGlobalLoading("🩹 부상 치료 처리 중...");
+
+    try {
+        await runStudentAtomicTransaction(sName, student => {
+            student.last_defeat = 0;
+            student.penalty_end_time = 0;
+            return {};
+        });
+
+        hideGlobalLoading();
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: sName,
+            category: "교사 모드",
+            content: "부상/패널티 즉시 완치 처리"
+        });
+
+        renderDashboard();
+        renderTeacherDirectEditor('attempts');
+
+        showUiAlert("🩹 치료 완료!", `<b>${sName}</b> 학생의 부상이 완치되었습니다.<br>이제 바로 모든 사냥터 및 보스전에 입장할 수 있습니다!`, "");
+    } catch (err) {
+        hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
+        showUiAlert("❌ 오류", "치료 처리 실패: " + err.message, "");
     }
 }

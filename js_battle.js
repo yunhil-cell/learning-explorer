@@ -340,6 +340,13 @@ async function fleeBattle() {
             flee_count: (Number(currentStudent.flee_count) || 0) + 1
         };
 
+        // 🛡️ [전략적 후퇴] 일반 사냥 도주 시 입장 때 차감되었던 사냥 횟수 1회 안전 환급
+        if (!battleState.isBoss) {
+            const maxW = Number(sysConfig.max_weekly_battles) || 2;
+            const curW = Number(currentStudent.weekly_battles) || 0;
+            fleePayload.weekly_battles = Math.min(maxW, curW + 1);
+        }
+
         await patchFirebaseStudentFields(currentStudent.name, fleePayload);
         Object.assign(currentStudent, fleePayload);
 
@@ -349,13 +356,14 @@ async function fleeBattle() {
             time: new Date().toISOString(),
             name: currentStudent.name,
             category: battleState.isBoss ? "보스 도전" : "일반 사냥",
-            content: (battleState.monster ? battleState.monster.name : '몬스터') + " 전투 중 도망침 🏃 (2시간 패널티)"
+            content: (battleState.monster ? battleState.monster.name : '몬스터') +
+                (!battleState.isBoss ? " 전투 중 전략적 후퇴 🏃 (사냥 횟수 1회 복구, 2시간 패널티)" : " 보스전 도망침 🏃 (2시간 패널티)")
         });
 
         if (battleState.isBoss) {
             showUiAlert("🏃 보스전 이탈", "보스의 무시무시한 힘에 압도당해 도망쳤습니다!<br><br><span style='font-size:0.95em; color:#ff4d4d;'>(재정비를 위해 <b style='color:white;'>2시간 동안</b> 모든 사냥 및 보스전 진입이 금지됩니다.)</span>", "renderDashboard()");
         } else {
-            showUiAlert("🏃 전략적 후퇴", "전투에서 안전하게 도망쳤습니다.<br><br><span style='font-size:0.95em; color:#ff4d4d;'>(재정비를 위해 <b style='color:white;'>2시간 동안</b> 모험을 떠날 수 없습니다.)</span>", "renderDashboard()");
+            showUiAlert("🏃 전략적 후퇴", "전투에서 안전하게 도망쳐 <b>사냥 기회 1회가 보존되었습니다!</b><br><br><span style='font-size:0.95em; color:#ff4d4d;'>(재정비를 위해 <b style='color:white;'>2시간 동안</b> 치료가 필요합니다.)</span>", "renderDashboard()");
         }
     } catch (err) {
         hideGlobalLoading();
