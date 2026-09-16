@@ -659,6 +659,24 @@ function openRelicEquipUI(slotNum) {
 
     const translator = (typeof relicEffectTranslator !== 'undefined') ? relicEffectTranslator : {};
 
+    // 💡 1. 카드 너비에 최적화된 간결한 효과명 매핑
+    const shortNames = {
+        'hp_up': '체력(HP)',
+        'atk_up': '공격력',
+        'def_up': '방어력',
+        'luk_up': '행운',
+        'hp_mult': '최대 체력 증폭',
+        'atk_mult': '공격력 증폭',
+        'def_mult': '방어력 증폭',
+        'hp_regen': '턴당 체력 회복',
+        'dodge_up': '회피 확률',
+        'crit_up': '치명타 확률',
+        'crit_dmg': '치명타 피해량',
+        'gold_up': '승리 보상',
+        'forge_up': '강화 성공률',
+        'skill_prob': '스킬 발동률'
+    };
+
     let cardsHtml = myRelics.map(id => {
         const r = relicsData.find(x => String(x.relic_id) === id);
         if (!r) return '';
@@ -674,18 +692,26 @@ function openRelicEquipUI(slotNum) {
             ? '<img src="' + r.icon_url + '" style="width:48px; height:48px; object-fit:contain; image-rendering:pixelated; border-radius:8px; background:#FEF3C7; border:1px solid var(--TextGold); padding:2px;">'
             : '<div style="font-size:32px;">🏺</div>';
 
-        const effName = translator[r.effect_type] || r.effect_type;
-        let valStr = (r.effect_type.includes('mult') || (r.effect_type.includes('up') && !r.effect_type.match(/^(hp|atk|def|luk|gold)_up$/))) ? Math.round(Number(r.value) * 100) + '%' : r.value;
+        const effName = shortNames[r.effect_type] || translator[r.effect_type] || r.effect_type;
+
+        // 💡 2. 소수점 백분율 변환 버그 완벽 해결 (hp_regen, skill_prob 포함)
+        const isPercent = ['atk_mult', 'def_mult', 'hp_mult', 'dodge_up', 'crit_up', 'crit_dmg', 'forge_up', 'skill_prob', 'hp_regen'].includes(r.effect_type);
+        let valStr = isPercent ? Math.round(Number(r.value) * 100) + '%' : r.value;
+        if (r.effect_type === 'gold_up') valStr += (sysConfig.game_money_currency || '골드');
 
         let btnText = '장착';
         let btnBg = 'var(--Highlight)';
         if (isCurrentAssigned) { btnText = '장착중'; btnBg = 'var(--TextGold)'; }
         else if (isOtherAssigned) { btnText = '슬롯2장착'; btnBg = 'var(--TextSub)'; }
 
-        return '<div style="background:#FFFFFF; ' + cardBorder + ' border-radius:12px; padding:10px 6px; text-align:center; display:flex; flex-direction:column; justify-content:space-between; align-items:center; transition:0.2s; box-shadow:0 2px 5px rgba(0,0,0,0.05);">' +
+        // 💡 3. 효과명과 수치를 2줄로 분리하여 텍스트 넘침 방지 및 높이(min-height:185px) 균등 정렬
+        return '<div style="background:#FFFFFF; ' + cardBorder + ' border-radius:12px; padding:10px 6px; text-align:center; display:flex; flex-direction:column; justify-content:space-between; align-items:center; min-height:185px; box-sizing:border-box; transition:0.2s; box-shadow:0 2px 5px rgba(0,0,0,0.05);">' +
             '  ' + iconDisplay +
-            '  <div style="font-weight:bold; font-size:0.92em; color:var(--TextMain); margin:6px 0 2px 0; word-break:keep-all; line-height:1.2;">' + r.name + '</div>' +
-            '  <div style="font-size:0.82em; color:var(--TextGold); font-weight:bold; margin-bottom:8px; white-space:nowrap;">✨ ' + effName + ' +' + valStr + '</div>' +
+            '  <div style="font-weight:bold; font-size:0.88em; color:var(--TextMain); margin:5px 0 2px 0; word-break:keep-all; line-height:1.2;">' + r.name + '</div>' +
+            '  <div style="margin: 3px 0 8px 0; width: 100%;">' +
+            '    <div style="font-size:0.75em; color:var(--TextSub); word-break:keep-all; line-height:1.2;">' + effName + '</div>' +
+            '    <div style="font-size:0.92em; color:var(--TextGold); font-weight:bold; margin-top:2px;">+' + valStr + '</div>' +
+            '  </div>' +
             '  <button class="small-btn" style="width:100%; background:' + btnBg + '; padding:6px 0; border:none; font-size:0.85em;" onclick="equipRelic(\'' + r.relic_id + '\')">' + btnText + '</button>' +
             '</div>';
     }).join('');
