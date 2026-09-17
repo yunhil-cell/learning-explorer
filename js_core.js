@@ -808,7 +808,10 @@ window.onload = function () {
 
 async function fetchFastGameData() {
     try {
-        const res = await fetch(FIREBASE_DB_URL);
+        const res = await fetch(FIREBASE_DB_URL, {
+            cache: 'no-store',
+            headers: { 'Cache-Control': 'no-cache' }
+        });
         const data = await res.json();
         if (data) initGameData(data);
     } catch (e) {

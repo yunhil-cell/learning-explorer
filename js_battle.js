@@ -85,12 +85,29 @@ async function enterBattle(monsterId, isBoss = false) {
 
         showGlobalLoading("⚔️ 사냥터 입장 처리 중...");
         try {
-            const nextW = Math.max(0, curW - 1);
-            await patchFirebaseStudentFields(currentStudent.name, { weekly_battles: nextW });
-            currentStudent.weekly_battles = nextW;
+            const tx = await runStudentAtomicTransaction(currentStudent.name, student => {
+                const maxWeekly = Number(sysConfig.max_weekly_battles) || 2;
+                const serverW = (student.weekly_battles !== undefined && student.weekly_battles !== "")
+                    ? Number(student.weekly_battles)
+                    : maxWeekly;
+
+                if (serverW <= 0) {
+                    return { abort: true, code: 'NO_BATTLES' };
+                }
+
+                student.weekly_battles = serverW - 1;
+                return {};
+            });
+
             hideGlobalLoading();
+
+            if (!tx.committed) {
+                showUiAlert('🚫 입장 불가', '이번 주 모험 횟수를 모두 소진했습니다.<br><span style="font-size:0.8em; color:#aaa;">(매주 월요일 자정 초기화)</span>', 'renderDashboard()');
+                return;
+            }
         } catch (err) {
             hideGlobalLoading();
+            await syncFreshCurrentStudent(true);
             showUiAlert("❌ 입장 오류", "사냥터 입장 처리에 실패했습니다: " + err.message, "renderDashboard()");
             return;
         }
@@ -1730,52 +1747,41 @@ async function enterRaid(dungeonId) {
     try {
         const maxWeeklyRaid = Number(sysConfig.max_weekly_raid) || 1;
 
-        // 🛡️ [All-or-Nothing 3인 원자 트랜잭션] 3명 전원 동시 확정 또는 전원 안전 취소 (짝짝이 차감 원천 방지)
-        const tx = await runFirebasePathAtomicTransaction(
-            'https://learning-explorer-default-rtdb.firebaseio.com/gameData/students.json',
-            studentsRoot => {
-                // 1. 3명 모두의 최신 횟수 동시 검증
-                for (let i = 0; i < raidParty.length; i++) {
-                    const sName = raidParty[i];
-                    const student = getStudentFromFirebaseRoot(studentsRoot, sName);
-                    if (!student) {
-                        return { abort: true, code: 'STUDENT_NOT_FOUND', studentName: sName };
-                    }
-                    const curRaid = (student.weekly_raid !== undefined && student.weekly_raid !== "")
-                        ? Number(student.weekly_raid)
-                        : maxWeeklyRaid;
-                    if (curRaid <= 0) {
-                        return { abort: true, code: 'NO_RAID_CHANCE', studentName: sName };
-                    }
+        // 🛡️ [타인 데이터 간섭 원천 차단] 전체 학생 DB PUT을 폐기하고 참여 파티원 3명만 개별 원자 차감
+        const deductedMembers = [];
+        for (let i = 0; i < raidParty.length; i++) {
+            const memberName = raidParty[i];
+            const tx = await runStudentAtomicTransaction(memberName, student => {
+                const curRaid = (student.weekly_raid !== undefined && student.weekly_raid !== "")
+                    ? Number(student.weekly_raid)
+                    : maxWeeklyRaid;
+
+                if (curRaid <= 0) {
+                    return { abort: true, code: 'NO_RAID_CHANCE' };
                 }
 
-                // 2. 3명 모두 가능할 때만 한 번에 3명 차감 (1명이라도 통신 끊기면 전체 취소)
-                raidParty.forEach(sName => {
-                    const student = getStudentFromFirebaseRoot(studentsRoot, sName);
-                    const curRaid = (student.weekly_raid !== undefined && student.weekly_raid !== "")
-                        ? Number(student.weekly_raid)
-                        : maxWeeklyRaid;
-                    student.weekly_raid = curRaid - 1;
-                });
-
+                student.weekly_raid = curRaid - 1;
                 return {};
+            });
+
+            if (!tx.committed) {
+                // 한 명이라도 횟수가 없으면 이미 차감된 앞선 파티원의 횟수를 즉시 원상 복구
+                for (let j = 0; j < deductedMembers.length; j++) {
+                    await runStudentAtomicTransaction(deductedMembers[j], st => {
+                        st.weekly_raid = (Number(st.weekly_raid) || 0) + 1;
+                        return {};
+                    });
+                }
+
+                hideGlobalLoading();
+                showUiAlert('🚫 출발 불가', memberName + ' 모험가의 파티 던전 탐험 기회가 부족하여 입장이 취소되었습니다.', '');
+                return;
             }
-        );
 
-        hideGlobalLoading();
-
-        if (!tx.committed) {
-            showUiAlert(
-                '🚫 출발 불가',
-                (tx.result.studentName || '파티원') + ' 모험가의 파티 던전 탐험 기회가 부족하여 입장이 안전하게 취소되었습니다.',
-                ''
-            );
-            return;
+            deductedMembers.push(memberName);
         }
 
-        // 로컬 상태 안전 동기화
-        applyFirebaseStudentRootToLocal(tx.data, raidParty);
-
+        hideGlobalLoading();
     } catch (err) {
         hideGlobalLoading();
         showUiAlert("❌ 입장 오류", "파티 던전 입장 처리에 실패했습니다: " + err.message, "renderDashboard()");
@@ -2782,24 +2788,48 @@ async function startBossBattle(bossId, type) {
     showGlobalLoading("💀 보스 레이드 입장 처리 중...");
 
     try {
-        items.splice(ticketIdx, 1);
-        const nextBoss = Math.max(0, curBoss - 1);
-        const nextInv = items.join(',');
+        const tx = await runStudentAtomicTransaction(currentStudent.name, student => {
+            const maxBossSetting = Number(sysConfig.max_weekly_boss) || 3;
+            const currentBossCount = (student.weekly_boss !== undefined && student.weekly_boss !== "")
+                ? Number(student.weekly_boss)
+                : maxBossSetting;
 
-        // 💡 weekly_boss와 inventory만 핀포인트 PATCH (다른 횟수 간섭 0%)
-        const bossEntryPayload = {
-            weekly_boss: nextBoss,
-            inventory: nextInv
-        };
+            if (currentBossCount <= 0) {
+                return { abort: true, code: 'NO_BOSS_CHANCE' };
+            }
 
-        await patchFirebaseStudentFields(currentStudent.name, bossEntryPayload);
-        Object.assign(currentStudent, bossEntryPayload);
+            // 서버의 최신 인벤토리에서 티켓을 찾아 1장 소모 (로컬 메모리 덮어쓰기 방어)
+            const rawInv = String(student.inventory || "");
+            let invList = rawInv ? rawInv.split(',').map(x => x.trim()).filter(Boolean) : [];
+            const idx = invList.indexOf(reqTicket);
+
+            if (idx === -1) {
+                return { abort: true, code: 'NO_TICKET' };
+            }
+
+            invList.splice(idx, 1);
+            student.weekly_boss = currentBossCount - 1;
+            student.inventory = invList.join(',');
+
+            return {};
+        });
 
         hideGlobalLoading();
+
+        if (!tx.committed) {
+            if (tx.result.code === 'NO_BOSS_CHANCE') {
+                showUiAlert("🚫 도전 불가", "이번 주 보스 도전 기회를 모두 소진했습니다.", "renderDashboard()");
+            } else {
+                showUiAlert("🚫 도전 불가", "가방에 <b style='color:var(--Red);'>" + reqTicket + "</b>이(가) 없습니다!", "renderDashboard()");
+            }
+            return;
+        }
+
         closeSubModal();
         await enterBattle(bossId, true);
     } catch (err) {
         hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
         showUiAlert("❌ 입장 오류", "보스전 입장 처리에 실패했습니다: " + err.message, "renderDashboard()");
     }
 }
@@ -2829,12 +2859,29 @@ async function startTower() {
 
     showGlobalLoading("🗼 도전의 탑 입장 처리 중...");
     try {
-        const nextTower = Math.max(0, curTower - 1);
-        await patchFirebaseStudentFields(currentStudent.name, { weekly_tower: nextTower });
-        currentStudent.weekly_tower = nextTower;
+        const tx = await runStudentAtomicTransaction(currentStudent.name, student => {
+            const maxTowerSetting = Number(sysConfig.max_weekly_tower) || 1;
+            const curT = (student.weekly_tower !== undefined && student.weekly_tower !== "")
+                ? Number(student.weekly_tower)
+                : maxTowerSetting;
+
+            if (curT <= 0) {
+                return { abort: true, code: 'NO_TOWER' };
+            }
+
+            student.weekly_tower = curT - 1;
+            return {};
+        });
+
         hideGlobalLoading();
+
+        if (!tx.committed) {
+            showUiAlert('🚫 입장 불가', '이번 주 도전의 탑 기회를 모두 소진했습니다.', 'renderDashboard()');
+            return;
+        }
     } catch (err) {
         hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
         showUiAlert("❌ 입장 오류", "도전의 탑 입장 처리에 실패했습니다: " + err.message, "renderDashboard()");
         return;
     }
