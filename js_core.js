@@ -201,10 +201,13 @@ async function runStudentAtomicTransaction(studentName, mutateFn, maxRetries = 6
 
     return queueStudentWrite(studentKey, async () => {
         for (let attempt = 0; attempt < maxRetries; attempt++) {
+            // 💡 1. 브라우저 디스크 캐시 완전 차단: 무조건 최신 서버 데이터 GET
             const readResponse = await fetch(url, {
                 method: 'GET',
+                cache: 'no-store',
                 headers: {
-                    'X-Firebase-ETag': 'true'
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
             });
 
@@ -212,16 +215,8 @@ async function runStudentAtomicTransaction(studentName, mutateFn, maxRetries = 6
                 throw new Error("학생 최신 데이터 조회 실패: HTTP " + readResponse.status);
             }
 
-            const etag = readResponse.headers.get('ETag');
-
-            if (!etag) {
-                throw new Error("Firebase ETag을 확인할 수 없습니다.");
-            }
-
-            const freshData = await readResponse.json();
-            const draft = cloneStudentSyncData(
-                freshData || { name: studentKey }
-            );
+            const freshData = (await readResponse.json()) || { name: studentKey };
+            const draft = cloneStudentSyncData(freshData);
 
             if (!draft.name) {
                 draft.name = studentKey;
@@ -229,71 +224,72 @@ async function runStudentAtomicTransaction(studentName, mutateFn, maxRetries = 6
 
             const transactionResult = mutateFn(draft) || {};
 
+            // 트랜잭션 중단 요청 시 롤백
             if (transactionResult.abort) {
-                rememberStudentServerState(freshData || draft);
+                rememberStudentServerState(freshData);
 
-                if (
-                    currentStudent &&
-                    String(currentStudent.name).trim() === studentKey
-                ) {
-                    currentStudent = freshData || draft;
+                if (currentStudent && String(currentStudent.name).trim() === studentKey) {
+                    currentStudent = freshData;
                 }
 
                 if (window.allStudentsData) {
                     const idx = window.allStudentsData.findIndex(
-                        s => s &&
-                        String(s.name).trim() === studentKey
+                        s => s && String(s.name).trim() === studentKey
                     );
-
-                    if (idx > -1) {
-                        window.allStudentsData[idx] = freshData || draft;
-                    }
+                    if (idx > -1) window.allStudentsData[idx] = freshData;
                 }
 
                 return {
                     committed: false,
-                    student: freshData || draft,
+                    student: freshData,
                     result: transactionResult
                 };
             }
 
-            const writeResponse = await fetch(url, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'If-Match': etag
-                },
-                body: JSON.stringify(draft)
+            // 💡 2. [핵심 필드 격리] 실제로 변경된 필드만 추출 (나머지 50여 개 필드는 일절 미포함!)
+            const changedFields = {};
+            Object.keys(draft).forEach(key => {
+                if (key === 'name') return;
+                if (JSON.stringify(draft[key]) !== JSON.stringify(freshData[key])) {
+                    changedFields[key] = draft[key];
+                }
             });
 
-            if (writeResponse.status === 412) {
-                continue;
+            // 변경된 내용이 없다면 Firebase 통신 생략
+            if (Object.keys(changedFields).length === 0) {
+                return {
+                    committed: true,
+                    student: freshData,
+                    result: transactionResult
+                };
             }
+
+            // 💡 3. [전체 덮어쓰기 PUT 제거 ➔ 핀포인트 PATCH 전환]
+            // weekly_... 횟수를 건드리지 않는 기능은 횟수 필드를 Firebase로 아예 전송하지 않음!
+            const writeResponse = await fetch(url, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(changedFields)
+            });
 
             if (!writeResponse.ok) {
-                throw new Error("학생 원자 저장 실패: HTTP " + writeResponse.status);
+                throw new Error("학생 필드 부분 저장 실패: HTTP " + writeResponse.status);
             }
 
-            const savedData = await writeResponse.json();
-
-            const committedStudent =
-                savedData && savedData.name
-                    ? savedData
-                    : draft;
+            // 최신 서버 데이터에 변경된 필드만 안전 병합
+            const committedStudent = Object.assign({}, freshData, changedFields);
 
             rememberStudentServerState(committedStudent);
 
-            if (
-                currentStudent &&
-                String(currentStudent.name).trim() === studentKey
-            ) {
+            if (currentStudent && String(currentStudent.name).trim() === studentKey) {
                 currentStudent = committedStudent;
             }
 
             if (window.allStudentsData) {
                 const idx = window.allStudentsData.findIndex(
-                    s => s &&
-                    String(s.name).trim() === studentKey
+                    s => s && String(s.name).trim() === studentKey
                 );
 
                 if (idx > -1) {
@@ -310,7 +306,7 @@ async function runStudentAtomicTransaction(studentName, mutateFn, maxRetries = 6
             };
         }
 
-        throw new Error("동시 저장 충돌이 반복되어 저장하지 못했습니다. 다시 시도해주세요.");
+        throw new Error("저장 시도 횟수를 초과했습니다. 네트워크 상태를 확인해주세요.");
     });
 }
 
