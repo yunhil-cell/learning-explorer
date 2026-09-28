@@ -728,20 +728,58 @@ async function syncFreshCurrentStudent(silent = true) {
     }
 }
 
-// 자동 동기화는 데이터만 갱신합니다. 뽑기/전투/입력 화면을 다시 그리지 않습니다.
+// 💡 [매일 오전 7시 이후 최초 1회 강제 캐시 파괴 새로고침 엔진]
+function checkDailyMorningReload() {
+    try {
+        const now = new Date();
+        const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+        const kst = new Date(utc + (9 * 60 * 60 * 1000));
+        const hours = kst.getHours();
+
+        // 오전 7시 이후 감지 시
+        if (hours >= 7) {
+            const y = kst.getFullYear();
+            const m = String(kst.getMonth() + 1).padStart(2, '0');
+            const d = String(kst.getDate()).padStart(2, '0');
+            const todayKey = `${y}-${m}-${d}`;
+
+            const lastReload = localStorage.getItem('last_daily_morning_reload');
+
+            // 오늘 아직 새로고침을 안 했다면 (어제 켜둔 좀비 탭 포함)
+            if (lastReload !== todayKey) {
+                // 🛡️ 무한 새로고침 루프 방지: 날짜를 먼저 기록 후 리로드
+                localStorage.setItem('last_daily_morning_reload', todayKey);
+                const cleanUrl = window.location.origin + window.location.pathname;
+                window.location.replace(cleanUrl + '?_reload=' + Date.now());
+                return true;
+            }
+        }
+    } catch (e) {
+        console.error("아침 자동 새로고침 검사 예외:", e);
+    }
+    return false;
+}
+
+// 스크립트 실행 즉시 7시 검사
+checkDailyMorningReload();
+
+// 자동 동기화: 화면 복귀(탭 전환/화면 켜짐) 시에는 7시 검사 및 대시보드 화면 즉시 갱신
 let studentBackgroundSyncRunning = false;
-async function syncStudentInBackground() {
+async function syncStudentInBackground(isWakeUp = false) {
+    if (checkDailyMorningReload()) return; // 7시 리로드 대상이면 리로드 실행 후 중단
     if (studentBackgroundSyncRunning || document.visibilityState !== 'visible') return;
     studentBackgroundSyncRunning = true;
     try {
-        await syncFreshCurrentStudent(true);
+        // 화면을 다시 켰을 때(wakeUp)는 silent를 false로 주어 대시보드를 최신 횟수/상자로 갱신
+        await syncFreshCurrentStudent(!isWakeUp);
     } finally {
         studentBackgroundSyncRunning = false;
     }
 }
-document.addEventListener('visibilitychange', syncStudentInBackground);
-window.addEventListener('focus', syncStudentInBackground);
-setInterval(syncStudentInBackground, 20000);
+
+document.addEventListener('visibilitychange', () => syncStudentInBackground(true));
+window.addEventListener('focus', () => syncStudentInBackground(true));
+setInterval(() => syncStudentInBackground(false), 20000);
 let originalStats = { hp: 5, atk: 5, def: 5, luk: 5 };
 let currentEquipType = 'weapon';
 let sysConfig = {};
