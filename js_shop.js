@@ -203,7 +203,12 @@ async function runShopDrawAction(kind, action, itemId, context) {
     const createdAt = new Date().toISOString();
     const cost = Number(kind === 'skill' ? sysConfig.skill_price : sysConfig.relic_price) || (kind === 'skill' ? 50 : 100);
     // 충돌 재시도마다 무작위 결과를 다시 뽑지 않도록 순서는 요청당 한 번만 결정합니다.
-    const ordered = (catalog || []).filter(item => item && item[idKey]).slice();
+    const ordered = (catalog || []).filter(item => {
+        if (!item || !item[idKey]) return false;
+        // 💡 2차 전직 전용 스킬(SK_ADV_)은 일반 상점 뽑기 풀에서 원천 제외
+        if (kind === 'skill' && String(item.skill_id).startsWith('SK_ADV_')) return false;
+        return true;
+    }).slice();
     for (let i = ordered.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [ordered[i], ordered[j]] = [ordered[j], ordered[i]];

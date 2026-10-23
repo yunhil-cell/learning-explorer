@@ -119,9 +119,17 @@
                 <img id="merc1EffectImg" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
               </div>
 
-              <!-- 대표 모험가 본인 아바타 -->
-              <div style="position:relative;">
-                <img id="battlePlayerImg"
+              <!-- 대표 모험가: 오라 뒤 / 캐릭터 중간 / 스킬 효과 앞 -->
+              <div class="aura-avatar" style="width:140px; height:140px;">
+                <img
+                  id="battlePlayerAura"
+                  class="avatar-aura"
+                  alt=""
+                  aria-hidden="true"
+                  onerror="this.style.display='none'"
+                  style="display:none;">
+
+                <img id="battlePlayerImg" class="avatar-skin"
                               src="https://drive.google.com/thumbnail?id=1uoFPxFfpUaxE3eZCbrVU8oEvQLyQTg9b&sz=w200"
                               style="width: 140px; height: 140px; object-fit: contain; filter: drop-shadow(0 0 10px rgba(0, 243, 255, 0.4)); transform: scaleX(-1);">
 

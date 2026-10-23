@@ -157,6 +157,23 @@ function getGameData() {
     }
 
     // 💡 11. 퀘스트 및 성찰일지 제출물 데이터 로드
+    // 오라 기획 데이터 로드
+    result.auras = [];
+    const auraSheet = ss.getSheetByName('auras');
+
+    if (auraSheet) {
+      const auraValues = auraSheet.getDataRange().getValues();
+      const auraHeaders = auraValues[0].map(h => String(h).trim());
+
+      result.auras = auraValues.slice(1).map(row => {
+        const aura = {};
+        auraHeaders.forEach((header, index) => {
+          if (header) aura[header] = row[index];
+        });
+        return aura;
+      }).filter(aura => String(aura.aura_id || '').trim() !== '');
+    }
+
     result.quests = getQuestsData() || [];
     result.submissions = getSubmissionsData() || [];
 
@@ -180,6 +197,46 @@ function getGameData() {
 }
 
 // 💡 열 이름으로 정확히 추적하는 스탯 저장 함수
+function syncAurasToFirebase() {
+  const data = getGameData();
+
+  if (typeof data === 'string') {
+    throw new Error(data);
+  }
+
+  const auras = data.auras || [];
+  const ids = new Set();
+
+  auras.forEach(aura => {
+    const id = String(aura.aura_id).trim();
+
+    if (ids.has(id)) {
+      throw new Error('오라 ID가 중복되었습니다: ' + id);
+    }
+
+    ids.add(id);
+  });
+
+  // 기획 목록만 교체합니다. 학생 데이터는 수정하지 않습니다.
+  const response = UrlFetchApp.fetch(
+    'https://learning-explorer-default-rtdb.firebaseio.com/gameData/auras.json',
+    {
+      method: 'PUT',
+      contentType: 'application/json',
+      payload: JSON.stringify(auras),
+      muteHttpExceptions: true
+    }
+  );
+
+  const status = response.getResponseCode();
+
+  if (status < 200 || status >= 300) {
+    throw new Error('오라 동기화 실패: HTTP ' + status);
+  }
+
+  Logger.log('오라 기획 데이터 동기화 완료: ' + auras.length + '종');
+}
+
 function updateStudentStats(name, hp, atk, def, luk) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('students');
@@ -2988,6 +3045,7 @@ function syncToFirebase() {
       skills: fullData.skills || [],
       relics: fullData.relics || [],
       skins: fullData.skins || [],
+      auras: fullData.auras || [],
       lootBoxes: fullData.lootBoxes || [],
       shopItems: fullData.shopItems || [],
       mercenaries: fullData.mercenaries || [],

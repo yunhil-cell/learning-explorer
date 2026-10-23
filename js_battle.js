@@ -136,22 +136,29 @@ async function enterBattle(monsterId, isBoss = false) {
     battleState.monsterMaxHp = Number(targetMonster.hp);
     battleState.monsterCurrentHp = battleState.monsterMaxHp;
 
-    // 💡 1. 가호 보너스가 계산되기 전 스탯 임시 변수 할당
+    // 💡 1. 직업별 특화 패시브 및 가호 보너스 연산
     let baseHp = pStats.hp;
     let baseAtk = pStats.atk;
     let baseDef = pStats.def;
     let baseLuk = pStats.luk;
 
-    const bColor = String(currentStudent.blessing).trim();
-    if (bColor === 'Red' || bColor === '빨간색') {
-        baseAtk = Math.floor(baseAtk * 1.1);
-    } else if (bColor === 'Blue' || bColor === '파란색') {
-        baseDef = Math.floor(baseDef * 1.1);
-    } else if (bColor === 'Green' || bColor === '초록색') {
-        baseHp = Math.floor(baseHp * 1.1);
-    } else if (bColor === 'Yellow' || bColor === '노란색') {
-        baseLuk = Math.floor(baseLuk * 1.1);
-    }
+    const jobKey = String(currentStudent.blessing).trim();
+
+    // 1차 기본 직업 (전사=HP, 궁수=ATK, 마법사=DEF, 도적=LUK) 및 레거시 가호 호환
+    if (jobKey === 'WARRIOR' || jobKey === 'Green' || jobKey === '초록색') baseHp = Math.floor(baseHp * 1.1);
+    else if (jobKey === 'ARCHER' || jobKey === 'Red' || jobKey === '빨간색') baseAtk = Math.floor(baseAtk * 1.1);
+    else if (jobKey === 'MAGE' || jobKey === 'Blue' || jobKey === '파란색') baseDef = Math.floor(baseDef * 1.1);
+    else if (jobKey === 'ROGUE' || jobKey === 'Yellow' || jobKey === '노란색') baseLuk = Math.floor(baseLuk * 1.1);
+
+    // 2차 상위 직업 특화 패시브
+    else if (jobKey === 'KNIGHT') { baseHp = Math.floor(baseHp * 1.2); baseDef = Math.floor(baseDef * 1.15); }
+    else if (jobKey === 'BERSERKER') { baseHp = Math.floor(baseHp * 1.25); baseAtk = Math.floor(baseAtk * 1.1); }
+    else if (jobKey === 'ARCHMAGE') { baseDef = Math.floor(baseDef * 1.15); baseAtk = Math.floor(baseAtk * 1.2); }
+    else if (jobKey === 'CLERIC') { baseDef = Math.floor(baseDef * 1.2); baseHp = Math.floor(baseHp * 1.15); }
+    else if (jobKey === 'SNIPER') { baseAtk = Math.floor(baseAtk * 1.25); baseLuk = Math.floor(baseLuk * 1.1); }
+    else if (jobKey === 'RANGER') { baseAtk = Math.floor(baseAtk * 1.15); baseHp = Math.floor(baseHp * 1.1); }
+    else if (jobKey === 'ASSASSIN') { baseLuk = Math.floor(baseLuk * 1.25); baseAtk = Math.floor(baseAtk * 1.15); }
+    else if (jobKey === 'SHADOW') { baseLuk = Math.floor(baseLuk * 1.15); }
 
     // 💡 2. 최종 체력 계산 및 세션 데이터 주입 (중복 대입 없이 한 번만 처리됩니다)
     const hpPerPoint = Number(sysConfig.hp_per_point) || 10;
@@ -162,8 +169,8 @@ async function enterBattle(monsterId, isBoss = false) {
     battleState.playerDef = baseDef;
     battleState.playerLuk = baseLuk;
 
-    // 보라색(그림자): 첫 타격 1회 무효화 장막 활성화 플래그 (true로 켜둠)
-    battleState.purpleDodgeActive = (bColor === 'Purple' || bColor === '보라색');
+    // 보라색 가호 또는 섀도우(2차 직업): 첫 타격 1회 무효화 장막 활성화 플래그
+    battleState.purpleDodgeActive = (jobKey === 'Purple' || jobKey === '보라색' || jobKey === 'SHADOW');
 
     // 💡 3. 유물 특수 효과를 추출하여 전투 상태에 미리 저장해둡니다.
     battleState.relicEffects = { dodge: 0, critRate: 0, critDmg: 0, regen: 0, skillProb: 0, goldMult: 0 };
@@ -480,11 +487,16 @@ function getPlayerTotalStats() {
     applyMult(s.relic_1);
     applyMult(s.relic_2);
 
+    // 기본 투자 스탯은 변경하지 않고, 장착 오라 보너스만 추가합니다.
+    const auraBonus = getAuraStatBonus(s);
+
     return {
-        hp: Math.floor(totalHp),
-        atk: Math.floor(totalAtk),
-        def: Math.floor(totalDef),
-        luk: Math.floor(baseLuk + equipBonus.luk + relicBonus.luk + mercBonus.luk)
+        hp: Math.floor(totalHp) + auraBonus.hp,
+        atk: Math.floor(totalAtk) + auraBonus.atk,
+        def: Math.floor(totalDef) + auraBonus.def,
+        luk: Math.floor(
+            baseLuk + equipBonus.luk + relicBonus.luk + mercBonus.luk
+        ) + auraBonus.luk
     };
 }
 
@@ -550,12 +562,15 @@ function renderBattleSkillsUI() {
         const filterStyle = isReady ? '' : 'filter: grayscale(100%) opacity(0.6);';
         const skBlessing = sk.blessing && String(sk.blessing).trim() !== '' && String(sk.blessing).trim() !== 'None' ? String(sk.blessing).trim() : 'Highlight';
         const bColor = 'var(--' + skBlessing + ')';
-        const borderStyle = isReady ? 'border: 2px solid ' + bColor + '; box-shadow: 0 0 10px ' + bColor + ';' : 'border: 2px solid #555;';
+        const isAdvSkill = String(sk.skill_id).startsWith('SK_ADV_');
+        const boxRadius = isAdvSkill ? '50%' : '8px';
+        const imgRadius = isAdvSkill ? '50%' : '6px';
+        const borderStyle = isReady ? 'border: 2px solid ' + bColor + '; box-shadow: 0 0 ' + (isAdvSkill ? '15px ' : '10px ') + bColor + ';' : 'border: 2px solid #555;';
         const overlay = isReady ? '' : '<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:1.8em; font-weight:bold; color:white; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;">' + sk.currentCd + '</div>';
 
         html +=
-            '<div style="position:relative; width:50px; height:50px; border-radius:8px; background:#111; ' + borderStyle + ' ' + filterStyle + ' transition: 0.3s;">' +
-            '  <img src="' + iconSrc + '" style="width:100%; height:100%; object-fit:contain; border-radius:6px; padding:2px;">' +
+            '<div style="position:relative; width:50px; height:50px; border-radius:' + boxRadius + '; background:#111; ' + borderStyle + ' ' + filterStyle + ' transition: 0.3s; overflow:hidden;">' +
+            '  <img src="' + iconSrc + '" style="width:100%; height:100%; object-fit:contain; border-radius:' + imgRadius + '; padding:2px;">' +
             '  ' + overlay +
             '</div>';
     });
@@ -744,9 +759,7 @@ function playerTurnAuto() {
                 const skillPerLuk = Number(sysConfig.skill_per_luk) || 0.5;
                 let finalProb = baseProb + (pLuk * skillPerLuk) + battleState.relicEffects.skillProb;
 
-                if (String(sk.blessing).trim() === String(currentStudent.blessing).trim()) {
-                    finalProb += 20;
-                }
+                // 💡 스킬 가호 보너스 제거 (순수 base_prob + LUK + 유물 확률로만 발동)
 
                 if ((Math.random() * 100) < finalProb) {
                     usedSkill = sk;
@@ -1254,6 +1267,13 @@ function showBattleResult(isWin) {
             penalty_end_time: nowTime + (8 * 60 * 60 * 1000)
         };
 
+        // 🛡️ [신규] 일반 사냥 패배 시 사냥 횟수 1회 안전 환급 (보존)
+        if (!battleState.isBoss) {
+            const maxW = Number(sysConfig.max_weekly_battles) || 2;
+            const curW = Number(currentStudent.weekly_battles) || 0;
+            defeatPayload.weekly_battles = Math.min(maxW, curW + 1);
+        }
+
         patchFirebaseStudentFields(currentStudent.name, defeatPayload).then(() => {
             Object.assign(currentStudent, defeatPayload);
             hideGlobalLoading();
@@ -1263,10 +1283,15 @@ function showBattleResult(isWin) {
                 time: new Date().toISOString(),
                 name: currentStudent.name,
                 category: battleState.isBoss ? "보스 도전" : "일반 사냥",
-                content: (battleState.monster ? battleState.monster.name : '몬스터') + "에게 패배 ☠️ (8시간 패널티)"
+                content: (battleState.monster ? battleState.monster.name : '몬스터') + "에게 패배 ☠️ (" +
+                    (!battleState.isBoss ? "사냥 기회 1회 복구 보존, 8시간 패널티" : "8시간 패널티") + ")"
             });
 
-            showUiAlert("☠️ 전투 패배", "아쉽게도 쓰러지고 말았습니다...<br><br><span style='font-size:0.9em; color:#ff4d4d;'>(8시간 동안 전투에 진입할 수 없습니다)</span>", "document.getElementById('battleModal').style.display = 'none'; renderDashboard();");
+            const alertMsg = !battleState.isBoss
+                ? "아쉽게도 쓰러지고 말았습니다...<br><br><span style='color:var(--Highlight); font-weight:bold;'>소중한 사냥 기회 1회는 안전하게 보존되었습니다!</span><br><span style='font-size:0.9em; color:#ff4d4d;'>(부상 치료를 위해 8시간 동안 치료가 필요합니다.)</span>"
+                : "아쉽게도 쓰러지고 말았습니다...<br><br><span style='font-size:0.9em; color:#ff4d4d;'>(8시간 동안 전투에 진입할 수 없습니다)</span>";
+
+            showUiAlert("☠️ 전투 패배", alertMsg, "document.getElementById('battleModal').style.display = 'none'; renderDashboard();");
         }).catch(async err => {
             hideGlobalLoading();
 
@@ -1921,8 +1946,9 @@ function renderPartyUI() {
 
         html += `
                     <div id="partyMember_${p.uiIndex}" class="party-member-card" style="opacity: ${opacity};">
-                        <div style="position: relative; display: inline-block; margin-bottom: 5px;">
-                            <img src="${skinImgUrl}" style="width: 80px; height: 80px; object-fit: contain; transform: scaleX(-1); filter: drop-shadow(0 0 5px rgba(255,255,255,0.2));">
+                        <div class="aura-avatar" style="width:80px; height:80px; margin-bottom:5px;">
+                            ${renderAuraLayerHtml(sData)}
+                            <img class="avatar-skin" src="${skinImgUrl}" style="width:80px; height:80px; object-fit:contain; transform:scaleX(-1); filter:drop-shadow(0 0 5px rgba(255,255,255,0.2));">
                             <img id="partyEffect_${p.uiIndex}" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
                         </div>
                         <div style="width: 100%; text-align: center;">
@@ -2124,7 +2150,7 @@ function raidPlayerTurnAuto() {
             let sk = p.skills[i];
             if (sk.currentCd === 0) {
                 let finalProb = (Number(sk.base_prob) || 50) + (pLuk * (Number(sysConfig.skill_per_luk) || 0.5)) + p.relicEffects.skillProb;
-                if (String(sk.blessing).trim() === String(p.studentData.blessing).trim()) finalProb += 20;
+                // 💡 스킬 가호 보너스 제거 (순수 base_prob + LUK + 유물 확률로만 발동)
                 if ((Math.random() * 100) < finalProb) {
                     usedSkill = sk; usedSkill.currentCd = Number(usedSkill.cooldown) || 3; break;
                 }
@@ -2907,16 +2933,20 @@ async function startTower() {
     let baseDef = pStats.def;
     let baseLuk = pStats.luk;
 
-    const bColor = String(currentStudent.blessing).trim();
-    if (bColor === 'Red' || bColor === '빨간색') {
-        baseAtk = Math.floor(baseAtk * 1.1);
-    } else if (bColor === 'Blue' || bColor === '파란색') {
-        baseDef = Math.floor(baseDef * 1.1);
-    } else if (bColor === 'Green' || bColor === '초록색') {
-        baseHp = Math.floor(baseHp * 1.1);
-    } else if (bColor === 'Yellow' || bColor === '노란색') {
-        baseLuk = Math.floor(baseLuk * 1.1);
-    }
+    const jobKey = String(currentStudent.blessing).trim();
+    if (jobKey === 'WARRIOR' || jobKey === 'Green' || jobKey === '초록색') baseHp = Math.floor(baseHp * 1.1);
+    else if (jobKey === 'ARCHER' || jobKey === 'Red' || jobKey === '빨간색') baseAtk = Math.floor(baseAtk * 1.1);
+    else if (jobKey === 'MAGE' || jobKey === 'Blue' || jobKey === '파란색') baseDef = Math.floor(baseDef * 1.1);
+    else if (jobKey === 'ROGUE' || jobKey === 'Yellow' || jobKey === '노란색') baseLuk = Math.floor(baseLuk * 1.1);
+
+    else if (jobKey === 'KNIGHT') { baseHp = Math.floor(baseHp * 1.2); baseDef = Math.floor(baseDef * 1.15); }
+    else if (jobKey === 'BERSERKER') { baseHp = Math.floor(baseHp * 1.25); baseAtk = Math.floor(baseAtk * 1.1); }
+    else if (jobKey === 'ARCHMAGE') { baseDef = Math.floor(baseDef * 1.15); baseAtk = Math.floor(baseAtk * 1.2); }
+    else if (jobKey === 'CLERIC') { baseDef = Math.floor(baseDef * 1.2); baseHp = Math.floor(baseHp * 1.15); }
+    else if (jobKey === 'SNIPER') { baseAtk = Math.floor(baseAtk * 1.25); baseLuk = Math.floor(baseLuk * 1.1); }
+    else if (jobKey === 'RANGER') { baseAtk = Math.floor(baseAtk * 1.15); baseHp = Math.floor(baseHp * 1.1); }
+    else if (jobKey === 'ASSASSIN') { baseLuk = Math.floor(baseLuk * 1.25); baseAtk = Math.floor(baseAtk * 1.15); }
+    else if (jobKey === 'SHADOW') { baseLuk = Math.floor(baseLuk * 1.15); }
 
     // 💡 최종 체력 계산 및 세션 데이터 주입
     const hpPerPoint = Number(sysConfig.hp_per_point) || 10;
@@ -2927,7 +2957,7 @@ async function startTower() {
     battleState.playerDef = baseDef;
     battleState.playerLuk = baseLuk;
 
-    battleState.purpleDodgeActive = (bColor === 'Purple' || bColor === '보라색');
+    battleState.purpleDodgeActive = (jobKey === 'Purple' || jobKey === '보라색' || jobKey === 'SHADOW');
 
     battleState.relicEffects = { dodge: 0, critRate: 0, critDmg: 0, regen: 0, skillProb: 0, goldMult: 0 };
     [currentStudent.relic_1, currentStudent.relic_2].forEach(rid => {
@@ -2964,6 +2994,7 @@ async function startTower() {
     const skinObj = skinsData.find(x => String(x.skin_id) === String(currentSkinId));
     const pImgSrc = (skinObj && skinObj.skin_url) ? skinObj.skin_url : 'https://drive.google.com/thumbnail?id=1uoFPxFfpUaxE3eZCbrVU8oEvQLyQTg9b&sz=w200';
     document.getElementById('battlePlayerImg').src = pImgSrc;
+    updateBattleAura();
 
     const pNameEl = document.getElementById('battlePlayerName');
     pNameEl.innerText = currentStudent.name;
@@ -3267,6 +3298,7 @@ async function startWorldBossRaid(wbId) {
     const currentSkinId = currentStudent.equipped_skin || 'HD001';
     const skinObj = skinsData.find(x => String(x.skin_id) === String(currentSkinId));
     document.getElementById('battlePlayerImg').src = (skinObj && skinObj.skin_url) ? skinObj.skin_url : 'https://via.placeholder.com/150';
+    updateBattleAura();
 
     // 동료 아바타 연동
     const m1Box = document.getElementById('merc1BattleBox');

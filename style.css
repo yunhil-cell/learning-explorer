@@ -1356,3 +1356,68 @@ font-weight: bold;
 0% { transform: rotate(0deg); }
 100% { transform: rotate(360deg); }
 }
+
+/* 오라와 캐릭터의 독립된 겹침 영역 */
+.aura-avatar {
+    position: relative;
+    display: inline-block;
+    isolation: isolate;
+    overflow: visible;
+    flex-shrink: 0;
+    line-height: 0;
+    vertical-align: middle;
+}
+
+/* 투명 애니메이션 파일 자체의 무한 반복 설정을 사용합니다. */
+.avatar-aura {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 140%;
+    height: 140%;
+    max-width: none;
+    object-fit: contain;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+}
+
+.avatar-skin {
+    position: relative;
+    z-index: 1;
+}
+
+/* 오라 옷장 */
+.aura-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+    margin: 15px 0;
+}
+
+.aura-card {
+    background: var(--PanelDashboard);
+    border: 1px solid var(--BorderColor);
+    border-radius: 12px;
+    padding: 24px 12px 12px;
+    text-align: center;
+    color: var(--TextMain);
+}
+
+.aura-card p {
+    font-size: 0.85em;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.aura-choice:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+@media (max-width: 480px) {
+    .aura-grid {
+        grid-template-columns: 1fr;
+    }
+}

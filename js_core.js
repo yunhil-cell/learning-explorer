@@ -1,3 +1,102 @@
+let aurasData = [];
+
+function escapeAuraHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[ch]));
+}
+
+function getOwnedAuraIds(student) {
+    return String((student && student.unlocked_auras) || '')
+        .replace(/!/g, '')
+        .split(',')
+        .map(id => id.trim())
+        .filter(Boolean);
+}
+
+function getEquippedAura(student) {
+    if (!student) return null;
+
+    const id = String(student.equipped_aura || '').trim();
+
+    // 보유하지 않은 오라는 표시와 능력치 모두 적용하지 않습니다.
+    if (!id || !getOwnedAuraIds(student).includes(id)) return null;
+
+    return aurasData.find(
+        aura => aura && String(aura.aura_id).trim() === id
+    ) || null;
+}
+
+function getAuraStatBonus(student) {
+    const aura = getEquippedAura(student);
+    const bonus = { hp: 0, atk: 0, def: 0, luk: 0 };
+
+    Object.keys(bonus).forEach(key => {
+        const value = aura ? Number(aura[key + '_bonus']) : 0;
+
+        bonus[key] = Number.isFinite(value)
+            ? Math.max(0, Math.floor(value))
+            : 0;
+    });
+
+    return bonus;
+}
+
+function getAuraImageUrl(student) {
+    const aura = getEquippedAura(student);
+    if (!aura || !aura.aura_url) return '';
+
+    try {
+        const url = new URL(
+            String(aura.aura_url).trim(),
+            window.location.href
+        );
+
+        return ['https:', 'http:'].includes(url.protocol)
+            ? url.href
+            : '';
+    } catch (err) {
+        return '';
+    }
+}
+
+function renderAuraLayerHtml(student) {
+    const url = getAuraImageUrl(student);
+
+    return url
+        ? '<img class="avatar-aura" src="' + escapeAuraHtml(url) +
+          '" alt="" aria-hidden="true" onerror="this.style.display=\'none\'">'
+        : '';
+}
+
+function getAuraBonusText(student) {
+    const bonus = getAuraStatBonus(student);
+
+    return '건강 +' + bonus.hp +
+        ' / 공격 +' + bonus.atk +
+        ' / 방어 +' + bonus.def +
+        ' / 행운 +' + bonus.luk;
+}
+
+function updateBattleAura() {
+    const img = document.getElementById('battlePlayerAura');
+    if (!img) return;
+
+    const url = getAuraImageUrl(currentStudent);
+
+    img.style.display = url ? 'block' : 'none';
+
+    if (url) {
+        img.src = url;
+    } else {
+        img.removeAttribute('src');
+    }
+}
+
 function getTitleHtml(s) {
     let titleHtml = '<span style="display:block; font-size:0.48em; margin-bottom:2px; opacity:0; line-height:1;">&nbsp;</span>';
 
@@ -10,6 +109,118 @@ function getTitleHtml(s) {
 
 let currentStudent = null;
 let tempStats = { hp: 0, atk: 0, def: 0, luk: 0, remain: 0 };
+
+// ==========================================
+// ⚔️ 직업 및 전직 시스템 메타데이터 정의
+// ==========================================
+const JOB_SYSTEM = {
+    // 1차 기본 직업 (전사=HP, 궁수=ATK, 마법사=DEF, 도적=LUK)
+    WARRIOR: {
+        name: "전사", tier: 1, color: "Green", icon: "🛡️",
+        desc: "강인한 생명력과 체력으로 아군을 지키는 선봉장입니다.",
+        passiveText: "전투 돌입 시 최대 체력(HP) 1.1배",
+        advOptions: ["KNIGHT", "BERSERKER"]
+    },
+    ARCHER: {
+        name: "궁수", tier: 1, color: "Red", icon: "🏹",
+        desc: "정밀한 원거리 사격과 강력한 화력으로 적을 섬멸합니다.",
+        passiveText: "전투 돌입 시 공격력(ATK) 1.1배",
+        advOptions: ["SNIPER", "RANGER"]
+    },
+    MAGE: {
+        name: "마법사", tier: 1, color: "Blue", icon: "🔮",
+        desc: "지혜로운 마법 장막으로 피해를 줄이고 전장을 통제합니다.",
+        passiveText: "전투 돌입 시 방어력(DEF) 1.1배",
+        advOptions: ["ARCHMAGE", "CLERIC"]
+    },
+    ROGUE: {
+        name: "도적", tier: 1, color: "Yellow", icon: "🗡️",
+        desc: "치명적인 급소 공격과 뛰어난 행운을 가졌습니다.",
+        passiveText: "전투 돌입 시 행운(LUK) 1.1배",
+        advOptions: ["ASSASSIN", "SHADOW"]
+    },
+    // 2차 상위 직업 (전직 조건: Lv.10 이상 & 독서록 15편 이상)
+    KNIGHT: {
+        name: "나이트", baseJob: "WARRIOR", tier: 2, color: "Blue", icon: "🏰",
+        desc: "성스러운 방패로 자신과 동료를 완벽히 수호하는 성기사입니다.",
+        passiveText: "최대 체력(HP) 1.2배 & 방어력(DEF) 1.15배",
+        skill: { id: "SK_ADV_01", name: "기사의 맹세", desc: "단단한 방패로 공격하고 자신에게 3턴간 보호막을 전개합니다." },
+        skin: { id: "HD101", name: "성기사 아바타" },
+        title: "[불굴의 성기사]"
+    },
+    BERSERKER: {
+        name: "버서커", baseJob: "WARRIOR", tier: 2, color: "Red", icon: "🪓",
+        desc: "방어보다 압도적인 생명력과 투지로 적을 분쇄하는 광전사입니다.",
+        passiveText: "최대 체력(HP) 1.25배 & 공격력(ATK) 1.1배",
+        skill: { id: "SK_ADV_02", name: "광폭 난타", desc: "적에게 강력한 2연격을 퍼붓고 출혈을 일으킵니다." },
+        skin: { id: "HD102", name: "광전사 아바타" },
+        title: "[전장의 광전사]"
+    },
+    ARCHMAGE: {
+        name: "대마도사", baseJob: "MAGE", tier: 2, color: "Red", icon: "☄️",
+        desc: "원소 마법의 극의에 도달하여 파멸적인 마법을 소환합니다.",
+        passiveText: "방어력(DEF) 1.15배 & 공격력(ATK) 1.2배",
+        skill: { id: "SK_ADV_03", name: "메테오 스트라이크", desc: "거대한 운석을 낙하시켜 치명타 피해와 지속 화상을 입힙니다." },
+        skin: { id: "HD103", name: "대마도사 아바타" },
+        title: "[진리의 대마도사]"
+    },
+    CLERIC: {
+        name: "클레릭", baseJob: "MAGE", tier: 2, color: "Green", icon: "✨",
+        desc: "생명의 기도로 부상을 치유하고 영혼을 정화하는 사제입니다.",
+        passiveText: "방어력(DEF) 1.2배 & 최대 체력(HP) 1.15배 (턴당 체력 5% 회복)",
+        skill: { id: "SK_ADV_04", name: "홀리 그레이스", desc: "체력을 대폭 회복하고 지속 재생 상태를 부여합니다." },
+        skin: { id: "HD104", name: "사제 아바타" },
+        title: "[성스러운 인도자]"
+    },
+    SNIPER: {
+        name: "스나이퍼", baseJob: "ARCHER", tier: 2, color: "Yellow", icon: "🎯",
+        desc: "한 발의 화살로 적의 숨통을 끊는 일격필살의 명사수입니다.",
+        passiveText: "공격력(ATK) 1.25배 & 행운(LUK) 1.1배",
+        skill: { id: "SK_ADV_05", name: "헤드샷", desc: "적의 방어력을 완전히 관통하여 치명적인 피해를 입힙니다." },
+        skin: { id: "HD105", name: "스나이퍼 아바타" },
+        title: "[침묵의 저격수]"
+    },
+    RANGER: {
+        name: "레인저", baseJob: "ARCHER", tier: 2, color: "Green", icon: "🦅",
+        desc: "자연의 기운을 다루며 신속한 연사로 적을 몰아칩니다.",
+        passiveText: "공격력(ATK) 1.15배 & 최대 체력(HP) 1.1배 (회피율 +10%)",
+        skill: { id: "SK_ADV_06", name: "화살 폭풍", desc: "3연격을 가하고 맹독 상태이상을 부여합니다." },
+        skin: { id: "HD106", name: "레인저 아바타" },
+        title: "[바람의 추적자]"
+    },
+    ASSASSIN: {
+        name: "어쌔신", baseJob: "ROGUE", tier: 2, color: "Yellow", icon: "💀",
+        desc: "어둠 속에서 급소를 노려 일격에 처형하는 전문 암살자입니다.",
+        passiveText: "행운(LUK) 1.25배 & 공격력(ATK) 1.15배",
+        skill: { id: "SK_ADV_07", name: "섀도우 스트라이크", desc: "적의 잃은 체력에 비례하여 극대화된 처형 피해를 입힙니다." },
+        skin: { id: "HD107", name: "암살자 아바타" },
+        title: "[어둠의 암살자]"
+    },
+    SHADOW: {
+        name: "섀도우", baseJob: "ROGUE", tier: 2, color: "Purple", icon: "👤",
+        desc: "그림자 분신과 장막을 사용하여 적의 공격을 완벽히 무효화합니다.",
+        passiveText: "행운(LUK) 1.15배 & 첫 피격 1회 완전 무효화(장막)",
+        skill: { id: "SK_ADV_08", name: "그림자 습격", desc: "적을 공격하며 침묵을 부여하고 자신은 은신 상태가 됩니다." },
+        skin: { id: "HD108", name: "그림자술사 아바타" },
+        title: "[심연의 그림자]"
+    }
+};
+
+function getJobColor(jobKey) {
+    if (!jobKey) return 'Highlight';
+    const key = String(jobKey).trim();
+    if (JOB_SYSTEM[key]) return JOB_SYSTEM[key].color;
+    const legacy = { 'Red': 'Red', 'Blue': 'Blue', 'Green': 'Green', 'Yellow': 'Yellow', 'Purple': 'Purple', '빨간색': 'Red', '파란색': 'Blue', '초록색': 'Green', '노란색': 'Yellow', '보라색': 'Purple' };
+    return legacy[key] || 'Highlight';
+}
+
+function getJobName(jobKey) {
+    if (!jobKey) return '견습 모험가';
+    const key = String(jobKey).trim();
+    if (JOB_SYSTEM[key]) return JOB_SYSTEM[key].name;
+    const legacy = { 'Red': '궁수(화력)', 'Blue': '마법사(지혜)', 'Green': '전사(체력)', 'Yellow': '도적(행운)', 'Purple': '그림자(희망)' };
+    return legacy[key] || key;
+}
 
 // 📝 [신규] 깃허브 호환 파이어베이스 실시간 로그 전송 헬퍼 함수
 function pushFirebaseLog(type, logData) {
@@ -875,6 +1086,10 @@ function initGameData(data) {
     skillsData = data.skills || [];
     relicsData = data.relics || [];
     skinsData = data.skins || [];
+
+    aurasData = firebaseCollectionToArray(data.auras).filter(
+        aura => aura && String(aura.aura_id || '').trim() !== ''
+    );
     noticesData = data.notices || [];
     lootBoxesData = data.lootBoxes || [];
     shopData = data.shopItems || [];
@@ -1075,7 +1290,8 @@ function renderButtons(students) {
         if (!s.unlocked_skins || s.unlocked_skins === "") s.unlocked_skins = "!HD001,!HD002,!HD003,!HD004,!HD005,!HD006,!HD007,!HD008";
 
         const btn = document.createElement('button');
-        btn.className = 'student-btn ' + (s.blessing ? 'btn-' + s.blessing : '');
+        const themeColor = getJobColor(s.blessing);
+        btn.className = 'student-btn ' + (s.blessing ? 'btn-' + themeColor : '');
         if (!s.blessing) btn.style.backgroundColor = '#E2E8F0';
 
         // 🩹 [신규] 실시간 부상/도주 패널티 타이머 계산
@@ -1226,19 +1442,37 @@ function processPasswordLogin(pin) {
 
 function showBlessingSelection() {
     const body = document.getElementById('modalBody');
-    const bList = [
-        { id: 'Red', n: '🔴 용기의 가호(공격력 보너스)' }, { id: 'Blue', n: '🔵 지혜의 가호(방어력 보너스)' },
-        { id: 'Green', n: '🟢 끈기의 가호(건강 보너스)' }, { id: 'Yellow', n: '🟡 행운의 가호(행운 보너스)' }, { id: 'Purple', n: '🟣 희망의 가호(1회 확정 회피)' }
-    ];
-    body.innerHTML = '<h2>✨ 가호의 각성</h2><p>' + currentStudent.name + ' 모험가여, 영혼의 색을 선택하라.</p>';
-    bList.forEach(b => {
-        const btn = document.createElement('button');
-        btn.className = 'blessing-select-btn btn-' + b.id;
-        btn.innerText = b.n;
-        // 💡 투박한 브라우저 confirm 대신 예쁜 게임 UI 팝업창 연결
-        btn.onclick = () => showUiConfirm("✨ 가호 선택", "[" + b.n + "]을(를) 선택하시겠습니까?<br><span style='font-size:0.8em; color:#aaa;'>(한 번 선택하면 바꿀 수 없습니다)</span>", `saveBlessing('${b.id}')`);
-        body.appendChild(btn);
-    });
+    const baseJobs = ['WARRIOR', 'ARCHER', 'MAGE', 'ROGUE'];
+
+    let cardsHtml = baseJobs.map(jobKey => {
+        const j = JOB_SYSTEM[jobKey];
+        const colorVar = 'var(--' + j.color + ')';
+        return `
+            <div style="background:#FFFFFF; border:2px solid ${colorVar}; border-radius:14px; padding:16px; margin-bottom:12px; text-align:left; box-shadow:0 3px 8px rgba(0,0,0,0.05); cursor:pointer; transition:0.2s;"
+                 onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'"
+                 onclick="showUiConfirm('⚔️ 직업 선택', '<b>[${j.name}]</b> 직업을 선택하시겠습니까?<br><span style=\\'font-size:0.85em; color:var(--TextSub);\\'>${j.desc}<br><b style=\\'color:${colorVar};\\'>${j.passiveText}</b></span>', 'saveBlessing(\\'${jobKey}\\')')">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:1.25em; font-weight:bold; color:${colorVar};">${j.icon} ${j.name}</span>
+                    <span class="small-btn" style="background:${colorVar}; font-size:0.8em;">선택하기</span>
+                </div>
+                <div style="font-size:0.9em; color:var(--TextMain); margin-bottom:6px;">${j.desc}</div>
+                <div style="font-size:0.82em; font-weight:bold; color:var(--TextSub); background:#F8FAFC; padding:6px 10px; border-radius:6px; border:1px solid var(--BorderColor);">
+                    ✨ 패시브: ${j.passiveText}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const reqLv = Number(sysConfig.require_level) || 5;
+    const reqBooks = Number(sysConfig.require_books) || 8;
+
+    body.innerHTML = `
+        <h2 style="color:var(--Highlight); margin-top:0;">⚔️ 모험가 직업 선택</h2>
+        <p style="color:var(--TextSub); font-size:0.9em; margin-bottom:20px;">${currentStudent.name} 모험가여, 앞으로 나아갈 기본 직업을 선택하세요.<br><span style="font-size:0.85em; color:var(--TextGold);">(레벨 ${reqLv} 달성 및 독서록 ${reqBooks}편 작성 시 2차 상위직업으로 전직할 수 있습니다)</span></p>
+        <div style="max-height:450px; overflow-y:auto; padding-right:4px;">
+            ${cardsHtml}
+        </div>
+    `;
 }
 
 function saveBlessing(bId) {
@@ -1379,8 +1613,10 @@ function renderDashboard() {
     relicBonus.def += mercBonus.def;
     relicBonus.luk += mercBonus.luk;
 
+    const auraBonus = getAuraStatBonus(s);
+
     const renderStatHtml = (label, base, eBonus, rBonus, statType) => {
-        let totalBonus = eBonus + rBonus;
+        let totalBonus = eBonus + rBonus + auraBonus[statType];
         let total = base + totalBonus;
         let max = 150;
         let basePercent = Math.min(100, (base / max) * 100);
@@ -1395,6 +1631,12 @@ function renderDashboard() {
         if (rBonus > 0) {
             const displayR = Number.isInteger(rBonus) ? rBonus : Number(rBonus.toFixed(1));
             numHtml += ' <span style="color:var(--TextGold); font-weight:bold; font-size:0.9em; margin-left:5px;">(+' + displayR + ')</span>';
+        }
+
+        if (auraBonus[statType] > 0) {
+            numHtml +=
+                ' <span style="color:var(--Purple); font-weight:bold; font-size:0.9em; margin-left:5px;">' +
+                '(오라 +' + auraBonus[statType] + ')</span>';
         }
 
         let barContainerStyle = 'width: 100%; background: #475569; height: 8px; border-radius: 4px; margin-top: 6px; position: relative;';
@@ -1452,15 +1694,22 @@ function renderDashboard() {
     const skinObj = skinsData.find(x => String(x.skin_id) === String(currentSkinId));
     const skinImgUrl = (skinObj && skinObj.skin_url) ? skinObj.skin_url : 'https://via.placeholder.com/150/444444/FFFFFF?text=NoSkin';
 
-    const blessingMap = {
-        'Red': '🔴 용기', 'Blue': '🔵 지혜', 'Green': '🟢 끈기',
-        'Yellow': '🟡 행운', 'Purple': '🟣 희망'
-    };
-    const displayBlessing = blessingMap[s.blessing] || s.blessing;
+    const currentJobKey = String(s.blessing || '').trim();
+        const jobInfo = JOB_SYSTEM[currentJobKey];
+        const displayJob = getJobName(s.blessing);
+        const jobThemeColor = getJobColor(s.blessing);
 
-    // 💡 경험치/레벨은 보상 지급 트랜잭션에서만 확정하고, 화면 렌더링 중에는 데이터를 수정하지 않음
-    const expMax = Number(sysConfig.exp_max) || 200;
-    const expPercent = Math.min(100, ((Number(s.exp) || 0) / expMax) * 100);
+        // 💡 2차 전직 자격 판별 (system 시트의 require_level, require_books 실시간 연동)
+        const reqLv = Number(sysConfig.require_level) || 5;
+        const reqBooks = Number(sysConfig.require_books) || 8;
+        const currentLv = Number(s.level) || 1;
+        const currentBooks = actualReading;
+        const isTier1 = jobInfo ? (jobInfo.tier === 1) : true;
+        const isAdvEligible = isTier1 && (currentLv >= reqLv) && (currentBooks >= reqBooks);
+
+        // 💡 경험치/레벨은 보상 지급 트랜잭션에서만 확정하고, 화면 렌더링 중에는 데이터를 수정하지 않음
+        const expMax = Number(sysConfig.exp_max) || 200;
+        const expPercent = Math.min(100, ((Number(s.exp) || 0) / expMax) * 100);
 
     const remainStats = totalPoints + (Number(s.level_points) || 0) - used;
     const nBadge = remainStats > 0 ? '<span class="n-badge" style="top:-5px; right:-5px; font-size:0.7em;">N</span>' : '';
@@ -1488,8 +1737,29 @@ function renderDashboard() {
             ? '<span style="font-size:0.8em; color:#059669; font-weight:bold; margin-left:4px;">(🎯목표 달성!)</span>' 
             : '<span style="font-size:0.8em; color:var(--TextSub); margin-left:4px;">(목표: ' + goalCount + '편)</span>';
 
+        // 💡 전직 제어 배너 HTML
+        let advBannerHtml = '';
+        if (jobInfo && jobInfo.tier === 2) {
+            advBannerHtml = `<div style="text-align:center; margin-bottom:12px; background:rgba(59, 130, 246, 0.08); padding:8px; border-radius:10px; border:1px solid var(--BorderColor);">
+                <span style="font-size:0.85em; color:var(--TextSub);">현재 직업:</span> <b style="color:var(--${jobThemeColor}); font-size:1.1em;">[2차 전직] ${displayJob}</b>
+            </div>`;
+        } else if (isAdvEligible) {
+            advBannerHtml = `<div style="margin-bottom:12px; background:linear-gradient(135deg, #FEF3C7, #FDE68A); padding:10px 14px; border-radius:10px; border:1.5px solid #F59E0B; display:flex; justify-content:space-between; align-items:center;">
+                <div style="text-align:left;">
+                    <div style="font-weight:bold; color:#B45309; font-size:0.95em;">🎉 2차 상위 직업 전직 가능!</div>
+                    <div style="font-size:0.75em; color:#78350F;">전용 스킬, 전용 외형 스킨, 칭호가 즉시 지급됩니다.</div>
+                </div>
+                <button class="small-btn" style="background:#F59E0B; color:black; font-weight:bold; padding:8px 12px; font-size:0.9em; box-shadow:0 2px 6px rgba(245, 158, 11, 0.4);" onclick="openJobAdvancementModal()">⚔️ 전직하기</button>
+            </div>`;
+        } else if (isTier1) {
+            advBannerHtml = `<div style="margin-bottom:12px; background:#F8FAFC; padding:8px 12px; border-radius:10px; border:1px solid var(--BorderColor); display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.85em; color:var(--TextSub);">현재 직업: <b style="color:var(--${jobThemeColor});">${displayJob}</b></span>
+                <span style="font-size:0.8em; color:var(--TextLock);">2차 전직: Lv.${currentLv}/${reqLv} · 독서 ${currentBooks}/${reqBooks}편</span>
+            </div>`;
+        }
+
         tabContent =
-            '<div style="text-align:center; color:var(--' + s.blessing + '); font-weight:bold; font-size:1.1em; margin-bottom: 10px;">' + displayBlessing + '의 가호 적용 중</div>' +
+            advBannerHtml +
             '<div class="stat-row" style="font-size:1.05em; padding-bottom:4px; margin-bottom:6px;"><span style="color:var(--TextSub);">💰 소지 자금</span> <div><b style="color:var(--TextGold);">' + (Number(s.game_money) || 0) + '</b> ' + (sysConfig.game_money_currency || '골드') + '</div></div>' +
             '<div class="stat-row" style="font-size:1.05em; padding-bottom:4px; margin-bottom:6px;"><span style="color:var(--TextSub);">📚 독서록</span> <div><b style="color:var(--TextMain);">' + actualReading + '</b> 편 ' + goalBadge + ' <button class="small-btn" style="background:var(--TextSub); border:none; padding:2px 6px;" onclick="openReadingCountEdit()">수정</button></div></div>' +
             '<div class="stat-row" style="font-size:1.05em; padding-bottom:4px; margin-bottom:6px;"><span style="color:var(--TextSub);">⚔️ 사냥 기회</span> <b style="color:var(--TextGold);">' + (s.weekly_battles !== undefined ? s.weekly_battles : (Number(sysConfig.max_weekly_battles) || 2)) + ' / ' + (Number(sysConfig.max_weekly_battles) || 2) + '</b></div>' +
@@ -1654,7 +1924,16 @@ function renderDashboard() {
         '      <button class="small-btn" style="flex:1; padding: 7px 0; font-size: 0.85em; background:var(--Purple); color:white; border:none; border-radius:6px; font-weight:bold;" onclick="openExpeditionModal()">원정대</button>' +
         '    </div>' +
         '    <div style="flex-grow:1; display:flex; flex-direction:column; justify-content:center; align-items:center; width: 100%; min-height: 180px;">' +
-        '      <img src="' + skinImgUrl + '" style="width: 80%; max-height: 220px; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); transform: scaleX(-1);">' +
+        '      <div class="aura-avatar" style="width:80%; max-width:220px; height:220px;">' +
+        renderAuraLayerHtml(s) +
+        '        <img class="avatar-skin" src="' + skinImgUrl + '" style="width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 4px 6px rgba(0,0,0,0.1)); transform:scaleX(-1);">' +
+        '      </div>' +
+        '      <div style="font-size:0.8em; color:var(--Purple); margin-top:8px; line-height:1.5;">' +
+        (getEquippedAura(s)
+            ? '오라: ' + escapeAuraHtml(getEquippedAura(s).name) +
+              '<br>' + getAuraBonusText(s)
+            : '오라 미장착') +
+        '      </div>' +
         '    </div>' +
         '    <div style="display:flex; align-items:flex-end; justify-content:center; gap:8px; margin-top:15px;">' +
         '      <span style="font-size:1.2em; color:var(--Yellow); font-weight:bold; margin-bottom:3px;">Lv.' + (s.level || 1) + '</span>' +
@@ -2352,6 +2631,157 @@ function openNoticeBoard() {
         '<button style="margin-top:15px; width:100%; padding:15px; border-radius:10px; border:none; background:var(--TextSub); color:white; font-size:1.1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>';
 
     subModal.style.display = 'flex';
+}
+
+// ==========================================
+// ⚔️ 2차 상위 직업 전직(진급) 시스템
+// ==========================================
+function openJobAdvancementModal() {
+    const s = currentStudent;
+    if (!s) return;
+
+    const currentJobKey = String(s.blessing || '').trim();
+    const baseInfo = JOB_SYSTEM[currentJobKey];
+
+    if (!baseInfo || !baseInfo.advOptions || baseInfo.advOptions.length === 0) {
+        showUiAlert("안내", "현재 직업은 전직 대상이 아니거나 이미 최고 상위 직업입니다.", "");
+        return;
+    }
+
+    const subModal = document.getElementById('subModal');
+    const subBody = document.getElementById('subModalBody');
+
+    subModal.querySelector('.modal-content').style.background = '#0F172A';
+    subModal.querySelector('.modal-content').style.borderColor = '#F59E0B';
+
+    let optionsHtml = baseInfo.advOptions.map(advKey => {
+        const adv = JOB_SYSTEM[advKey];
+        const advColor = 'var(--' + adv.color + ')';
+        return `
+            <div style="background:#1E293B; border:2px solid ${advColor}; border-radius:16px; padding:18px; text-align:left; display:flex; flex-direction:column; justify-content:space-between; box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+                <div>
+                    <div style="font-size:1.4em; font-weight:bold; color:${advColor}; margin-bottom:8px;">${adv.icon} ${adv.name}</div>
+                    <div style="font-size:0.9em; color:#CBD5E1; line-height:1.5; margin-bottom:12px;">${adv.desc}</div>
+                    
+                    <div style="background:#0F172A; padding:10px; border-radius:8px; border:1px solid #334155; margin-bottom:10px;">
+                        <div style="font-size:0.8em; color:#94A3B8; font-weight:bold; margin-bottom:4px;">✨ 고유 패시브</div>
+                        <div style="font-size:0.9em; color:${advColor}; font-weight:bold;">${adv.passiveText}</div>
+                    </div>
+
+                    <div style="background:#0F172A; padding:10px; border-radius:8px; border:1px solid #334155; margin-bottom:15px;">
+                        <div style="font-size:0.8em; color:#94A3B8; font-weight:bold; margin-bottom:4px;">📜 전용 스킬 지급</div>
+                        <div style="font-size:0.9em; color:#FBBF24; font-weight:bold;">[${adv.skill.name}]</div>
+                        <div style="font-size:0.8em; color:#94A3B8; margin-top:2px;">${adv.skill.desc}</div>
+                    </div>
+                </div>
+
+                <button class="btn-main" style="background:${advColor}; color:white; font-size:1.05em; padding:12px; margin-top:10px; font-weight:bold;"
+                        onclick="showUiConfirm('⚔️ 2차 전직 확정', '<b>[${adv.name}]</b>(으)로 전직하시겠습니까?<br><br>▪ 전용 스킬 [${adv.skill.name}] 자동 지급 및 장착<br>▪ 전용 외형 [${adv.skin.name}] 즉시 지급<br>▪ 고유 칭호 ${adv.title} 자동 부여<br><br><span style=\\'color:#ff4d4d; font-size:0.8em;\\'>※ 전직 후에는 되돌릴 수 없습니다.</span>', 'executeJobAdvancement(\\'${advKey}\\')')">
+                    ${adv.name}(으)로 전직하기
+                </button>
+            </div>
+        `;
+    }).join('');
+
+    subBody.innerHTML = `
+        <h2 style="color:#F59E0B; margin-top:0;">👑 2차 상위 직업 전직소</h2>
+        <p style="color:#CBD5E1; font-size:0.9em; margin-bottom:20px;">
+            ${s.name} 모험가님은 훌륭한 독서와 모험을 통해 자격을 갖추었습니다.<br>
+            선택한 상위 직업의 전용 스킬과 스킨, 고유 칭호가 즉시 부여됩니다.
+        </p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:15px;">
+            ${optionsHtml}
+        </div>
+        <button style="width:100%; padding:12px; border-radius:10px; border:none; background:#444; color:white; font-size:1em; cursor:pointer;" onclick="closeSubModal()">닫기</button>
+    `;
+
+    subModal.style.display = 'flex';
+}
+
+async function executeJobAdvancement(advJobKey) {
+    const adv = JOB_SYSTEM[advJobKey];
+    if (!adv) return;
+
+    showGlobalLoading(`👑 [${adv.name}] 전직 정보 저장 중...`);
+
+    try {
+        const tx = await runStudentAtomicTransaction(currentStudent.name, student => {
+            const reqLv = Number(sysConfig.require_level) || 5;
+            const reqBooks = Number(sysConfig.require_books) || 8;
+            const curLv = Number(student.level) || 1;
+            const curBooks = Number(student.reading_count) || 0;
+
+            if (curLv < reqLv || curBooks < reqBooks) {
+                return { abort: true, code: 'CONDITION_NOT_MET' };
+            }
+
+            const currentJob = String(student.blessing || '').trim();
+            const baseInfo = JOB_SYSTEM[currentJob];
+            if (!baseInfo || !baseInfo.advOptions || !baseInfo.advOptions.includes(advJobKey)) {
+                return { abort: true, code: 'INVALID_BRANCH' };
+            }
+
+            // 1. 직업 갱신
+            student.blessing = advJobKey;
+
+            // 2. 전용 스킬 추가 및 대표 스킬 슬롯 자동 장착
+            let skills = student.unlocked_skills ? String(student.unlocked_skills).replace(/!/g, '').split(',').map(x => x.trim()).filter(Boolean) : [];
+            if (!skills.includes(adv.skill.id)) {
+                skills.push(adv.skill.id);
+            }
+            student.unlocked_skills = "!" + skills.join(',');
+            student.equipped_1 = adv.skill.id;
+
+            // 3. 전용 스킨 지급 및 즉시 장착
+            let skins = student.unlocked_skins ? String(student.unlocked_skins).replace(/!/g, '').split(',').map(x => x.trim()).filter(Boolean) : [];
+            if (!skins.includes(adv.skin.id)) {
+                skins.push(adv.skin.id);
+            }
+            student.unlocked_skins = "!" + skins.join(',');
+            student.equipped_skin = adv.skin.id;
+
+            // 4. 고유 칭호 지급 및 착용
+            let titles = student.custom_titles ? String(student.custom_titles).replace(/!/g, '').split(',').map(x => x.trim()).filter(Boolean) : [];
+            if (!titles.includes(adv.title)) {
+                titles.push(adv.title);
+            }
+            student.custom_titles = "!" + titles.join(',');
+            student.equipped_title = adv.title;
+
+            return {};
+        });
+
+        hideGlobalLoading();
+
+        if (!tx.committed) {
+            showUiAlert("전직 불가", "전직 조건을 만족하지 못했거나 잘못된 전직 경로입니다.", "renderDashboard()");
+            return;
+        }
+
+        pushFirebaseLog('common', {
+            time: new Date().toISOString(),
+            name: currentStudent.name,
+            category: "상위 전직",
+            content: `2차 전직 완료 ➔ [${adv.name}] (스킬: ${adv.skill.name}, 스킨: ${adv.skin.name}, 칭호: ${adv.title})`
+        });
+
+        closeSubModal();
+        renderDashboard();
+
+        showUiAlert(
+            `🎉 전직 축하!`,
+            `<b style="color:var(--${adv.color}); font-size:1.25em;">[${adv.name}]</b>(으)로의 2차 전직을 완료했습니다!<br><br>` +
+            `🎁 <b>전직 보상 일괄 지급:</b><br>` +
+            `▪ 전용 스킬 [${adv.skill.name}] 자동 장착<br>` +
+            `▪ 전용 외형 [${adv.skin.name}] 자동 착용<br>` +
+            `▪ 전용 칭호 [${adv.title}] 자동 장착`,
+            ""
+        );
+    } catch (err) {
+        hideGlobalLoading();
+        await syncFreshCurrentStudent(true);
+        showUiAlert("❌ 전직 오류", "전직 저장 중 오류가 발생했습니다: " + err.message, "renderDashboard()");
+    }
 }
 
 // 💡 [신규] 공지사항 개별 상세 정보 팝업

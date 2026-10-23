@@ -545,8 +545,12 @@ function openEquipUI(slotNum) {
             ? 'border:2px solid ' + bColor + '; box-shadow: 0 0 10px ' + bColor + ';'
             : 'border:2px solid var(--BorderColor);';
 
+        const isAdvSkill = String(sk.skill_id).startsWith('SK_ADV_');
+        const iconRadius = isAdvSkill ? '50%' : '8px';
+        const advGlow = isAdvSkill ? 'box-shadow: 0 0 10px ' + bColor + ';' : '';
+
         let iconDisplay = sk.icon_url
-            ? '<img src="' + sk.icon_url + '" style="width:48px; height:48px; object-fit:contain; image-rendering:pixelated; border-radius:8px; background:#111; border:2px solid ' + bColor + '; padding:2px;">'
+            ? '<img src="' + sk.icon_url + '" style="width:48px; height:48px; object-fit:contain; image-rendering:pixelated; border-radius:' + iconRadius + '; background:#111; border:2px solid ' + bColor + '; ' + advGlow + ' padding:2px;">'
             : '<div style="font-size:32px;">🔮</div>';
 
         let btnText = '상세/장착';
@@ -738,7 +742,160 @@ function promptUnlockSlot(type, slotNum) {
 // ==========================================
 // 🧑‍🎤 스킨(옷장) 시스템 추가 (상세 팝업 기능 적용)
 // ==========================================
-function openWardrobe() {
+let auraEquipBusy = false;
+
+function openAuraWardrobe() {
+    const s = currentStudent;
+    if (!s) return;
+
+    const body = document.getElementById('modalBody');
+    const owned = getOwnedAuraIds(s);
+
+    const items = aurasData.filter(
+        aura => aura && owned.includes(String(aura.aura_id).trim())
+    );
+
+    const skin = skinsData.find(
+        item => String(item.skin_id) === String(s.equipped_skin || 'HD001')
+    );
+
+    const skinUrl = skin ? skin.skin_url : '';
+
+    const cards = items.map(aura => {
+        const id = String(aura.aura_id).trim();
+
+        // 저장하지 않고 해당 오라를 착용한 모습만 미리 봅니다.
+        const preview = Object.assign({}, s, {
+            equipped_aura: id
+        });
+
+        const equipped = String(s.equipped_aura || '').trim() === id;
+
+        return '<div class="aura-card">' +
+            '<div class="aura-avatar" style="width:100px; height:100px;">' +
+            renderAuraLayerHtml(preview) +
+            (skinUrl
+                ? '<img class="avatar-skin" src="' + escapeAuraHtml(skinUrl) +
+                  '" alt="" style="width:100%; height:100%; object-fit:contain; transform:scaleX(-1);">'
+                : '') +
+            '</div>' +
+            '<p><b>' + escapeAuraHtml(aura.name || id) + '</b></p>' +
+            '<p>' + escapeAuraHtml(aura.description || '') + '</p>' +
+            '<p>' + getAuraBonusText(preview) + '</p>' +
+            '<button type="button" class="btn-main aura-choice" data-aura-id="' +
+            escapeAuraHtml(id) + '"' +
+            (equipped ? ' disabled' : '') + '>' +
+            (equipped ? '장착 중' : '장착하기') +
+            '</button></div>';
+    }).join('');
+
+    body.innerHTML =
+        '<h2>옷장 - 오라</h2>' +
+        '<button class="small-btn" onclick="openWardrobe()">스킨</button> ' +
+        '<button class="small-btn" disabled>오라</button>' +
+        '<p>장착한 오라 1개의 능력치만 적용됩니다.</p>' +
+        '<div class="aura-grid">' +
+        (cards || '<p>아직 보유한 오라가 없습니다.</p>') +
+        '</div>' +
+        '<button class="btn-main aura-choice" data-aura-id="">오라 해제</button>' +
+        '<button class="btn-main" onclick="renderDashboard()">대시보드로 돌아가기</button>';
+
+    body.querySelectorAll('.aura-choice').forEach(button => {
+        button.addEventListener('click', () => {
+            saveEquippedAura(button.dataset.auraId);
+        });
+    });
+}
+
+async function saveEquippedAura(auraId) {
+    if (auraEquipBusy || !currentStudent) return;
+
+    const owner = String(currentStudent.name).trim();
+    const id = String(auraId || '').trim();
+
+    auraEquipBusy = true;
+    showGlobalLoading('오라 장착 정보를 저장하고 있습니다...');
+
+    try {
+        const tx = await queueStudentWrite(owner, async () => {
+            const url = FIREBASE_DB_URL.replace(/\.json$/, '') +
+                '/students/' + encodeURIComponent(owner) + '.json';
+
+            const result = await runFirebasePathAtomicTransaction(
+                url,
+                student => {
+                    if (String(student.name || '').trim() !== owner) {
+                        throw new Error('학생 정보를 확인할 수 없습니다.');
+                    }
+
+                    if (id) {
+                        const exists = aurasData.some(
+                            aura => aura && String(aura.aura_id).trim() === id
+                        );
+
+                        // 최신 학생 데이터의 보유 목록으로 다시 검증합니다.
+                        if (!exists || !getOwnedAuraIds(student).includes(id)) {
+                            throw new Error('보유한 오라만 장착할 수 있습니다.');
+                        }
+                    }
+
+                    if (String(student.equipped_aura || '').trim() === id) {
+                        return { abort: true };
+                    }
+
+                    student.equipped_aura = id;
+                    return {};
+                }
+            );
+
+            // 저장 결과를 현재 학생과 전체 학생 캐시에 함께 반영합니다.
+            applyFirebaseStudentRootToLocal(
+                { [owner]: result.data },
+                [owner]
+            );
+
+            return result;
+        });
+
+        if (tx.committed) {
+            pushFirebaseLog('common', {
+                time: new Date().toISOString(),
+                name: owner,
+                category: '오라 장착',
+                content: id ? '오라 장착: ' + id : '오라 해제'
+            });
+        }
+
+        if (
+            currentStudent &&
+            String(currentStudent.name).trim() === owner
+        ) {
+            openAuraWardrobe();
+        }
+    } catch (err) {
+        if (
+            currentStudent &&
+            String(currentStudent.name).trim() === owner
+        ) {
+            await syncFreshCurrentStudent(true);
+
+            showUiAlert(
+                '오라 저장 실패',
+                escapeAuraHtml(err.message),
+                "openWardrobe('aura')"
+            );
+        }
+    } finally {
+        auraEquipBusy = false;
+        hideGlobalLoading();
+    }
+}
+
+function openWardrobe(tab = 'skin') {
+    if (tab === 'aura') {
+        openAuraWardrobe();
+        return;
+    }
     const body = document.getElementById('modalBody');
     const s = currentStudent;
 
@@ -755,6 +912,10 @@ function openWardrobe() {
     const currentEquipped = s.equipped_skin || 'HD001';
 
     let html = '<h2 style="color:var(--TextGold); margin-top:0;">옷장</h2>' +
+        '<div style="display:flex; gap:8px; justify-content:center; margin-bottom:15px;">' +
+        '<button class="small-btn" disabled>스킨</button>' +
+        '<button class="small-btn" onclick="openWardrobe(\'aura\')">오라</button>' +
+        '</div>' +
         '<p style="color:var(--TextSub); font-size:0.9em; margin-bottom:15px;">외형을 선택하여 상세 정보를 확인하고 변경하세요.</p>' +
         '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(115px, 1fr)); gap:10px; max-height:420px; overflow-y:auto; padding:5px; margin-bottom:15px;">';
 
@@ -817,13 +978,18 @@ function showSkinDetail(skinId) {
 
     // 조건에 따른 하단 액션 버튼 생성
     let btnHtml = '';
+    const isAdvSkin = String(skin.skin_id).startsWith('HD1');
+
     if (isEquipped) {
         btnHtml = '<button class="btn-main" style="background:#F1F5F9; color:var(--Green); border: 2px solid var(--Green);" disabled>✅ 현재 장착 중인 외형입니다</button>';
     } else if (isOwned) {
         btnHtml = '<button class="btn-main" style="background:var(--Highlight);" onclick="equipSkin(\'' + skin.skin_id + '\')">이 외형 장착하기</button>';
+    } else if (isAdvSkin) {
+        // 💡 2차 전직 전용 스킨은 상점 구매 불가 (전직 달성 시 자동 지급)
+        btnHtml = '<button class="btn-main" style="background:var(--BgLock); color:var(--TextLock); border: 1.5px solid var(--BorderColor);" disabled>🔒 2차 전직 달성 시 해금되는 전용 외형입니다</button>';
     } else {
         const cost = sysConfig.skin_price || 500;
-        const currency = sysConfig.currency_name || '골드';
+        const currency = sysConfig.currency_name || '티';
         btnHtml = '<button class="btn-main" style="background:var(--Yellow);" onclick="promptBuySkin(\'' + skin.skin_id + '\', \'' + skin.name + '\')">구매 및 해금 (' + cost + currency + ')</button>';
     }
 
