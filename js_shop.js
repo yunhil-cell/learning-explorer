@@ -1170,6 +1170,29 @@ async function processUseItem(itemName, count = 1) {
                     student.def_points = 5;
                     student.luk_points = 5;
                     student.blessing = "TEMP";
+
+                    // 💡 [회수 처리] 2차 전직 전용 스킬 회수 및 메인 슬롯 초기화
+                    const advSkillIds = ['SK_ADV_01', 'SK_ADV_02', 'SK_ADV_03', 'SK_ADV_04', 'SK_ADV_05', 'SK_ADV_06', 'SK_ADV_07', 'SK_ADV_08'];
+                    let skills = student.unlocked_skills ? String(student.unlocked_skills).replace(/!/g, '').split(',').map(x => x.trim()).filter(Boolean) : [];
+                    skills = skills.filter(id => !advSkillIds.includes(id));
+                    student.unlocked_skills = "!" + skills.join(',');
+                    if (advSkillIds.includes(String(student.equipped_1))) student.equipped_1 = "";
+                    if (advSkillIds.includes(String(student.party_s1))) student.party_s1 = "";
+                    if (advSkillIds.includes(String(student.party_s2))) student.party_s2 = "";
+
+                    // 💡 [회수 처리] 2차 전직 전용 스킨 회수 및 기본 스킨(HD001)으로 원복
+                    const advSkinIds = ['HD101', 'HD102', 'HD103', 'HD104', 'HD105', 'HD106', 'HD107', 'HD108'];
+                    let skins = student.unlocked_skins ? String(student.unlocked_skins).replace(/!/g, '').split(',').map(x => x.trim()).filter(Boolean) : [];
+                    skins = skins.filter(id => !advSkinIds.includes(id));
+                    student.unlocked_skins = "!" + skins.join(',');
+                    if (advSkinIds.includes(String(student.equipped_skin))) student.equipped_skin = "HD001";
+
+                    // 💡 [회수 처리] 2차 전직 고유 칭호 회수
+                    const advTitles = ['[불굴의 성기사]', '[전장의 광전사]', '[진리의 대마도사]', '[성스러운 인도자]', '[침묵의 저격수]', '[바람의 추적자]', '[어둠의 암살자]', '[심연의 그림자]'];
+                    let titles = student.custom_titles ? String(student.custom_titles).replace(/!/g, '').split(',').map(x => x.trim()).filter(Boolean) : [];
+                    titles = titles.filter(t => !advTitles.includes(t));
+                    student.custom_titles = "!" + titles.join(',');
+                    if (advTitles.includes(String(student.equipped_title))) student.equipped_title = "";
                 } else if (itemName === '보스 도전기회 추가 티켓') {
                     student.weekly_boss =
                         (Number(student.weekly_boss) || 0) +
