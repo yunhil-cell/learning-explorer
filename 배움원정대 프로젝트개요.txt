@@ -121,6 +121,9 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 라. 도전의 탑: 23층 서바이벌, 층별 몬스터/보스 격파 및 완료 층수 비례 현실 재화(RM) 교환권 정산
 마. 월드 보스 레이드: 학급 전체가 체력을 공유하는 10턴 서바이벌 레이드, 매일 1회 무료 도전, 일일 참여 보상(골드/EXP) 및 학급 누적 딜량 TOP 5 명예 랭킹
 바. 서든데스 시스템: 장기전 방지를 위해 일반/보스전(10턴/20턴), 파티 레이드(5라운드/10라운드) 경과 시 회복량 50% 감소 및 피해량 20%~50% 폭증
+사. 정통 횡스크롤 사이드뷰 전투 UI: 상단 보스 체력바, 중앙 횡스크롤 전장(좌측 아군 진영, 우측 적 진영), 하단 가로 분할 플레이어 상태창(이름, HP 바, 스킬) 3단 레이아웃을 적용하여 시각적 몰입감을 극대화
+아. 공격 턴 전진 돌진(Step-in) 연출: 공격 차례가 된 캐릭터(싱글 대표 또는 파티원 중 1인)가 전열 앞으로 성큼 전진(돌진)하여 스킬/타격을 가한 뒤 대열로 복귀하는 역동적인 CSS 키프레임 모션 적용 (좌우반전 scaleX(-1) 전 구간 유지)
+자. 화면 중앙 기믹/스킬 팝업 배너: 텍스트 로그에 의존하지 않고 스킬 발동 및 보스 기믹 예고 시 필드 중앙 상단에 팝업 배너(`showSkillBanner`)가 즉시 점멸하여 직관적인 피드백 제공
 
 ## 7. 보상 및 기록
 가. 전투 보상, 퀘스트 보상, 전리품 상자, 아이템 사용 등 학생의 실시간 플레이 결과는 Firebase Realtime Database에 즉시 저장하며, 이후 `syncFromFirebase()`를 통해 Google Spreadsheet에 백업합니다.
@@ -382,6 +385,11 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
   3. **3분기 (8월 중순 ~ 10월 초):** 원정대(동료 파티 배치 및 스킬 연계), 용병 길드(동료 뽑기)
   4. **4분기 (10월 중순 ~ 12월 말):** 학급 공통 월드 보스 레이드
 라. 교사 모드(Teacher Mode ON) 활성화 시에는 분기 제한에 구애받지 않고 모든 콘텐츠를 자유롭게 검수 및 테스트할 수 있습니다.
+마. 아이템/몬스터 단위 분기 필터링 (`phase` 컬럼):
+  1. 기획 시트(`skills`, `relics`, `skins`, `mercenaries`, `monsters`, `bosses`, `dungeons`, `shop`)의 `phase` 컬럼(1~4)과 연동되어 현재 분기 이하의 데이터만 가챠 뽑기 풀, 상점 판매, 사냥터/보스/던전 선택 목록에 노출됩니다.
+  2. 원정대 동료(용병)는 3분기 콘텐츠 오픈 특성에 맞추어 `phase 3`(C, B, A등급 56명)과 `phase 4`(S등급 전설 14명)로만 구성됩니다.
+  3. 유물 슬롯 2 확장권은 2차 전직 및 보스전 스펙업 계단에 맞추어 `phase 2`에 상점 입고됩니다.
+  4. 이미 획득한 스킬, 유물, 스킨, 용병은 분기와 무관하게 영구 보존되며, 도감 수집률 분모는 획득 완료 아이템 또는 현재 분기 이하 아이템만 포함하도록 자동 보정됩니다.
 
 ## 25. 인게임 모험 가이드 시스템 (Game Guide)
 가. 외부 링크 이동 없이 게임 내 모달 팝업(`openGameGuideModal`)을 통해 4개 핵심 영역의 지침서를 즉시 조회할 수 있습니다.
@@ -539,70 +547,28 @@ AI는 이 프로젝트와 관련된 요청을 처리할 때 반드시 아래 원
 
 ## 3. skills
 가. 플레이어, 동료, 2차 전직 전용 스킬 데이터입니다.
-나. 주요 데이터: `skill_id`, `name`, `blessing`, `icon_id`, `description`, `target_type`, `effect_type`, `base_value`, `scaling_stat`, `multiplier`(또는 `muliplier`), `base_prob`, `cooldown`, `special_effect`, `duration`, `icon_url`, `effect_url`, `effect_time`.
+나. 주요 데이터: `skill_id`, `name`, `blessing`, `icon_id`, `description`, `target_type`, `effect_type`, `base_value`, `scaling_stat`, `multiplier`(또는 `muliplier`), `base_prob`, `cooldown`, `special_effect`, `duration`, `icon_url`, `effect_url`, `effect_time`, `phase`(등장 분기 1~4).
 다. `blessing` 컬럼은 스킬 발동 확률 계산에 영향을 주지 않으며, 아이콘 테두리 렌더링용 단순 시각적 속성 색상(Red, Blue, Green, Yellow, Purple)으로 유지되는 더미 데이터입니다.
 라. `special_effect` 키워드는 `shield`, `burn`, `regen`, `pierce`, `double_hit`, `triple_hit`, `execution`, `stealth` 등 엔진과 100% 매핑된 영문 표준 토큰을 사용합니다.
 
 ## 4. relics
 가. 유물 데이터입니다.
-나. 주요 데이터는 다음과 같습니다.
-
-relic_id
-name
-effect_type
-value
-description
-icon_id
-icon_url
+나. 주요 데이터는 다음과 같습니다: `relic_id`, `name`, `icon_id`, `description`, `effect_type`, `value`, `icon_url`, `phase`(등장 분기 1~4).
 
 ## 5. skins
 가. 아바타 스킨 데이터입니다.
-나. 주요 데이터는 다음과 같습니다.
-
-skin_id
-name
-skin_url
-description
-
+나. 주요 데이터는 다음과 같습니다: `skin_id`, `name`, `skin_url`, `description`, `phase`(등장 분기 1~4, 독서인증제 시즌 보상 일정 및 전직 오픈 연동).
 다. `skins(준비중)`은 현재 코드에서 직접 참조하지 않는 보조 시트입니다.
 
 ## 6. mercenaries
 가. 플레이어를 돕는 동료(용병) 데이터입니다.
-나. 주요 데이터는 다음과 같습니다.
-
-merc_id
-name
-job
-tier
-option_type
-option_value
-option_calc_type
-icon_url
-
+나. 주요 데이터는 다음과 같습니다: `merc_id`, `name`, `job`, `tier`, `option_type`, `option_calc_type`, `option_value`, `icon_url`, `phase`(3분기 원정대 해금에 맞추어 3 또는 4 부여).
 다. `job`은 WARRIOR, ARCHER, MAGE, ROGUE 4개 직업군으로 분류됩니다.
 라. `tier`는 C, B, A, S 4개 등급으로 분류되며, 상점 가챠 추첨 확률 및 원정대 카드 정렬(1순위: 등급순, 2순위: 코드순)의 기준이 됩니다.
 
 ## 7. monsters
 가. 일반 사냥 몬스터 데이터입니다.
-나. 주요 데이터는 다음과 같습니다.
-
-monster_id
-name
-difficulty
-hp
-atk
-def
-luk
-size
-skill_list
-reward_1
-r1_prob
-reward_2
-r2_prob
-reward_3
-r3_prob
-icon_url
-description
+나. 주요 데이터는 다음과 같습니다: `monster_id`, `name`, `difficulty`, `hp`, `atk`, `def`, `luk`, `size`, `skill_list`, `reward_1`, `r1_prob`, `reward_2`, `r2_prob`, `reward_3`, `r3_prob`, `icon_url`, `description`, `phase`(등장 분기 1~4).
 
 다. 보상은 reward_1, reward_2, reward_3와 각 확률 컬럼으로 관리합니다.
 
@@ -627,45 +593,13 @@ description
 
 ## 9. bosses
 가. 보스 데이터입니다.
-나. 주요 데이터는 다음과 같습니다.
-
-boss_id
-name
-difficulty
-require
-hp
-atk
-def
-luk
-size
-skill_id
-loot_count
-reward_1
-r1_prob
-reward_2
-r2_prob
-reward_3
-r3_prob
-description
-gimmick_type
-gimmick_value
-icon_url
-
+나. 주요 데이터는 다음과 같습니다: `boss_id`, `name`, `difficulty`, `require`, `hp`, `atk`, `def`, `luk`, `size`, `skill_id`, `loot_count`, `reward_1`, `r1_prob`, `reward_2`, `r2_prob`, `reward_3`, `r3_prob`, `description`, `gimmick_type`, `gimmick_value`, `icon_url`, `phase`(2분기 보스 오픈에 맞추어 2~4 부여).
 다. require는 입장권 또는 보스 도전 조건과 연결될 수 있습니다.
 라. gimmick_type, gimmick_value는 보스 전용 기믹 처리에 사용됩니다.
 
 ## 10. dungeons
 가. 파티 던전 데이터입니다.
-나. 주요 데이터는 다음과 같습니다.
-
-dungeon_id
-dungeon_name
-difficulty
-mob1_id
-mob2_id
-mob3_id
-reward_box
-
+나. 주요 데이터는 다음과 같습니다: `dungeon_id`, `dungeon_name`, `difficulty`, `mob1_id`, `mob2_id`, `mob3_id`, `reward_box`, `phase`(2분기 던전 오픈에 맞추어 2~4 부여).
 다. 현재 구조는 3단계 몬스터 진행을 기본으로 합니다.
 
 ## 11. loot_boxes
@@ -688,15 +622,7 @@ prob_3
 
 ## 12. shop
 가. 상점 판매 아이템 데이터입니다.
-나. 주요 데이터는 다음과 같습니다.
-
-item_id
-item_name
-description
-price
-icon
-effect_type
-
+나. 주요 데이터는 다음과 같습니다: `item_id`, `item_name`, `description`, `price`, `icon`, `effect_type`, `is_active`, `phase`(해당 아이템을 사용할 수 있는 콘텐츠 오픈 분기에 맞추어 1~4 부여).
 다. 구매한 아이템은 기본적으로 students.inventory에 추가됩니다.
 
 ## 13. Quests
