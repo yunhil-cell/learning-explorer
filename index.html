@@ -97,112 +97,86 @@
   </div>
 
   <div id="battleModal" class="modal" style="display:none; z-index: 3000;">
-    <div class="modal-content"
-      style="max-width: 850px; padding: 25px; background: #0F172A; border: 2px solid var(--Red); box-shadow: 0 0 20px rgba(225, 29, 72, 0.3);">
+    <div class="modal-content battle-modal-content">
 
-      <h2 id="battleTitle" style="color: var(--Red); margin-top: 0;">전투 돌입!</h2>
-      <div id="raidStageInfo"
-        style="display:none; color: var(--Yellow); font-weight: bold; margin-bottom: 15px; font-size: 1.2em;"></div>
+      <!-- 💡 1. 상단 보스/스테이지 정보 바 -->
+      <div class="battle-top-bar">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 id="battleTitle" style="color: var(--Red); margin: 0; font-size: 1.25em;">전투 돌입!</h2>
+          <div id="raidStageInfo" style="display:none; color: var(--Yellow); font-weight: bold; font-size: 0.95em;"></div>
+        </div>
+        <div class="stage-boss-bar-wrap">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.9em; margin-bottom:3px;">
+            <span id="battleMonsterName" style="color: #FCD34D; font-weight:bold;">몬스터</span>
+            <span id="monsterHpText" style="color: #F8FAFC; font-weight:bold; font-size:0.85em;">HP: ? / ?</span>
+          </div>
+          <div class="stage-hp-track">
+            <div id="monsterHpBar" class="stage-hp-fill-enemy"></div>
+          </div>
+        </div>
+      </div>
 
-      <div class="battle-arena">
+      <!-- 💡 2. 중앙 횡스크롤 전투 무대 (좌측 아군 진영 / 우측 적군 진영) -->
+      <div class="battle-stage">
+        <!-- 화면 중앙 스킬 발동 / 기믹 알림 배너 -->
+        <div id="battleSkillBanner" class="battle-skill-banner" style="display:none;"></div>
 
-        <div class="battle-side">
-          <h3 id="battlePlayerName" style="color: var(--Highlight); margin-bottom: 10px; font-size:1.5em;">플레이어</h3>
-
-          <div id="singlePlayerContainer" style="width: 100%;">
-            <div
-              style="min-height: 250px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 15px; position: relative; gap: 10px;">
-              
-              <!-- 💡 동료 1 미니 아바타 -->
-              <div id="merc1BattleBox" style="display:none; flex-direction:column; align-items:center; position:relative; margin-bottom:10px;">
-                <img id="merc1BattleImg" src="" style="width: 65px; height: 65px; object-fit: contain; transform: scaleX(-1); filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.5)); transition: 0.3s;">
-                <img id="merc1EffectImg" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
-              </div>
-
-              <!-- 대표 모험가: 오라 뒤 / 캐릭터 중간 / 스킬 효과 앞 -->
-              <div class="aura-avatar" style="width:140px; height:140px;">
-                <img
-                  id="battlePlayerAura"
-                  class="avatar-aura"
-                  alt=""
-                  aria-hidden="true"
-                  onerror="this.style.display='none'"
-                  style="display:none;">
-
-                <img id="battlePlayerImg" class="avatar-skin"
-                              src="https://drive.google.com/thumbnail?id=1uoFPxFfpUaxE3eZCbrVU8oEvQLyQTg9b&sz=w200"
-                              style="width: 140px; height: 140px; object-fit: contain; filter: drop-shadow(0 0 10px rgba(0, 243, 255, 0.4)); transform: scaleX(-1);">
-
-                <img id="playerEffectImg" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 250px; height: 250px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
-              </div>
-
-              <!-- 💡 동료 2 미니 아바타 -->
-              <div id="merc2BattleBox" style="display:none; flex-direction:column; align-items:center; position:relative; margin-bottom:10px;">
-                <img id="merc2BattleImg" src="" style="width: 65px; height: 65px; object-fit: contain; transform: scaleX(-1); filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.5)); transition: 0.3s;">
-                <img id="merc2EffectImg" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
-              </div>
-
+        <!-- 좌측: 아군 진영 (싱글 사냥: 대표+동료 / 파티 레이드: 3명 횡대) -->
+        <div class="stage-allies">
+          <!-- 싱글 모드 -->
+          <div id="singlePlayerContainer" class="single-player-stage">
+            <div id="merc1BattleBox" class="merc-mini-box" style="display:none;">
+              <img id="merc1BattleImg" src="" class="merc-mini-img">
+              <img id="merc1EffectImg" src="" onerror="this.style.display='none'" class="effect-overlay-mini">
             </div>
 
-            <div id="playerStatusIcons"
-              style="display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; min-height: 24px; flex-wrap: wrap;">
+            <div class="aura-avatar battle-hero-avatar">
+              <img id="battlePlayerAura" class="avatar-aura" alt="" aria-hidden="true" onerror="this.style.display='none'" style="display:none;">
+              <img id="battlePlayerImg" class="avatar-skin battle-hero-img" src="https://drive.google.com/thumbnail?id=1uoFPxFfpUaxE3eZCbrVU8oEvQLyQTg9b&sz=w200">
+              <img id="playerEffectImg" src="" onerror="this.style.display='none'" class="effect-overlay-main">
             </div>
 
-            <div
-              style="width: 100%; background: #222; height: 15px; border-radius: 10px; border: 1px solid #444; overflow: hidden; margin-bottom: 5px;">
-              <div id="playerHpBar" style="width: 100%; background: #4dff88; height: 100%; transition: width 0.3s;">
-              </div>
-            </div>
-            <div id="playerHpText" style="font-size: 1.0em; font-weight: bold; color: #F8FAFC; margin-bottom: 10px; text-shadow: 0 1px 3px rgba(0,0,0,0.8);">HP: ? / ?</div>
-
-            <div id="playerBattleSkills" style="display: flex; gap: 10px; justify-content: center; min-height: 54px;">
+            <div id="merc2BattleBox" class="merc-mini-box" style="display:none;">
+              <img id="merc2BattleImg" src="" class="merc-mini-img">
+              <img id="merc2EffectImg" src="" onerror="this.style.display='none'" class="effect-overlay-mini">
             </div>
           </div>
-          <div id="partyPlayerContainer" class="party-card-container" style="display: none; min-height: 350px;"></div>
+
+          <!-- 3인 파티 던전 모드 (가로 횡대 정렬) -->
+          <div id="partyPlayerContainer" class="party-stage-container" style="display:none;"></div>
         </div>
 
-        <div class="battle-vs">VS</div>
-
-        <div class="battle-side">
-          <h3 id="battleMonsterName" style="color: #ffdb4d; margin-bottom: 10px;">몬스터</h3>
-
-          <div
-            style="min-height: 250px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 15px; position: relative;">
-            <img id="battleMonsterImg" src=""
-                            style="max-width: 100%; object-fit: contain; filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5)); transition: width 0.3s, height 0.3s;">
-
-            <img id="monsterEffectImg" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 250px; height: 250px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
+        <!-- 우측: 적군 진영 -->
+        <div class="stage-enemies">
+          <div class="monster-stage-anchor">
+            <img id="battleMonsterImg" src="" class="monster-stage-img">
+            <img id="monsterEffectImg" src="" onerror="this.style.display='none'" class="effect-overlay-main">
           </div>
+          <div id="monsterStatusIcons" class="stage-status-icons"></div>
+          <div id="monsterBattleSkills" style="display:none;"></div>
+        </div>
+      </div>
 
-          <div id="monsterStatusIcons"
-            style="display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; min-height: 24px; flex-wrap: wrap;">
+      <!-- 💡 3. 하단 플레이어 상태창 & 컴팩트 로그 패널 -->
+      <div class="battle-bottom-panel">
+        <div id="bottomPlayerStatus" class="bottom-player-status">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <div id="battlePlayerName" class="bottom-player-name">플레이어</div>
+            <div id="playerHpText" class="bottom-player-hp">HP: ? / ?</div>
           </div>
-
-          <div
-            style="width: 100%; background: #222; height: 15px; border-radius: 10px; border: 1px solid #444; overflow: hidden; margin-bottom: 5px;">
-            <div id="monsterHpBar"
-              style="width: 100%; background: #ff4d4d; height: 100%; transition: width 0.3s; float: right;">
-            </div>
+          <div class="bottom-hp-track">
+            <div id="playerHpBar" class="bottom-hp-fill-player"></div>
           </div>
-          <div id="monsterHpText" style="font-size: 1.0em; font-weight: bold; color: #F8FAFC; margin-bottom: 10px; text-shadow: 0 1px 3px rgba(0,0,0,0.8);">HP: ? / ?</div>
-
-          <div id="monsterBattleSkills"
-            style="display: flex; gap: 10px; justify-content: center; min-height: 54px; opacity: 0.5;">
-            <div
-              style="width:50px; height:50px; border-radius:8px; border:2px dashed #555; display:flex; align-items:center; justify-content:center; font-size:0.8em; color:#555;">
-              스킬(예정)</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px;">
+            <div id="playerStatusIcons" style="display:flex; gap:4px; min-height:22px; flex-wrap:wrap;"></div>
+            <div id="playerBattleSkills" style="display:flex; gap:6px; justify-content:flex-end; min-height:42px;"></div>
           </div>
         </div>
 
-      </div>
-
-      <div id="battleLog"
-        style="height: 180px; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 15px; overflow-y: auto; text-align: left; font-size: 1.15em; color: #ccc; margin-bottom: 20px;">
-      </div>
-
-      <div style="display: flex; justify-content: center;">
-        <button class="btn-main" style="width: 50%; background: #555;" onclick="fleeBattle()">전투 중단
-                    (도망치기)</button>
+        <div class="bottom-log-panel">
+          <div id="battleLog" class="battle-log-compact"></div>
+          <button class="btn-main battle-flee-btn" onclick="fleeBattle()">후퇴 (도망)</button>
+        </div>
       </div>
 
     </div>

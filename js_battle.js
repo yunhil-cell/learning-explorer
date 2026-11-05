@@ -42,6 +42,8 @@ function openStageSelection() {
         '<div class="stage-container">';
 
     monsterList.forEach(m => {
+        // 💡 [신규] 분기(phase) 체크: 현재 분기 이하의 몬스터만 사냥터에 출현
+        if (!isItemPhaseUnlocked(m)) return;
         const starString = '★'.repeat(Number(m.difficulty) || 1);
         const imgSrc = m.icon_url ? m.icon_url : 'https://via.placeholder.com/80/444444/FFFFFF?text=No+Img';
 
@@ -312,10 +314,27 @@ function updateHpBars() {
     renderStatusEffectsUI();
 }
 
+// 💡 [신규] 화면 중앙 상단에 스킬/기믹 배너를 팝업하는 함수
+function showSkillBanner(text, color = 'var(--Highlight)') {
+    const banner = document.getElementById('battleSkillBanner');
+    if (!banner) return;
+    banner.innerHTML = text;
+    banner.style.color = color;
+    banner.style.borderColor = color;
+    banner.style.display = 'block';
+    banner.classList.remove('anim-banner-pop');
+    void banner.offsetWidth; // 리플로우 강제 트리거
+    banner.classList.add('anim-banner-pop');
+    setTimeout(() => {
+        if (banner) banner.style.display = 'none';
+    }, 1200);
+}
+
 // --- 3. 전투 로그 출력 ---
 function logBattle(message) {
     const logBox = document.getElementById('battleLog');
-    logBox.innerHTML += '<div style="margin-bottom: 5px;">> ' + message + '</div>';
+    if (!logBox) return;
+    logBox.innerHTML += '<div style="margin-bottom: 3px;">> ' + message + '</div>';
     logBox.scrollTop = logBox.scrollHeight;
 }
 
@@ -803,6 +822,8 @@ function playerTurnAuto() {
         }
 
         logBattle(ownerLabel + usedSkill.name + '!');
+        // 💡 화면 중앙에 스킬 이름 팝업 배너 노출
+        showSkillBanner(usedSkill.name, 'var(--Highlight)');
         effectType = effectTranslator[String(usedSkill.special_effect).toLowerCase().trim()] || usedSkill.special_effect;
         mainSkillType = String(usedSkill.effect_type).toLowerCase().trim(); // 'heal', 'damage', 'buff' 등
         const effectDuration = Number(usedSkill.duration) || 0;
@@ -1111,6 +1132,8 @@ function monsterTurnAuto() {
 
     if (usedSkill) {
         logBattle('<span style="color:#ffdb4d;">[적 스킬 발동]</span> ' + usedSkill.name + '! ' + critText);
+        // 💡 적 스킬 발동 시 붉은색 경고 배너 팝업
+        showSkillBanner('⚠️ ' + usedSkill.name, '#EF4444');
 
         const rawEffect = String(usedSkill.special_effect || '없음').toLowerCase().trim();
         effectType = effectTranslator[rawEffect] || usedSkill.special_effect;
@@ -1741,6 +1764,8 @@ function openDungeonSelection() {
 
     dungeonsData.forEach(d => {
         if (!d.dungeon_id) return;
+        // 💡 [신규] 분기(phase) 체크: 현재 분기 이하의 던전만 개방
+        if (!isItemPhaseUnlocked(d)) return;
         const starString = '★'.repeat(Number(d.difficulty) || 1);
 
         // 💡 보상 박스 이름 매핑
@@ -1960,8 +1985,7 @@ function renderPartyUI() {
                         </div>
                     </div>`;
 
-        // 💡 [핵심] 1번 카드 렌더링 후 강제로 줄바꿈을 일으켜 피라미드 형태 유지!
-        if (index === 0) html += '<div style="flex-basis: 100%; height: 0;"></div>';
+        // 💡 피라미드 줄바꿈을 제거하고 3인이 나란히 가로 횡대로 서도록 유지
     });
     container.innerHTML = html;
     container.style.display = 'flex';
@@ -2720,6 +2744,8 @@ function openBossSelection() {
         '<div class="stage-container">';
 
     (bossList || []).forEach(b => {
+        // 💡 [신규] 분기(phase) 체크: 현재 분기 이하의 보스만 출현
+        if (!isItemPhaseUnlocked(b)) return;
         const stars = '💀'.repeat(Number(b.difficulty) || 1);
         html += `
                     <div class="monster-card" style="border-color:#A78BFA; background:#312E81;">
