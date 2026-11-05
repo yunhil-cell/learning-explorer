@@ -8,6 +8,27 @@ if (typeof isItemPhaseUnlocked === 'undefined') {
     };
 }
 
+// 💡 [신규] 전투 난이도별 배경 이미지 자동 적용 헬퍼 함수
+function setBattleBackground(difficulty, isWorldBoss = false) {
+    const stageEl = document.querySelector('.battle-stage');
+    if (!stageEl) return;
+    
+    let bgUrl = '';
+    // 💡 [추가] 도전의 탑 상태일 때는 난이도 무관하게 무조건 탑 배경 고정
+    if (typeof battleState !== 'undefined' && battleState.isTower) {
+        bgUrl = 'images/battlebacks/tower.png';    // 🗼 도전의 탑 전용 배경
+    } else if (isWorldBoss || difficulty >= 6) {
+        bgUrl = 'images/battlebacks/boss.png';     // 6~7성 & 월드보스 (마왕성/용암)
+    } else if (difficulty >= 3) {
+        bgUrl = 'images/battlebacks/cave.png';     // 3~5성 & 파티던전 (동굴/유적)
+    } else {
+        bgUrl = 'images/battlebacks/forest.png';   // 1~2성 (숲/들판)
+    }
+    
+    // 캐릭터와 이펙트가 더 돋보이도록 어두운 틴트 필터를 배경 위에 덧씌움
+    stageEl.style.backgroundImage = 'linear-gradient(rgba(15, 23, 42, 0.4), rgba(9, 13, 22, 0.7)), url("' + bgUrl + '")';
+}
+
 // 대시보드 위로 사냥터 선택 창을 띄웁니다.
 function openStageSelection() {
     // 💡 1. 주간 횟수 소진 여부 체크
@@ -244,6 +265,9 @@ async function enterBattle(monsterId, isBoss = false) {
     pNameEl.style.textShadow = '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000';
 
     document.getElementById('battleMonsterName').innerText = targetMonster.name;
+
+    // 💡 [신규] 전투 배경 자동 설정
+    setBattleBackground(Number(targetMonster.difficulty) || 1, isBoss);
 
     // 💡 1. 플레이어 스킨 동적 적용 (현재 장착 중인 스킨 불러오기)
     const currentSkinId = currentStudent.equipped_skin || 'HD001';
@@ -2048,6 +2072,10 @@ function startRaidStage() {
     stInfo.innerText = `[ ${currentRaidStage} 계층 ] 누적 획득 예정: ${totalRaidReward} EXP`;
 
     document.getElementById('battleMonsterName').innerText = targetMonster.name;
+    
+    // 💡 [신규] 전투 배경 자동 설정 (던전은 몬스터 난이도 비례)
+    setBattleBackground(Number(targetMonster.difficulty) || 1, false);
+
     const mImg = document.getElementById('battleMonsterImg');
     mImg.src = targetMonster.icon_url ? targetMonster.icon_url : 'https://via.placeholder.com/120/444444/FFFFFF?text=Monster';
 
@@ -3109,6 +3137,10 @@ function setupTowerBattleStage() {
     stInfo.innerText = '[수문장: ' + targetMonster.name + ']';
 
     document.getElementById('battleMonsterName').innerText = targetMonster.name;
+    
+    // 💡 [신규] 전투 배경 자동 설정
+    setBattleBackground(Number(targetMonster.difficulty) || 1, isBoss);
+
     const mImg = document.getElementById('battleMonsterImg');
     mImg.src = targetMonster.icon_url ? targetMonster.icon_url : 'https://via.placeholder.com/120/444444/FFFFFF?text=Monster';
 
@@ -3358,6 +3390,9 @@ async function startWorldBossRaid(wbId) {
     document.getElementById('raidStageInfo').innerText = `[ 1 / ${battleState.wbMaxTurns} 턴 ] 누적 딜량: 0`;
     document.getElementById('battlePlayerName').innerHTML = getTitleHtml(currentStudent);
     document.getElementById('battleMonsterName').innerText = activeBoss.name;
+
+    // 💡 [신규] 전투 배경 자동 설정 (월드 보스는 무조건 마왕성)
+    setBattleBackground(7, true);
 
     const mImg = document.getElementById('battleMonsterImg');
     mImg.src = activeBoss.icon_url || 'https://via.placeholder.com/150';
