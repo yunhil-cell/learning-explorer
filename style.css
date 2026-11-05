@@ -1231,17 +1231,28 @@ filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
 
 /* 💡 하단 플레이어 상태 & 컴팩트 로그 패널 */
 .battle-bottom-panel {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex; /* flex로 변경하여 싱글/파티 모드 유동적 대응 */
   gap: 12px;
+  align-items: stretch;
 }
-
 .bottom-player-status {
+  flex: 1; /* 싱글 상태창은 절반 차지 */
   background: #0F172A;
   border: 1px solid #1E293B;
   border-radius: 10px;
   padding: 10px 14px;
   text-align: left;
+}
+.bottom-party-status {
+  flex: 1.5; /* 💡 파티 상태창은 3칸이 들어가므로 공간 더 확보 */
+  display: flex;
+  gap: 8px;
+}
+.bottom-log-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .bottom-player-name {
   color: var(--Highlight);
@@ -1298,8 +1309,8 @@ filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
   .battle-stage { min-height: 220px; padding: 10px 12px; }
   .battle-hero-avatar, .battle-hero-img { width: 95px !important; height: 95px !important; }
   .monster-stage-anchor { min-height: 140px; }
-  .battle-bottom-panel { grid-template-columns: 1fr; gap: 8px; }
-  .party-member-card { width: 85px; padding: 4px; }
+  .battle-bottom-panel { flex-direction: column; gap: 8px; } /* 모바일 세로 정렬 */
+  .bottom-party-status { flex-direction: row; flex-wrap: wrap; } /* 모바일에서 3장 유연하게 */
 }
 
 /* 💡 신규: 공지사항 알림 N 뱃지 스타일 */

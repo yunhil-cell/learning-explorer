@@ -152,6 +152,8 @@ async function enterBattle(monsterId, isBoss = false) {
     closeSubModal();
     document.getElementById('singlePlayerContainer').style.display = 'block';
     document.getElementById('partyPlayerContainer').style.display = 'none';
+    document.getElementById('bottomPlayerStatus').style.display = 'block'; // 💡 싱글 하단 켬
+    document.getElementById('bottomPartyStatus').style.display = 'none';   // 💡 파티 하단 끔
     document.getElementById('raidStageInfo').style.display = 'none';
 
     const pStats = getPlayerTotalStats();
@@ -1879,6 +1881,8 @@ async function enterRaid(dungeonId) {
 
     document.getElementById('singlePlayerContainer').style.display = 'none';
     document.getElementById('partyPlayerContainer').style.display = 'flex';
+    document.getElementById('bottomPlayerStatus').style.display = 'none';  // 💡 싱글 하단 끔
+    document.getElementById('bottomPartyStatus').style.display = 'flex';   // 💡 파티 하단 켬
     document.getElementById('battlePlayerName').innerText = "모험가 파티";
 
     // 💡 [ID 보존] 새 battleState 객체 리터럴 내부에 raidSessionId를 직접 보존!
@@ -1980,8 +1984,10 @@ async function enterRaid(dungeonId) {
 }
 
 function renderPartyUI() {
-    const container = document.getElementById('partyPlayerContainer');
-    let html = '';
+    const avatarContainer = document.getElementById('partyPlayerContainer');
+    const statusContainer = document.getElementById('bottomPartyStatus');
+    let avatarHtml = '';
+    let statusHtml = '';
 
     battleState.party.forEach((p, index) => {
         const sData = p.studentData;
@@ -1989,40 +1995,54 @@ function renderPartyUI() {
         const skinObj = skinsData.find(x => String(x.skin_id) === String(currentSkinId));
         const skinImgUrl = (skinObj && skinObj.skin_url) ? skinObj.skin_url : 'https://via.placeholder.com/150/444444/FFFFFF?text=NoSkin';
 
+        // 💡 스킬 아이콘 크기를 하단 패널에 맞게 축소
         let skillsHtml = p.skills.map(sk => {
             const isReady = sk.currentCd === 0;
             const filterStyle = isReady ? '' : 'filter: grayscale(100%) opacity(0.6);';
             const iconSrc = sk.icon_url || 'https://via.placeholder.com/50/222222/FFFFFF?text=SK';
             const skBlessing = sk.blessing && String(sk.blessing).trim() !== '' && String(sk.blessing).trim() !== 'None' ? String(sk.blessing).trim() : 'Highlight';
             const bColor = 'var(--' + skBlessing + ')';
-            const borderStyle = isReady ? 'border: 2px solid ' + bColor + '; box-shadow: 0 0 5px ' + bColor + ';' : 'border: 2px solid #555;';
-            const overlay = isReady ? '' : '<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:1.2em; font-weight:bold; color:white; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;">' + sk.currentCd + '</div>';
-            return '<div style="position:relative; width:35px; height:35px; border-radius:6px; background:#111; ' + borderStyle + ' ' + filterStyle + ' transition: 0.3s; margin: 0 2px;"><img src="' + iconSrc + '" style="width:100%; height:100%; object-fit:contain; border-radius:4px; padding:1px;">' + overlay + '</div>';
+            const borderStyle = isReady ? 'border: 1px solid ' + bColor + ';' : 'border: 1px solid #555;';
+            const overlay = isReady ? '' : '<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:1em; font-weight:bold; color:white; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000;">' + sk.currentCd + '</div>';
+            return '<div style="position:relative; width:28px; height:28px; border-radius:4px; background:#111; ' + borderStyle + ' ' + filterStyle + ' transition: 0.3s;"><img src="' + iconSrc + '" style="width:100%; height:100%; object-fit:contain; border-radius:3px; padding:1px;">' + overlay + '</div>';
         }).join('');
 
         const hpPercent = Math.max(0, (p.currentHp / p.maxHp) * 100);
         const opacity = p.isDead ? '0.3' : '1';
 
-        html += `
-                    <div id="partyMember_${p.uiIndex}" class="party-member-card" style="opacity: ${opacity};">
-                        <div class="aura-avatar" style="width:80px; height:80px; margin-bottom:5px;">
-                            ${renderAuraLayerHtml(sData)}
-                            <img class="avatar-skin" src="${skinImgUrl}" style="width:80px; height:80px; object-fit:contain; transform:scaleX(-1); filter:drop-shadow(0 0 5px rgba(255,255,255,0.2));">
-                            <img id="partyEffect_${p.uiIndex}" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
-                        </div>
-                        <div style="width: 100%; text-align: center;">
-                            <div style="font-weight:bold; color:var(--${sData.blessing || 'Highlight'}); text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-size: 1.1em; margin-bottom: 5px; line-height:1.2;">${getTitleHtml(sData)}</div>
-                            <div class="raid-hp-bar-bg" style="height: 12px; border-radius: 6px; width: 100%; margin: 0 auto;"><div id="partyHpBar_${p.uiIndex}" class="raid-hp-bar-fill" style="width: ${hpPercent}%;"></div></div>
-                            <div style="margin-top:5px; font-size:0.8em; color:#ccc; margin-bottom: 8px;"><span id="partyHpText_${p.uiIndex}">HP: ${p.currentHp} / ${p.maxHp}</span></div>
-                            <div style="display:flex; justify-content:center; align-items:center; min-height:35px; gap:5px; margin-bottom: 5px;">${skillsHtml}</div>
-                            <div id="partyStatus_${p.uiIndex}" style="display:flex; justify-content:center; flex-wrap:wrap; gap:2px; min-height:18px;"></div>
-                        </div>
-                    </div>`;
+        // 1. 전투 무대 중앙에는 닉네임과 아바타만 렌더링 (전진 모션 대상)
+        avatarHtml += `
+            <div id="partyMember_${p.uiIndex}" style="opacity: ${opacity}; display:flex; flex-direction:column; align-items:center;">
+                <div style="font-weight:bold; color:var(--${sData.blessing || 'Highlight'}); text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-size: 0.9em; margin-bottom: 5px;">${sData.name}</div>
+                <div class="aura-avatar" style="width:85px; height:85px;">
+                    ${renderAuraLayerHtml(sData)}
+                    <img class="avatar-skin" src="${skinImgUrl}" style="width:85px; height:85px; object-fit:contain; transform:scaleX(-1); filter:drop-shadow(0 0 5px rgba(255,255,255,0.2));">
+                    <img id="partyEffect_${p.uiIndex}" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
+                </div>
+            </div>`;
 
-        // 💡 피라미드 줄바꿈을 제거하고 3인이 나란히 가로 횡대로 서도록 유지
+        // 2. 하단 상태창에는 3등분된 정보 카드 렌더링
+        statusHtml += `
+            <div id="partyStatusCard_${p.uiIndex}" style="flex:1; background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; justify-content: space-between; opacity: ${opacity};">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <div style="color:var(--${sData.blessing || 'Highlight'}); font-weight:bold; font-size:0.9em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px;">${sData.name}</div>
+                    <div id="partyHpText_${p.uiIndex}" style="color:#34D399; font-weight:bold; font-size:0.8em;">${p.currentHp}</div>
+                </div>
+                <div class="bottom-hp-track" style="height:6px; margin-bottom:6px; background:#1E293B; border:1px solid #334155; border-radius:3px; overflow:hidden;">
+                    <div id="partyHpBar_${p.uiIndex}" class="bottom-hp-fill-player" style="width: ${hpPercent}%;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:4px;">
+                    <div id="partyStatus_${p.uiIndex}" style="display:flex; gap:2px; min-height:16px; flex-wrap:wrap;"></div>
+                    <div style="display:flex; gap:2px;">${skillsHtml}</div>
+                </div>
+            </div>`;
     });
-    container.innerHTML = html;
-    container.style.display = 'flex';
+
+    avatarContainer.innerHTML = avatarHtml;
+    avatarContainer.style.display = 'flex';
+    
+    statusContainer.innerHTML = statusHtml;
+    statusContainer.style.display = 'flex';
 }
 
 function updatePartyHpBars() {
@@ -2173,8 +2193,9 @@ function raidPlayerTurnAuto() {
     updatePartyHpBars();
 
     if (p.currentHp <= 0) {
-        p.isDead = true;
-        document.getElementById(`partyMember_${p.uiIndex}`).style.opacity = '0.3';
+                p.isDead = true;
+                document.getElementById(`partyMember_${p.uiIndex}`).style.opacity = '0.3';
+                document.getElementById(`partyStatusCard_${p.uiIndex}`).style.opacity = '0.3'; // 💡 하단 카드도 죽음 표시
         logBattle(`☠️ <b style="color:#ff4d4d;">${p.name} 쓰러짐!</b>`);
         if (battleState.party.every(memb => memb.isDead)) {
             battleState.isAutoRunning = false;
@@ -2532,7 +2553,9 @@ function raidMonsterTurnAuto() {
             }
 
             if (p.currentHp <= 0) {
-                p.isDead = true; document.getElementById(`partyMember_${p.uiIndex}`).style.opacity = '0.3';
+                p.isDead = true;
+                document.getElementById(`partyMember_${p.uiIndex}`).style.opacity = '0.3';
+                document.getElementById(`partyStatusCard_${p.uiIndex}`).style.opacity = '0.3'; // 💡 하단 카드도 죽음 표시
                 logBattle(`☠️ <b style="color:#ff4d4d;">${p.name} 쓰러짐!</b>`);
             }
         });

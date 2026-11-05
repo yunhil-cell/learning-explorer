@@ -159,6 +159,7 @@
 
       <!-- 💡 3. 하단 플레이어 상태창 & 컴팩트 로그 패널 -->
       <div class="battle-bottom-panel">
+        <!-- 싱글용 상태창 -->
         <div id="bottomPlayerStatus" class="bottom-player-status">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
             <div id="battlePlayerName" class="bottom-player-name">플레이어</div>
@@ -173,6 +174,10 @@
           </div>
         </div>
 
+        <!-- 💡 [신규] 3인 파티용 상태창 (알아서 3등분 됨) -->
+        <div id="bottomPartyStatus" class="bottom-party-status" style="display:none;"></div>
+
+        <!-- 우측 로그 패널 -->
         <div class="bottom-log-panel">
           <div id="battleLog" class="battle-log-compact"></div>
           <button class="btn-main battle-flee-btn" onclick="fleeBattle()">후퇴 (도망)</button>
