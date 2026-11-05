@@ -915,9 +915,9 @@ letter-spacing: 2px;
   40%, 80% { transform: translateX(15px) scaleX(-1); }
 }
 
-.anim-attack-p { animation: attackStepPlayer 0.4s ease-in-out; }
-.anim-attack-m { animation: attackStepMonster 0.4s ease-in-out; }
-.anim-raid-attack { animation: attackStepRaidParty 0.4s ease-in-out; }
+.anim-attack-p { animation: attackStepPlayer 0.3s ease-in-out; }
+.anim-attack-m { animation: attackStepMonster 0.3s ease-in-out; }
+.anim-raid-attack { animation: attackStepRaidParty 0.3s ease-in-out; }
 .anim-damage { animation: damageShake 0.4s ease-in-out; }
 .anim-damage-p { animation: damageShakeP 0.4s ease-in-out; }
 

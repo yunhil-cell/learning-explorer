@@ -924,6 +924,9 @@ function openWardrobe(tab = 'skin') {
         if (!skin.skin_id) return; // 빈 줄 방지
 
         const isOwned = mySkins.includes(String(skin.skin_id));
+        // 💡 [신규] 미보유 스킨 중 아직 해금되지 않은 상위 분기 스킨은 옷장에 노출하지 않음
+        if (!isOwned && !isItemPhaseUnlocked(skin)) return;
+
         const isEquipped = String(skin.skin_id) === String(currentEquipped);
 
         let borderStyle = 'border: 1.5px solid var(--BorderColor); background:#F8FAFC; opacity: 0.55;';

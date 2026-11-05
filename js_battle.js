@@ -1,3 +1,13 @@
+// 💡 [안전 방어] js_core.js 캐시 지연 또는 미로드 시에도 에러 없이 작동하도록 전역 선언
+if (typeof isItemPhaseUnlocked === 'undefined') {
+    window.isItemPhaseUnlocked = function(item, allowTeacherBypass = true) {
+        if (allowTeacherBypass && typeof isTeacherMode !== 'undefined' && isTeacherMode) return true;
+        if (!item) return false;
+        const currentPhase = (typeof sysConfig !== 'undefined' && Number(sysConfig.season_phase)) || 1;
+        return (Number(item.phase) || 1) <= currentPhase;
+    };
+}
+
 // 대시보드 위로 사냥터 선택 창을 띄웁니다.
 function openStageSelection() {
     // 💡 1. 주간 횟수 소진 여부 체크

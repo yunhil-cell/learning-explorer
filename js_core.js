@@ -1,3 +1,17 @@
+// ==========================================
+// 🔒 분기별 콘텐츠 잠금/해금(시즌 페이즈) 엔진 (전역 최상단 선언)
+// ==========================================
+window.getCurrentSeasonPhase = function() {
+    return (typeof sysConfig !== 'undefined' && Number(sysConfig.season_phase)) || 1;
+};
+
+window.isItemPhaseUnlocked = function(item, allowTeacherBypass = true) {
+    if (allowTeacherBypass && typeof isTeacherMode !== 'undefined' && isTeacherMode) return true;
+    if (!item) return false;
+    const itemPhase = Number(item.phase) || 1;
+    return itemPhase <= window.getCurrentSeasonPhase();
+};
+
 let aurasData = [];
 
 function escapeAuraHtml(value) {
@@ -1814,6 +1828,8 @@ function renderDashboard() {
                 if (!item.item_id) return;
                 // 💡 [신규] is_active가 FALSE인 아이템은 상점에서 자동 숨김 처리 (교사 모드는 표시)
                 if (!isTeacherMode && item.is_active !== undefined && String(item.is_active).toUpperCase() === 'FALSE') return;
+                // 💡 [신규] 분기(phase) 체크: 현재 분기 이하의 아이템만 판매 노출
+                if (!isItemPhaseUnlocked(item)) return;
 
                 // 이모지가 없으면 기본 상자 아이콘
                 const icon = item.icon || '📦';
@@ -2958,6 +2974,18 @@ function openWorldBossModal() {
 // ==========================================
 // 🔒 분기별 콘텐츠 잠금/해금(시즌 페이즈) 엔진
 // ==========================================
+function getCurrentSeasonPhase() {
+    return Number(sysConfig.season_phase) || 1;
+}
+
+// 💡 항목별(몬스터, 스킬, 유물, 스킨 등) 등장 분기 해금 여부 판별
+function isItemPhaseUnlocked(item, allowTeacherBypass = true) {
+    if (allowTeacherBypass && typeof isTeacherMode !== 'undefined' && isTeacherMode) return true;
+    if (!item) return false;
+    const itemPhase = Number(item.phase) || 1;
+    return itemPhase <= getCurrentSeasonPhase();
+}
+
 function isFeatureUnlocked(featureKey) {
     if (isTeacherMode) return true; // 교사 모드는 모든 잠금 프리패스!
 

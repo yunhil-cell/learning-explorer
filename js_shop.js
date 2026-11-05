@@ -207,6 +207,8 @@ async function runShopDrawAction(kind, action, itemId, context) {
         if (!item || !item[idKey]) return false;
         // 💡 2차 전직 전용 스킬(SK_ADV_)은 일반 상점 뽑기 풀에서 원천 제외
         if (kind === 'skill' && String(item.skill_id).startsWith('SK_ADV_')) return false;
+        // 💡 [신규] 학생 뽑기 시 현재 분기 이하의 아이템만 추첨 대상에 포함
+        if (!isItemPhaseUnlocked(item, false)) return false;
         return true;
     }).slice();
     for (let i = ordered.length - 1; i > 0; i--) {
@@ -427,6 +429,8 @@ async function processDrawMercenary() {
 
                 (mercenariesData || []).forEach(m => {
                     if (!m.merc_id) return;
+                    // 💡 [신규] 현재 분기 이하의 용병만 추첨 대상 풀에 포함
+                    if (!isItemPhaseUnlocked(m, false)) return;
 
                     const mId = String(m.merc_id).trim();
                     const mTier = String(m.tier || "C").trim().toUpperCase();
@@ -876,7 +880,8 @@ function openEncyclopedia(tabType) {
     if (tabType === 'skill') {
         const raw = String(currentStudent.unlocked_skills || "").replace(/!/g, '');
         const unlockedIds = raw ? raw.split(',').map(x => x.trim()).filter(Boolean) : [];
-        const validSkills = skillsData.filter(s => s.skill_id);
+        // 💡 [신규] 이미 획득했거나 현재 분기 이하인 스킬만 도감 전체 모수에 반영
+        const validSkills = skillsData.filter(s => s && s.skill_id && (unlockedIds.includes(String(s.skill_id)) || isItemPhaseUnlocked(s, false)));
         totalCount = validSkills.length;
         myCount = unlockedIds.length;
 
@@ -901,8 +906,9 @@ function openEncyclopedia(tabType) {
         const raw = String(currentStudent.monster_data || "").replace(/!/g, '');
         const unlockedIds = raw ? raw.split(',').map(x => x.trim()).filter(Boolean) : [];
 
-        const validMonsters = monsterList.filter(m => m.monster_id);
-        const validBosses = bossList.filter(b => b.boss_id);
+        // 💡 [신규] 이미 처치했거나 현재 분기 이하인 몬스터/보스만 도감 전체 모수에 반영
+        const validMonsters = monsterList.filter(m => m && m.monster_id && (unlockedIds.includes(String(m.monster_id)) || isItemPhaseUnlocked(m, false)));
+        const validBosses = bossList.filter(b => b && b.boss_id && (unlockedIds.includes(String(b.boss_id)) || isItemPhaseUnlocked(b, false)));
         const combinedMonsters = [...validMonsters, ...validBosses];
 
         totalCount = combinedMonsters.length;
@@ -937,7 +943,8 @@ function openEncyclopedia(tabType) {
     } else {
         const raw = String(currentStudent.unlocked_relics || "").replace(/!/g, '');
         const unlockedIds = raw ? raw.split(',').map(x => x.trim()).filter(Boolean) : [];
-        const validRelics = relicsData.filter(r => r.relic_id);
+        // 💡 [신규] 이미 획득했거나 현재 분기 이하인 유물만 도감 전체 모수에 반영
+        const validRelics = relicsData.filter(r => r && r.relic_id && (unlockedIds.includes(String(r.relic_id)) || isItemPhaseUnlocked(r, false)));
         totalCount = validRelics.length;
         myCount = unlockedIds.length;
 
