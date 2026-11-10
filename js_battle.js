@@ -99,7 +99,14 @@ function openStageSelection() {
 }
 
 // --- 전투 화면으로 진입 ---
+let isEnteringSingleBattle = false;
+
 async function enterBattle(monsterId, isBoss = false) {
+    // 입장 저장이 끝나기 전 중복 클릭 차단
+    if (isEnteringSingleBattle) return;
+    isEnteringSingleBattle = true;
+
+    try {
     // 💡 일반 몬스터인지 보스인지에 따라 데이터를 가져옵니다.
     const targetMonster = isBoss ? bossList.find(b => String(b.boss_id).trim() === String(monsterId).trim()) : monsterList.find(m => String(m.monster_id).trim() === String(monsterId).trim());
     if (!targetMonster) return alert("대상의 정보를 찾을 수 없습니다.");
@@ -146,7 +153,10 @@ async function enterBattle(monsterId, isBoss = false) {
         }
     }
 
+    // 이전 레이드·월드보스 상태가 일반 사냥에 남지 않도록 초기화
     battleState.isTower = false;
+    battleState.isRaid = false;
+    battleState.isWorldBoss = false;
     // 💡 [중복 지급 방지] 이번 전투 고유 세션 ID 생성
     battleState.sessionId = 'BAT_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     closeSubModal();
@@ -322,6 +332,10 @@ async function enterBattle(monsterId, isBoss = false) {
 
     battleState.isAutoRunning = true;
     battleState.turnTimer = setTimeout(playerTurnAuto, 1000);
+    } finally {
+        // 정상 입장·입장 불가·저장 오류 모두 재시도 가능하도록 해제
+        isEnteringSingleBattle = false;
+    }
 }
 
 // --- 2. 체력바 UI 갱신 (에러 원인 복구) ---
