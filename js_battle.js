@@ -225,19 +225,8 @@ async function enterBattle(monsterId, isBoss = false) {
         }
     });
 
-    // 💡 [수정] 동료(용병) 특수 옵션 추출 추가
-    [currentStudent.party_m1, currentStudent.party_m2].forEach(mId => {
-        if (mId && mId !== 'null' && mId !== 'false' && String(mId).trim() !== '') {
-            const merc = mercenariesData.find(x => String(x.merc_id) === String(mId));
-            if (merc) {
-                const t = String(merc.option_type).toUpperCase();
-                const v = Number(merc.option_value) || 0;
-                if (t === 'EVD_UP') battleState.relicEffects.dodge += v * 100;
-                if (t === 'CRIT_UP') battleState.relicEffects.critRate += v * 100;
-                if (t === 'CRIT_DMG_UP') battleState.relicEffects.critDmg += v;
-            }
-        }
-    });
+    // 학생별 동료 옵션을 이번 전투에 한 번만 합산합니다.
+    applyMercenaryCombatPassives(currentStudent, battleState);
     // --------------------------------------------------------
 
     battleState.playerEffects = [];
@@ -465,6 +454,83 @@ function toggleBattleButtons(isDisabled) {
 }
 
 // --- 플레이어 최종 스탯 (시트 데이터 그대로 사용) ---
+// 동료 패시브는 전투 시작 시 학생별로 고정합니다.
+// HP/ATK/DEF/LUK 보너스는 기존 스탯 계산을 사용합니다.
+function applyMercenaryCombatPassives(student, combatant) {
+    const passive = {
+        damageReduce: 0,
+        defPen: 0,
+        damageUp: 0,
+        skillDamage: 0,
+        healFlat: 0,
+        healRate: 0
+    };
+
+    [student.party_m1, student.party_m2].forEach(id => {
+        const merc = (mercenariesData || []).find(
+            m => m && String(m.merc_id) === String(id)
+        );
+        if (!merc) return;
+
+        const value = Number(merc.option_value);
+        if (!Number.isFinite(value) || value <= 0) return;
+
+        const type = String(merc.option_type || '').trim().toUpperCase();
+        const calc = String(merc.option_calc_type || '').trim().toUpperCase();
+
+        if (calc === 'PERCENT') {
+            // 기존 치명타/회피 효과의 단위를 유지합니다.
+            if (type === 'EVD_UP') combatant.relicEffects.dodge += value * 100;
+            if (type === 'CRIT_UP') combatant.relicEffects.critRate += value * 100;
+            if (type === 'CRIT_DMG_UP') combatant.relicEffects.critDmg += value;
+
+            if (type === 'DAMAGE_REDUCE') passive.damageReduce += value;
+            if (type === 'DEF_PEN') passive.defPen += value;
+            if (type === 'DMG_UP') passive.damageUp += value;
+            if (type === 'SKILL_DMG') passive.skillDamage += value;
+            if (type === 'HEAL_UP') passive.healRate += value;
+        } else if (calc === 'FLAT' && type === 'HEAL_UP') {
+            passive.healFlat += value;
+        }
+    });
+
+    // 100%를 넘어 피해나 방어력이 반전되는 것을 방지합니다.
+    passive.damageReduce = Math.min(1, passive.damageReduce);
+    passive.defPen = Math.min(1, passive.defPen);
+
+    combatant.mercPassives = passive;
+}
+
+function getMercenaryEffectiveDefense(defense, passive) {
+    return defense * (1 - (passive ? passive.defPen : 0));
+}
+
+function getMercenaryAttackMultiplier(passive, isSkill) {
+    if (!passive) return 1;
+
+    // 일반 피해 증가와 공격 스킬 피해 증가는 각각 곱합니다.
+    return (1 + passive.damageUp) * (isSkill ? 1 + passive.skillDamage : 1);
+}
+
+function reduceMercenaryIncomingDamage(damage, passive) {
+    if (!passive || !passive.damageReduce || damage <= 0) return damage;
+    if (passive.damageReduce >= 1) return 0;
+
+    // 100% 미만 감소에서는 양수 피해의 최소값 1을 유지합니다.
+    return Math.max(1, Math.floor(damage * (1 - passive.damageReduce)));
+}
+
+function getMercenarySkillHealing(rawHealing, passive, healMultiplier = 1) {
+    const flat = passive ? passive.healFlat : 0;
+    const rate = passive ? passive.healRate : 0;
+
+    // 고정 가산 -> 비율 증가 -> 서든데스 보정 순서입니다.
+    return Math.max(
+        0,
+        Math.floor((rawHealing + flat) * (1 + rate) * healMultiplier)
+    );
+}
+
 function getPlayerTotalStats() {
     const s = currentStudent;
 
@@ -690,6 +756,9 @@ function processStatusEffects(isPlayer) {
             if (type === '저주') dmg = Math.floor(tMax * 0.05);
 
             if (dmg < 1) dmg = 1;
+            if (isPlayer) {
+                dmg = reduceMercenaryIncomingDamage(dmg, battleState.mercPassives);
+            }
             if (isPlayer) battleState.playerCurrentHp = Math.max(0, battleState.playerCurrentHp - dmg);
             else battleState.monsterCurrentHp = Math.max(0, battleState.monsterCurrentHp - dmg);
 
@@ -897,10 +966,18 @@ function playerTurnAuto() {
                     if (sc === 'hp') sVal = battleState.playerMaxHp;
                     if (sc === 'def') sVal = pDef;
                     if (sc === 'luk') sVal = pLuk;
-                    healAmount = Math.floor((baseVal + (sVal * multiplier)) * sdMults.heal);
+                    healAmount = getMercenarySkillHealing(
+                        baseVal + (sVal * multiplier),
+                        battleState.mercPassives,
+                        sdMults.heal
+                    );
                 } else {
                     // 특수효과가 '회복'인 경우 고정 25% 회복
-                    healAmount = Math.floor(battleState.playerMaxHp * 0.25 * sdMults.heal);
+                    healAmount = getMercenarySkillHealing(
+    battleState.playerMaxHp * 0.25,
+    battleState.mercPassives,
+    sdMults.heal
+);
                 }
 
                 battleState.playerCurrentHp = Math.min(battleState.playerMaxHp, battleState.playerCurrentHp + healAmount);
@@ -972,7 +1049,7 @@ function playerTurnAuto() {
                 }
 
                 let finalDef = (effectType === '방어관통' || effectType === 'pierce') ? 0 : mDef;
-                applyDamageToMonster(baseDmg, finalDef, (hitCount > 1 ? "&lt;" + h + "타&gt; " : "") + hitCritText);
+                applyDamageToMonster(baseDmg, finalDef, (hitCount > 1 ? "&lt;" + h + "타&gt; " : "") + hitCritText, !!usedSkill);
             }, effectDelay + (250 * h)); // 이펙트 딜레이만큼 타격 미루기
         }
     }
@@ -1011,11 +1088,17 @@ function playAnim(elementId, animClass, duration) {
 }
 
 // --- 플레이어 데미지 몬스터에게 적용 (피격 애니메이션 및 반사 방패 기믹 연동) ---
-function applyDamageToMonster(baseDmg, finalDef, prefixText) {
+function applyDamageToMonster(baseDmg, finalDef, prefixText, isSkill = false) {
     // 다단히트 중 이미 몬스터가 죽었다면 추가 타격 생략
     if (battleState.monsterCurrentHp <= 0) return;
 
-    let finalDmg = Math.floor(baseDmg * (100 / (100 + finalDef)));
+    const passive = battleState.mercPassives;
+    const effectiveDef = getMercenaryEffectiveDefense(finalDef, passive);
+    let finalDmg = Math.floor(
+        baseDmg *
+        getMercenaryAttackMultiplier(passive, isSkill) *
+        (100 / (100 + effectiveDef))
+    );
     if (finalDmg < 1) finalDmg = 1;
 
     // 💡 [신규 기믹] reflect (반사 방패): 지정 턴 주기마다 피해의 30%를 플레이어에게 반사
@@ -1025,7 +1108,10 @@ function applyDamageToMonster(baseDmg, finalDef, prefixText) {
         const interval = Math.max(1, battleState.gimmick_value || 3);
         if (battleState.turnCount % interval === 0) {
             isReflectTurn = true;
-            reflectDmg = Math.max(1, Math.floor(finalDmg * 0.3));
+            reflectDmg = reduceMercenaryIncomingDamage(
+    Math.max(1, Math.floor(finalDmg * 0.3)),
+    battleState.mercPassives
+);
         }
     }
 
@@ -1244,6 +1330,10 @@ function monsterTurnAuto() {
             const defC = Number(sysConfig.def_constant) || 50;
 
             let finalDmg = effectType === '체력비례피해' ? Math.floor(battleState.playerMaxHp * 0.2 * sdMults.dmg) : Math.max(1, Math.floor(currentBaseDmg * (defC / (defC + fDef))));
+            finalDmg = reduceMercenaryIncomingDamage(
+                finalDmg,
+                battleState.mercPassives
+            );
 
             battleState.playerCurrentHp -= finalDmg;
             if (battleState.playerCurrentHp < 0) battleState.playerCurrentHp = 0;
@@ -1948,19 +2038,8 @@ async function enterRaid(dungeonId) {
             }
         });
 
-        // 💡 [수정] 동료(용병) 특수 옵션 추출 추가
-        [sData.party_m1, sData.party_m2].forEach(mId => {
-            if (mId && mId !== 'null' && mId !== 'false' && String(mId).trim() !== '') {
-                const merc = mercenariesData.find(x => String(x.merc_id) === String(mId));
-                if (merc) {
-                    const t = String(merc.option_type).toUpperCase();
-                    const v = Number(merc.option_value) || 0;
-                    if (t === 'EVD_UP') pObj.relicEffects.dodge += v * 100;
-                    if (t === 'CRIT_UP') pObj.relicEffects.critRate += v * 100;
-                    if (t === 'CRIT_DMG_UP') pObj.relicEffects.critDmg += v;
-                }
-            }
-        });
+        // 파티원 각자의 동료만 적용합니다.
+        applyMercenaryCombatPassives(sData, pObj);
 
         // 가호 적용
         let bColor = String(sData.blessing).trim();
@@ -2177,6 +2256,7 @@ function raidPlayerTurnAuto() {
             if (type === '저주') dmg = Math.floor(p.maxHp * 0.05);
 
             if (dmg < 1) dmg = 1;
+            dmg = reduceMercenaryIncomingDamage(dmg, p.mercPassives);
             p.currentHp = Math.max(0, p.currentHp - dmg);
             logBattle(`<span style="color:#b366ff;">[${type}]</span> ${p.name} ${dmg}피해!`);
         }
@@ -2273,9 +2353,17 @@ function raidPlayerTurnAuto() {
                     if (sc === 'hp') sVal = p.maxHp;
                     if (sc === 'def') sVal = pDef;
                     if (sc === 'luk') sVal = pLuk;
-                    healAmount = Math.floor((baseVal + (sVal * multiplier)) * sdMults.heal);
+                    healAmount = getMercenarySkillHealing(
+                        baseVal + (sVal * multiplier),
+                        p.mercPassives,
+                        sdMults.heal
+                    );
                 } else {
-                    healAmount = Math.floor(p.maxHp * 0.25 * sdMults.heal);
+                    healAmount = getMercenarySkillHealing(
+    p.maxHp * 0.25,
+    p.mercPassives,
+    sdMults.heal
+);
                 }
 
                 let tType = String(usedSkill.target_type).trim().toLowerCase();
@@ -2332,8 +2420,17 @@ function raidPlayerTurnAuto() {
                 let baseDmg = usedSkill ? Math.floor(((Number(usedSkill.base_value) || 0) + (pAtk * multiplier)) * hitCritMult * execMult * sdMults.dmg) : Math.floor(pAtk * hitCritMult * sdMults.dmg);
 
                 let fDef = (effectType === '방어관통' || effectType === 'pierce') ? 0 : mDef;
+                fDef = getMercenaryEffectiveDefense(fDef, p.mercPassives);
+
                 const defC = Number(sysConfig.def_constant) || 50;
-                let finalDmg = Math.max(1, Math.floor(baseDmg * (defC / (defC + fDef))));
+                let finalDmg = Math.max(
+                    1,
+                    Math.floor(
+                        baseDmg *
+                        getMercenaryAttackMultiplier(p.mercPassives, !!usedSkill) *
+                        (defC / (defC + fDef))
+                    )
+                );
 
                 // 💡 [기믹] 철벽 방어 (주기적인 턴마다 데미지를 1로 고정)
                 if (battleState.isBoss && (battleState.gimmick_type === 'shield' || battleState.gimmick_type === '철벽')) {
@@ -2537,6 +2634,10 @@ function raidMonsterTurnAuto() {
                 const defC = Number(sysConfig.def_constant) || 50;
 
                 let finalDmg = effectType === '체력비례피해' ? Math.floor(p.maxHp * 0.2 * sdMults.dmg) : Math.max(1, Math.floor(currentBaseDmg * (defC / (defC + fDef))));
+                finalDmg = reduceMercenaryIncomingDamage(
+                    finalDmg,
+                    p.mercPassives
+                );
 
                 p.currentHp = Math.max(0, p.currentHp - finalDmg);
                 logBattle(`${p.name}에게 ${finalDmg} 피해!`);
@@ -3063,19 +3164,8 @@ async function startTower() {
         }
     });
 
-    // 💡 [수정] 동료(용병) 특수 옵션 추출 추가
-    [currentStudent.party_m1, currentStudent.party_m2].forEach(mId => {
-        if (mId && mId !== 'null' && mId !== 'false' && String(mId).trim() !== '') {
-            const merc = mercenariesData.find(x => String(x.merc_id) === String(mId));
-            if (merc) {
-                const t = String(merc.option_type).toUpperCase();
-                const v = Number(merc.option_value) || 0;
-                if (t === 'EVD_UP') battleState.relicEffects.dodge += v * 100;
-                if (t === 'CRIT_UP') battleState.relicEffects.critRate += v * 100;
-                if (t === 'CRIT_DMG_UP') battleState.relicEffects.critDmg += v;
-            }
-        }
-    });
+    // 학생별 동료 옵션을 이번 전투에 한 번만 합산합니다.
+    applyMercenaryCombatPassives(currentStudent, battleState);
 
     const currentSkinId = currentStudent.equipped_skin || 'HD001';
     const skinObj = skinsData.find(x => String(x.skin_id) === String(currentSkinId));
@@ -3385,6 +3475,9 @@ async function startWorldBossRaid(wbId) {
     else if (bColor === 'Yellow') battleState.playerLuk = Math.floor(battleState.playerLuk * 1.1);
     battleState.purpleDodgeActive = (bColor === 'Purple');
 
+    // 월드 보스에서도 현재 학생의 동료 패시브를 적용합니다.
+    applyMercenaryCombatPassives(currentStudent, battleState);
+
     // 대표 스킨 및 아바타
     const currentSkinId = currentStudent.equipped_skin || 'HD001';
     const skinObj = skinsData.find(x => String(x.skin_id) === String(currentSkinId));
@@ -3490,13 +3583,41 @@ function worldBossPlayerTurnAuto() {
     playAnim(attackTarget, 'anim-attack-p', 300);
 
     let multiplier = usedSkill ? (Number(usedSkill.multiplier) || Number(usedSkill.muliplier) || 1.5) : 1.0;
-    const isCrit = (Math.random() * 100) < (pLuk * 0.5);
-    const critMult = isCrit ? 1.5 : 1.0;
+    const isCrit = (Math.random() * 100) < (
+        (pLuk * 0.5) + battleState.relicEffects.critRate
+    );
+    const critMult = isCrit ? 1.5 + battleState.relicEffects.critDmg : 1.0;
 
-    let hitDmg = Math.max(10, Math.floor((pAtk * multiplier * critMult) - bDef));
+    const mainSkillType = usedSkill
+        ? String(usedSkill.effect_type || '').trim().toLowerCase()
+        : '';
+
+    const rawSpecial = usedSkill
+        ? String(usedSkill.special_effect || '').trim().toLowerCase()
+        : '';
+
+    const special = effectTranslator[rawSpecial] || rawSpecial;
+
+    const isHealing = !!usedSkill && (
+        mainSkillType === 'heal' || special === '회복'
+    );
+
+    const passive = battleState.mercPassives;
+    const effectiveDef = getMercenaryEffectiveDefense(bDef, passive);
+
+    let hitDmg = isHealing ? 0 : Math.max(
+        10,
+        Math.floor(
+            ((pAtk * multiplier * critMult) - effectiveDef) *
+            getMercenaryAttackMultiplier(
+                passive,
+                !!usedSkill && mainSkillType !== 'buff'
+            )
+        )
+    );
 
     // 💡 [기믹 2] 철벽: N턴 주기마다 피해를 1로 고정
-    if ((gType === 'shield' || gType === '철벽') && gVal > 0 && battleState.wbTurn % gVal === 0) {
+    if (!isHealing && (gType === 'shield' || gType === '철벽') && gVal > 0 && battleState.wbTurn % gVal === 0) {
         hitDmg = 1;
         logBattle('🛡️ <b style="color:#34D399;">[철벽] 보스가 단단한 방어막을 전개하여 피해를 1로 줄였습니다!</b>');
     }
@@ -3505,8 +3626,38 @@ function worldBossPlayerTurnAuto() {
 
     setTimeout(() => {
         let logPrefix = usedSkill ? `✨ [스킬] ${usedSkill.name}!` : `⚔️ [일반 공격]`;
-        logBattle(`${logPrefix} ${isCrit ? "💥크리티컬! " : ""}보스에게 <b>${hitDmg.toLocaleString()}</b>의 피해!`);
-        playAnim('battleMonsterImg', 'anim-damage', 250);
+
+        if (isHealing) {
+            let rawHealing = battleState.playerMaxHp * 0.25;
+
+            if (mainSkillType === 'heal') {
+                const scaling = String(usedSkill.scaling_stat || '').trim().toLowerCase();
+
+                let stat = pAtk;
+                if (scaling === 'hp') stat = battleState.playerMaxHp;
+                if (scaling === 'def') stat = battleState.playerDef;
+                if (scaling === 'luk') stat = pLuk;
+
+                const healScale = Number(
+                    usedSkill.multiplier ?? usedSkill.muliplier ?? 1.0
+                );
+
+                rawHealing = (Number(usedSkill.base_value) || 0) + stat * healScale;
+            }
+
+            const healing = getMercenarySkillHealing(rawHealing, passive);
+
+            battleState.playerCurrentHp = Math.min(
+                battleState.playerMaxHp,
+                battleState.playerCurrentHp + healing
+            );
+
+            logBattle(`${logPrefix} 체력 ${healing} 회복!`);
+            updateHpBars();
+        } else {
+            logBattle(`${logPrefix} ${isCrit ? "💥크리티컬! " : ""}보스에게 <b>${hitDmg.toLocaleString()}</b>의 피해!`);
+            playAnim('battleMonsterImg', 'anim-damage', 250);
+        }
         document.getElementById('raidStageInfo').innerText = `[ ${battleState.wbTurn} / ${battleState.wbMaxTurns} 턴 ] 누적 딜량: ${battleState.wbDamageTotal.toLocaleString()}`;
         
         battleState.skills.forEach(sk => { if (sk !== usedSkill && sk.currentCd > 0) sk.currentCd--; });
@@ -3537,11 +3688,21 @@ function worldBossMonsterTurnAuto() {
 
     let turnScaling = 1.0 + (battleState.wbTurn * 0.08); // 턴 경과에 따른 점증 공격력
     let bossDamage = Math.max(5, Math.floor((bAtk * turnScaling) - (battleState.playerDef * 0.6)));
+    bossDamage = reduceMercenaryIncomingDamage(
+        bossDamage,
+        battleState.mercPassives
+    );
 
     setTimeout(() => {
         if (battleState.purpleDodgeActive) {
             logBattle('🟣 <b style="color:#d966ff;">[가호] 보스의 공격을 어둠의 장막으로 1회 무효화했습니다!</b>');
             battleState.purpleDodgeActive = false;
+        } else if (
+            battleState.mercPassives &&
+            battleState.relicEffects.dodge > 0 &&
+            (Math.random() * 100) < battleState.relicEffects.dodge
+        ) {
+            logBattle('💨 동료의 지원으로 보스 공격을 회피했습니다!');
         } else {
             battleState.playerCurrentHp = Math.max(0, battleState.playerCurrentHp - bossDamage);
             logBattle(`💥 보스의 맹공! 플레이어가 <b>${bossDamage}</b> 피해를 입었습니다.`);

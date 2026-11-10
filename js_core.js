@@ -1613,10 +1613,10 @@ function renderDashboard() {
                 const isPct = String(merc.option_calc_type).toUpperCase() === 'PERCENT';
                 const type = String(merc.option_type).toUpperCase();
 
-                if (type.includes('HP')) mercBonus.hp += isPct ? Math.floor((baseHp + equipBonus.hp) * val) : val;
-                if (type.includes('ATK')) mercBonus.atk += isPct ? Math.floor((baseAtk + equipBonus.atk) * val) : val;
-                if (type.includes('DEF')) mercBonus.def += isPct ? Math.floor((baseDef + equipBonus.def) * val) : val;
-                if (type.includes('LUK')) mercBonus.luk += isPct ? Math.floor((baseLuk + equipBonus.luk) * val) : val;
+                if (type === 'HP_UP' || type === 'HP') mercBonus.hp += isPct ? Math.floor((baseHp + equipBonus.hp) * val) : val;
+                if (type === 'ATK_UP' || type === 'ATK') mercBonus.atk += isPct ? Math.floor((baseAtk + equipBonus.atk) * val) : val;
+                if (type === 'DEF_UP' || type === 'DEF') mercBonus.def += isPct ? Math.floor((baseDef + equipBonus.def) * val) : val;
+                if (type === 'LUK_UP' || type === 'LUK') mercBonus.luk += isPct ? Math.floor((baseLuk + equipBonus.luk) * val) : val;
             }
         }
     });
