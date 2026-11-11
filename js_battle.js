@@ -98,6 +98,73 @@ function openStageSelection() {
     subModal.style.display = 'flex';
 }
 
+function getJobCombatStats(stats, blessing) {
+    let baseHp = stats.hp;
+    let baseAtk = stats.atk;
+    let baseDef = stats.def;
+    let baseLuk = stats.luk;
+    const jobKey = String(blessing || '').trim();
+
+    // 기존 일반 사냥·탑의 직업 배율과 버림 계산을 유지합니다.
+    if (jobKey === 'WARRIOR' || jobKey === 'Green' || jobKey === '초록색') baseHp = Math.floor(baseHp * 1.1);
+    else if (jobKey === 'ARCHER' || jobKey === 'Red' || jobKey === '빨간색') baseAtk = Math.floor(baseAtk * 1.1);
+    else if (jobKey === 'MAGE' || jobKey === 'Blue' || jobKey === '파란색') baseDef = Math.floor(baseDef * 1.1);
+    else if (jobKey === 'ROGUE' || jobKey === 'Yellow' || jobKey === '노란색') baseLuk = Math.floor(baseLuk * 1.1);
+
+    else if (jobKey === 'KNIGHT') { baseHp = Math.floor(baseHp * 1.2); baseDef = Math.floor(baseDef * 1.15); }
+    else if (jobKey === 'BERSERKER') { baseHp = Math.floor(baseHp * 1.25); baseAtk = Math.floor(baseAtk * 1.1); }
+    else if (jobKey === 'ARCHMAGE') { baseDef = Math.floor(baseDef * 1.15); baseAtk = Math.floor(baseAtk * 1.2); }
+    else if (jobKey === 'CLERIC') { baseDef = Math.floor(baseDef * 1.2); baseHp = Math.floor(baseHp * 1.15); }
+    else if (jobKey === 'SNIPER') { baseAtk = Math.floor(baseAtk * 1.25); baseLuk = Math.floor(baseLuk * 1.1); }
+    else if (jobKey === 'RANGER') { baseAtk = Math.floor(baseAtk * 1.15); baseHp = Math.floor(baseHp * 1.1); }
+    else if (jobKey === 'ASSASSIN') { baseLuk = Math.floor(baseLuk * 1.25); baseAtk = Math.floor(baseAtk * 1.15); }
+    else if (jobKey === 'SHADOW') { baseLuk = Math.floor(baseLuk * 1.15); }
+
+    return { hp: baseHp, atk: baseAtk, def: baseDef, luk: baseLuk };
+}
+
+function applyJobCombatPassives(student, combatant) {
+    const jobKey = String(student.blessing || '').trim();
+
+    combatant.jobRegen = jobKey === 'CLERIC' ? 0.05 : 0;
+
+    if (jobKey === 'RANGER') {
+        combatant.relicEffects.dodge += 10;
+    }
+
+    combatant.purpleDodgeActive =
+        ['Purple', '보라색', 'SHADOW'].includes(jobKey);
+}
+
+function healJobPassive(combatant, isParty = false) {
+    const hpKey = isParty ? 'currentHp' : 'playerCurrentHp';
+    const maxKey = isParty ? 'maxHp' : 'playerMaxHp';
+
+    if (
+        !combatant.jobRegen ||
+        combatant[hpKey] <= 0 ||
+        combatant[hpKey] >= combatant[maxKey] ||
+        (isParty && combatant.isDead)
+    ) {
+        return 0;
+    }
+
+    const heal = Math.floor(
+        combatant[maxKey] * combatant.jobRegen * getSuddenDeathMults().heal
+    );
+
+    const before = combatant[hpKey];
+    combatant[hpKey] = Math.min(combatant[maxKey], before + heal);
+    const restored = combatant[hpKey] - before;
+
+    if (restored > 0) {
+        const name = isParty ? combatant.name : currentStudent.name;
+        logBattle('✨ [직업: 클레릭] ' + name + ' 체력 ' + restored + ' 회복!');
+    }
+
+    return restored;
+}
+
 // --- 전투 화면으로 진입 ---
 let isEnteringSingleBattle = false;
 
@@ -105,6 +172,10 @@ async function enterBattle(monsterId, isBoss = false) {
     // 입장 저장이 끝나기 전 중복 클릭 차단
     if (isEnteringSingleBattle) return;
     isEnteringSingleBattle = true;
+
+    // 입장 차감과 환급에서 같은 전투 번호를 사용합니다.
+    const entrySessionId =
+        'BAT_' + Date.now() + '_' + Math.random().toString(36).slice(2);
 
     try {
     // 💡 일반 몬스터인지 보스인지에 따라 데이터를 가져옵니다.
@@ -136,6 +207,14 @@ async function enterBattle(monsterId, isBoss = false) {
                 }
 
                 student.weekly_battles = serverW - 1;
+
+                // 횟수를 실제로 차감한 전투만 환급할 수 있도록 기록합니다.
+                student.battle_entries = student.battle_entries || {};
+                student.battle_entries[entrySessionId] = {
+                    state: 'entered',
+                    week: getKSTMondayKey()
+                };
+
                 return {};
             });
 
@@ -157,8 +236,8 @@ async function enterBattle(monsterId, isBoss = false) {
     battleState.isTower = false;
     battleState.isRaid = false;
     battleState.isWorldBoss = false;
-    // 💡 [중복 지급 방지] 이번 전투 고유 세션 ID 생성
-    battleState.sessionId = 'BAT_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    // 입장 차감 때 저장한 전투 번호를 그대로 사용합니다.
+    battleState.sessionId = entrySessionId;
     closeSubModal();
     document.getElementById('singlePlayerContainer').style.display = 'block';
     document.getElementById('partyPlayerContainer').style.display = 'none';
@@ -182,28 +261,9 @@ async function enterBattle(monsterId, isBoss = false) {
     battleState.monsterCurrentHp = battleState.monsterMaxHp;
 
     // 💡 1. 직업별 특화 패시브 및 가호 보너스 연산
-    let baseHp = pStats.hp;
-    let baseAtk = pStats.atk;
-    let baseDef = pStats.def;
-    let baseLuk = pStats.luk;
-
     const jobKey = String(currentStudent.blessing).trim();
-
-    // 1차 기본 직업 (전사=HP, 궁수=ATK, 마법사=DEF, 도적=LUK) 및 레거시 가호 호환
-    if (jobKey === 'WARRIOR' || jobKey === 'Green' || jobKey === '초록색') baseHp = Math.floor(baseHp * 1.1);
-    else if (jobKey === 'ARCHER' || jobKey === 'Red' || jobKey === '빨간색') baseAtk = Math.floor(baseAtk * 1.1);
-    else if (jobKey === 'MAGE' || jobKey === 'Blue' || jobKey === '파란색') baseDef = Math.floor(baseDef * 1.1);
-    else if (jobKey === 'ROGUE' || jobKey === 'Yellow' || jobKey === '노란색') baseLuk = Math.floor(baseLuk * 1.1);
-
-    // 2차 상위 직업 특화 패시브
-    else if (jobKey === 'KNIGHT') { baseHp = Math.floor(baseHp * 1.2); baseDef = Math.floor(baseDef * 1.15); }
-    else if (jobKey === 'BERSERKER') { baseHp = Math.floor(baseHp * 1.25); baseAtk = Math.floor(baseAtk * 1.1); }
-    else if (jobKey === 'ARCHMAGE') { baseDef = Math.floor(baseDef * 1.15); baseAtk = Math.floor(baseAtk * 1.2); }
-    else if (jobKey === 'CLERIC') { baseDef = Math.floor(baseDef * 1.2); baseHp = Math.floor(baseHp * 1.15); }
-    else if (jobKey === 'SNIPER') { baseAtk = Math.floor(baseAtk * 1.25); baseLuk = Math.floor(baseLuk * 1.1); }
-    else if (jobKey === 'RANGER') { baseAtk = Math.floor(baseAtk * 1.15); baseHp = Math.floor(baseHp * 1.1); }
-    else if (jobKey === 'ASSASSIN') { baseLuk = Math.floor(baseLuk * 1.25); baseAtk = Math.floor(baseAtk * 1.15); }
-    else if (jobKey === 'SHADOW') { baseLuk = Math.floor(baseLuk * 1.15); }
+    const { hp: baseHp, atk: baseAtk, def: baseDef, luk: baseLuk } =
+        getJobCombatStats(pStats, jobKey);
 
     // 💡 2. 최종 체력 계산 및 세션 데이터 주입 (중복 대입 없이 한 번만 처리됩니다)
     const hpPerPoint = Number(sysConfig.hp_per_point) || 10;
@@ -237,6 +297,7 @@ async function enterBattle(monsterId, isBoss = false) {
 
     // 학생별 동료 옵션을 이번 전투에 한 번만 합산합니다.
     applyMercenaryCombatPassives(currentStudent, battleState);
+    applyJobCombatPassives(currentStudent, battleState);
     // --------------------------------------------------------
 
     battleState.playerEffects = [];
@@ -275,6 +336,9 @@ async function enterBattle(monsterId, isBoss = false) {
     const skinObj = skinsData.find(x => String(x.skin_id) === String(currentSkinId));
     const pImgSrc = (skinObj && skinObj.skin_url) ? skinObj.skin_url : 'https://drive.google.com/thumbnail?id=1uoFPxFfpUaxE3eZCbrVU8oEvQLyQTg9b&sz=w200';
     document.getElementById('battlePlayerImg').src = pImgSrc;
+
+    // 현재 장착한 오라를 반영하고, 해제했다면 이전 오라를 숨깁니다.
+    updateBattleAura();
 
     // 💡 동료 1, 2 미니 아바타 렌더링
     const m1Box = document.getElementById('merc1BattleBox');
@@ -377,6 +441,61 @@ function logBattle(message) {
     logBox.scrollTop = logBox.scrollHeight;
 }
 
+// 입장 기록 확인, 횟수 환급, 패널티 저장을 함께 처리합니다.
+async function saveSingleBattleExit(kind, nowTime) {
+    const sessionId = battleState.sessionId;
+    const isBoss = battleState.isBoss;
+
+    if (!sessionId) {
+        throw new Error('전투 세션을 찾을 수 없습니다.');
+    }
+
+    return runStudentAtomicTransaction(currentStudent.name, student => {
+        const entries = student.battle_entries || {};
+        const entry = entries[sessionId];
+
+        // 이미 환급한 전투라면 횟수와 패널티를 다시 변경하지 않습니다.
+        if (entry && entry.state === 'refunded') {
+            return {};
+        }
+
+        // 일반 사냥은 실제 차감 기록이 있어야 환급합니다.
+        if (!isBoss && (!entry || entry.state !== 'entered')) {
+            throw new Error('사냥 입장 기록을 확인할 수 없습니다.');
+        }
+
+        // 기본 한도와 관계없이 차감했던 1회만 돌려줍니다.
+        // 새 주 초기화 표식이 있다면 이전 주 횟수는 더하지 않습니다.
+        if (
+            !isBoss &&
+            (
+                !student.weekly_reset_key ||
+                student.weekly_reset_key === entry.week
+            )
+        ) {
+            student.weekly_battles =
+                (Number(student.weekly_battles) || 0) + 1;
+        }
+
+        student.last_defeat = nowTime;
+        student.penalty_end_time =
+            nowTime + (kind === 'flee' ? 2 : 8) * 60 * 60 * 1000;
+
+        if (kind === 'flee') {
+            student.flee_count =
+                (Number(student.flee_count) || 0) + 1;
+        }
+
+        entries[sessionId] = {
+            state: 'refunded',
+            week: entry ? entry.week : getKSTMondayKey()
+        };
+        student.battle_entries = entries;
+
+        return {};
+    });
+}
+
 // --- 4. 도망치기 ---
 async function fleeBattle() {
     battleState.isAutoRunning = false;
@@ -415,22 +534,7 @@ async function fleeBattle() {
     showGlobalLoading("🏃 후퇴 정보 저장 중...");
 
     try {
-        // 💡 패널티 데이터만 핀포인트 PATCH
-        const fleePayload = {
-            last_defeat: pTime,
-            penalty_end_time: pTime + (2 * 60 * 60 * 1000),
-            flee_count: (Number(currentStudent.flee_count) || 0) + 1
-        };
-
-        // 🛡️ [전략적 후퇴] 일반 사냥 도주 시 입장 때 차감되었던 사냥 횟수 1회 안전 환급
-        if (!battleState.isBoss) {
-            const maxW = Number(sysConfig.max_weekly_battles) || 2;
-            const curW = Number(currentStudent.weekly_battles) || 0;
-            fleePayload.weekly_battles = Math.min(maxW, curW + 1);
-        }
-
-        await patchFirebaseStudentFields(currentStudent.name, fleePayload);
-        Object.assign(currentStudent, fleePayload);
+        await saveSingleBattleExit('flee', pTime);
 
         hideGlobalLoading();
 
@@ -662,6 +766,90 @@ if (typeof battleState === 'undefined') {
 
 // --- 플레이어 및 원정대 동료 스킬 초기화 및 렌더링 ---
 function setupPlayerSkills() {
+    // 화면 배치만 변경: 직업 순서와 용병 크기를 적용합니다.
+    const heroImage = document.getElementById('battlePlayerImg');
+    const heroBox = heroImage && heroImage.closest('.aura-avatar');
+
+    if (heroBox && heroBox.parentElement) {
+        const formation = heroBox.parentElement;
+
+        // 숫자가 작을수록 전방. 2차 직업은 원래 직업 계열로 배치합니다.
+        const jobOrder = {
+            WARRIOR: 0, KNIGHT: 0, BERSERKER: 0, GREEN: 0, '초록색': 0,
+            ROGUE: 1, ASSASSIN: 1, SHADOW: 1, YELLOW: 1, '노란색': 1,
+            MAGE: 2, ARCHMAGE: 2, CLERIC: 2, BLUE: 2, '파란색': 2,
+            ARCHER: 3, SNIPER: 3, RANGER: 3, RED: 3, '빨간색': 3
+        };
+
+        const getOrder = job =>
+            jobOrder[String(job || '').trim().toUpperCase()] ?? 4;
+
+        const members = [{
+            box: heroBox,
+            image: heroImage,
+            rank: getOrder(currentStudent.blessing),
+            slot: 0
+        }];
+
+        [currentStudent.party_m1, currentStudent.party_m2].forEach((mercId, index) => {
+            const slot = index + 1;
+            const box = document.getElementById('merc' + slot + 'BattleBox');
+            const image = document.getElementById('merc' + slot + 'BattleImg');
+            if (!box || !image) return;
+
+            const id = String(mercId || '').trim();
+            const merc = id && mercenariesData.find(
+                m => String(m.merc_id).trim() === id
+            );
+
+            // 미편성 또는 이미지가 없는 용병은 숨깁니다.
+            if (!merc || !merc.icon_url) {
+                box.style.display = 'none';
+                return;
+            }
+
+            image.src = merc.icon_url;
+            box.style.display = 'flex';
+            box.style.justifyContent = 'flex-end';
+
+            members.push({
+                box,
+                image,
+                rank: getOrder(merc.job),
+                slot
+            });
+        });
+
+        // 같은 계열이면 플레이어 → 용병 1 → 용병 2 순으로 앞에 둡니다.
+        members.sort((a, b) => a.rank - b.rank || a.slot - b.slot);
+
+        // 인원이 줄거나 화면이 좁아져도 배치 칸이 함께 조정됩니다.
+        formation.style.display = 'grid';
+        formation.style.gridTemplateColumns =
+            'repeat(' + members.length + ', minmax(0, 140px))';
+        formation.style.justifyContent = 'center';
+        formation.style.alignItems = 'end';
+        formation.style.gap = '6px';
+        formation.style.width = '100%';
+
+        members.forEach((member, index) => {
+            // 아군 진영의 오른쪽이 전방입니다.
+            // 기존 ID를 유지하므로 스킬 모션과 이펙트 연결도 유지됩니다.
+            member.box.style.order = String(members.length - 1 - index);
+            member.box.style.setProperty('width', '100%', 'important');
+            member.box.style.setProperty('height', 'auto', 'important');
+            member.box.style.minWidth = '0';
+            member.box.style.aspectRatio = '1';
+            member.box.style.marginBottom = '0';
+
+            // 같은 배치 칸을 기준으로 플레이어 100%, 용병 80%입니다.
+            const size = member.slot === 0 ? '100%' : '80%';
+            member.image.style.setProperty('width', size, 'important');
+            member.image.style.setProperty('height', size, 'important');
+            member.image.style.objectFit = 'contain';
+        });
+    }
+
     battleState.skills = [];
 
     // 대표 스킬 + 동료 1 스킬 + 동료 2 스킬 목록 조합
@@ -791,6 +979,10 @@ function processStatusEffects(isPlayer) {
             updateHpBars();
         }
     }
+    if (isPlayer && healJobPassive(battleState) > 0) {
+        updateHpBars();
+    }
+
     return canAct;
 }
 
@@ -1115,6 +1307,16 @@ function applyDamageToMonster(baseDmg, finalDef, prefixText, isSkill = false) {
     );
     if (finalDmg < 1) finalDmg = 1;
 
+    // 레이드와 같은 기준으로 철벽 턴의 직접 타격 피해를 1로 제한합니다.
+    if (
+        battleState.isBoss &&
+        (battleState.gimmick_type === 'shield' || battleState.gimmick_type === '철벽') &&
+        battleState.turnCount % Math.max(1, battleState.gimmick_value) === 0
+    ) {
+        finalDmg = 1;
+        logBattle('🛡️ <b style="color:#34D399;">[철벽] 보스가 단단한 방어막을 전개하여 피해를 최소화했습니다!</b>');
+    }
+
     // 💡 [신규 기믹] reflect (반사 방패): 지정 턴 주기마다 피해의 30%를 플레이어에게 반사
     let isReflectTurn = false;
     let reflectDmg = 0;
@@ -1425,20 +1627,7 @@ function showBattleResult(isWin) {
 
         showGlobalLoading("☠️ 패배 정보 저장 중...");
 
-        const defeatPayload = {
-            last_defeat: nowTime,
-            penalty_end_time: nowTime + (8 * 60 * 60 * 1000)
-        };
-
-        // 🛡️ [신규] 일반 사냥 패배 시 사냥 횟수 1회 안전 환급 (보존)
-        if (!battleState.isBoss) {
-            const maxW = Number(sysConfig.max_weekly_battles) || 2;
-            const curW = Number(currentStudent.weekly_battles) || 0;
-            defeatPayload.weekly_battles = Math.min(maxW, curW + 1);
-        }
-
-        patchFirebaseStudentFields(currentStudent.name, defeatPayload).then(() => {
-            Object.assign(currentStudent, defeatPayload);
+        saveSingleBattleExit('defeat', nowTime).then(() => {
             hideGlobalLoading();
 
             // 📝 [Firebase 사냥/보스전 패배 로그 전송]
@@ -1927,55 +2116,200 @@ function openDungeonSelection() {
     subModal.style.display = 'flex';
 }
 
+let raidEntrySaving = false;
+let raidRecoveryPromise = null;
+
+// 완료되지 않은 레이드 입장에서 차감한 횟수를 복구합니다.
+async function recoverPendingRaidEntry() {
+    if (raidRecoveryPromise) return raidRecoveryPromise;
+
+    const pending = JSON.parse(
+        sessionStorage.getItem('pending_raid_entry') || 'null'
+    );
+    if (!pending) return;
+
+    raidRecoveryPromise = (async () => {
+        const failed = [];
+
+        for (const name of pending.members) {
+            try {
+                await runStudentAtomicTransaction(name, student => {
+                    const entries = student.raid_entries || {};
+                    const receipt = entries[pending.id];
+
+                    // 복구가 이미 끝났다면 다시 지급하지 않습니다.
+                    if (receipt && receipt.state === 'cancelled') {
+                        return {};
+                    }
+
+                    if (
+                        receipt &&
+                        receipt.state === 'deducted' &&
+                        (
+                            !student.weekly_reset_key ||
+                            student.weekly_reset_key === receipt.week
+                        )
+                    ) {
+                        student.weekly_raid =
+                            (Number(student.weekly_raid) || 0) + 1;
+                    }
+
+                    // 미차감 학생에도 취소 기록을 남깁니다.
+                    // 늦게 도착한 차감 요청이 입장을 다시 확정하지 못하게 합니다.
+                    entries[pending.id] = {
+                        state: 'cancelled',
+                        week: pending.week
+                    };
+                    student.raid_entries = entries;
+
+                    return {};
+                });
+            } catch (err) {
+                failed.push(name);
+            }
+        }
+
+        if (failed.length) {
+            throw new Error(
+                '횟수 복구 재시도 필요: ' + failed.join(', ')
+            );
+        }
+
+        // 전원의 처리가 끝난 뒤에만 복구 대기 기록을 지웁니다.
+        sessionStorage.removeItem('pending_raid_entry');
+    })();
+
+    try {
+        await raidRecoveryPromise;
+    } finally {
+        raidRecoveryPromise = null;
+    }
+}
+
+async function retryPendingRaidEntry() {
+    showGlobalLoading('레이드 입장 횟수 복구 중...');
+
+    try {
+        await recoverPendingRaidEntry();
+
+        showUiAlert(
+            '복구 완료',
+            '입장 취소로 차감한 횟수를 복구했습니다.',
+            currentStudent ? 'renderDashboard()' : 'fetchFastGameData()'
+        );
+    } catch (err) {
+        console.error('레이드 입장 횟수 복구 실패:', err);
+
+        showUiAlert(
+            '레이드 복구 대기',
+            '일부 파티원의 횟수를 아직 복구하지 못했습니다.<br>통신 상태를 확인한 뒤 다시 시도해주세요.',
+            'retryPendingRaidEntry()'
+        );
+    } finally {
+        hideGlobalLoading();
+    }
+}
+
 // 레이드 전투 진입 및 초기화
 async function enterRaid(dungeonId) {
     const d = dungeonsData.find(x => x.dungeon_id === dungeonId);
     if (!d) return alert("던전 정보를 찾을 수 없습니다.");
 
-    showGlobalLoading("🏰 파티원 탐험 기회 확인 중...");
+    if (raidEntrySaving) return;
+
+    if (raidParty.length !== 3 || new Set(raidParty).size !== 3) {
+        return showUiAlert(
+            '출발 불가',
+            '서로 다른 파티원 3명이 필요합니다.',
+            ''
+        );
+    }
+
+    raidEntrySaving = true;
+
+    const entry = {
+        id: 'RAID_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+        members: raidParty.slice(),
+        week: getKSTMondayKey()
+    };
+
+    showGlobalLoading('🏰 파티원 탐험 기회 확인 중...');
 
     try {
-        const maxWeeklyRaid = Number(sysConfig.max_weekly_raid) || 1;
+        // 이전 입장의 복구가 남아 있다면 먼저 처리합니다.
+        await recoverPendingRaidEntry();
 
-        // 🛡️ [타인 데이터 간섭 원천 차단] 전체 학생 DB PUT을 폐기하고 참여 파티원 3명만 개별 원자 차감
-        const deductedMembers = [];
-        for (let i = 0; i < raidParty.length; i++) {
-            const memberName = raidParty[i];
-            const tx = await runStudentAtomicTransaction(memberName, student => {
-                const curRaid = (student.weekly_raid !== undefined && student.weekly_raid !== "")
-                    ? Number(student.weekly_raid)
-                    : maxWeeklyRaid;
+        // 차감 전에 기록해 응답 유실·새로고침 후에도 복구할 수 있게 합니다.
+        sessionStorage.setItem(
+            'pending_raid_entry',
+            JSON.stringify(entry)
+        );
 
-                if (curRaid <= 0) {
-                    return { abort: true, code: 'NO_RAID_CHANCE' };
+        for (const name of entry.members) {
+            const tx = await runStudentAtomicTransaction(name, student => {
+                const entries = student.raid_entries || {};
+
+                if (entries[entry.id]) {
+                    return entries[entry.id].state === 'deducted'
+                        ? {}
+                        : { abort: true };
                 }
 
-                student.weekly_raid = curRaid - 1;
+                const count =
+                    student.weekly_raid === undefined ||
+                    student.weekly_raid === ''
+                        ? Number(sysConfig.max_weekly_raid) || 1
+                        : Number(student.weekly_raid);
+
+                if (!(count > 0)) {
+                    return { abort: true };
+                }
+
+                // 횟수 차감과 입장 기록을 함께 저장합니다.
+                student.weekly_raid = count - 1;
+                entries[entry.id] = {
+                    state: 'deducted',
+                    week: entry.week
+                };
+                student.raid_entries = entries;
+
                 return {};
             });
 
             if (!tx.committed) {
-                // 한 명이라도 횟수가 없으면 이미 차감된 앞선 파티원의 횟수를 즉시 원상 복구
-                for (let j = 0; j < deductedMembers.length; j++) {
-                    await runStudentAtomicTransaction(deductedMembers[j], st => {
-                        st.weekly_raid = (Number(st.weekly_raid) || 0) + 1;
-                        return {};
-                    });
-                }
-
-                hideGlobalLoading();
-                showUiAlert('🚫 출발 불가', memberName + ' 모험가의 파티 던전 탐험 기회가 부족하여 입장이 취소되었습니다.', '');
-                return;
+                throw new Error(
+                    name + ' 모험가의 횟수가 부족하거나 입장이 취소되었습니다.'
+                );
             }
-
-            deductedMembers.push(memberName);
         }
 
-        hideGlobalLoading();
+        // 전원의 차감이 확인되었으므로 정상 입장으로 확정합니다.
+        sessionStorage.removeItem('pending_raid_entry');
     } catch (err) {
-        hideGlobalLoading();
-        showUiAlert("❌ 입장 오류", "파티 던전 입장 처리에 실패했습니다: " + err.message, "renderDashboard()");
+        try {
+            await recoverPendingRaidEntry();
+        } catch (recoveryErr) {
+            console.error('레이드 입장 횟수 복구 실패:', recoveryErr);
+
+            showUiAlert(
+                '레이드 복구 대기',
+                '일부 파티원의 횟수를 아직 복구하지 못했습니다.<br>통신 상태를 확인한 뒤 다시 시도해주세요.',
+                'retryPendingRaidEntry()'
+            );
+            return;
+        }
+
+        console.error('레이드 입장 취소:', err);
+
+        showUiAlert(
+            '입장 취소',
+            '파티원의 횟수가 부족하거나 통신에 실패하여 입장을 취소했습니다.<br>차감한 횟수는 복구했습니다.',
+            'renderDashboard()'
+        );
         return;
+    } finally {
+        raidEntrySaving = false;
+        hideGlobalLoading();
     }
 
     closeSubModal();
@@ -1991,7 +2325,7 @@ async function enterRaid(dungeonId) {
 
     // 💡 [ID 보존] 새 battleState 객체 리터럴 내부에 raidSessionId를 직접 보존!
     battleState = {
-        raidSessionId: 'RAID_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        raidSessionId: entry.id,
         isRaid: true,
         isFleeing: false,
         party: [],
@@ -2015,7 +2349,10 @@ async function enterRaid(dungeonId) {
         // 기존 getPlayerTotalStats를 사용하기 위해 임시로 currentStudent를 치환하여 연산
         const tempS = currentStudent;
         currentStudent = sData;
-        const pStats = getPlayerTotalStats();
+        const pStats = getJobCombatStats(
+            getPlayerTotalStats(),
+            sData.blessing
+        );
         currentStudent = tempS;
 
         const hpPerPoint = Number(sysConfig.hp_per_point) || 10;
@@ -2055,13 +2392,7 @@ async function enterRaid(dungeonId) {
         // 파티원 각자의 동료만 적용합니다.
         applyMercenaryCombatPassives(sData, pObj);
 
-        // 가호 적용
-        let bColor = String(sData.blessing).trim();
-        if (bColor === 'Red' || bColor === '빨간색') pObj.atk = Math.floor(pObj.atk * 1.1);
-        else if (bColor === 'Blue' || bColor === '파란색') pObj.def = Math.floor(pObj.def * 1.1);
-        else if (bColor === 'Green' || bColor === '초록색') { pObj.maxHp = Math.floor(pObj.maxHp * 1.1); pObj.currentHp = pObj.maxHp; }
-        else if (bColor === 'Yellow' || bColor === '노란색') pObj.luk = Math.floor(pObj.luk * 1.1);
-        pObj.purpleDodgeActive = (bColor === 'Purple' || bColor === '보라색');
+        applyJobCombatPassives(sData, pObj);
 
         // 스킬 추출 (대표 캐릭터 스킬)
         if (sData.equipped_1 && sData.equipped_1 !== 'null' && sData.equipped_1 !== 'false') {
@@ -2284,6 +2615,7 @@ function raidPlayerTurnAuto() {
             logBattle(`✨ <span style="color:#4dff88;">[재생]</span> ${p.name} +${heal}!`);
         }
     }
+    healJobPassive(p, true);
     updatePartyHpBars();
 
     if (p.currentHp <= 0) {
@@ -3115,6 +3447,12 @@ async function startTower() {
     }
 
     battleState.isTower = true;
+    battleState.isRaid = false;
+    battleState.isWorldBoss = false;
+
+    // 새로운 도전을 시작하므로 이전 정산 잠금을 초기화합니다.
+    battleState.towerRewardSaving = false;
+
     battleState.towerSessionId = 'TOWER_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     battleState.towerFloor = 1;
     battleState.towerBossCount = 0;
@@ -3122,6 +3460,11 @@ async function startTower() {
 
     document.getElementById('singlePlayerContainer').style.display = 'block';
     document.getElementById('partyPlayerContainer').style.display = 'none';
+
+    // 레이드에서 숨겼던 대표 상태창을 다시 표시합니다.
+    document.getElementById('bottomPlayerStatus').style.display = 'block';
+    document.getElementById('bottomPartyStatus').style.display = 'none';
+
     document.getElementById('raidStageInfo').style.display = 'block';
 
     const pStats = getPlayerTotalStats();
@@ -3130,25 +3473,9 @@ async function startTower() {
     battleState.turnCount = 1;
 
     // 💡 가호 보너스가 계산되기 전 스탯 임시 변수 할당
-    let baseHp = pStats.hp;
-    let baseAtk = pStats.atk;
-    let baseDef = pStats.def;
-    let baseLuk = pStats.luk;
-
     const jobKey = String(currentStudent.blessing).trim();
-    if (jobKey === 'WARRIOR' || jobKey === 'Green' || jobKey === '초록색') baseHp = Math.floor(baseHp * 1.1);
-    else if (jobKey === 'ARCHER' || jobKey === 'Red' || jobKey === '빨간색') baseAtk = Math.floor(baseAtk * 1.1);
-    else if (jobKey === 'MAGE' || jobKey === 'Blue' || jobKey === '파란색') baseDef = Math.floor(baseDef * 1.1);
-    else if (jobKey === 'ROGUE' || jobKey === 'Yellow' || jobKey === '노란색') baseLuk = Math.floor(baseLuk * 1.1);
-
-    else if (jobKey === 'KNIGHT') { baseHp = Math.floor(baseHp * 1.2); baseDef = Math.floor(baseDef * 1.15); }
-    else if (jobKey === 'BERSERKER') { baseHp = Math.floor(baseHp * 1.25); baseAtk = Math.floor(baseAtk * 1.1); }
-    else if (jobKey === 'ARCHMAGE') { baseDef = Math.floor(baseDef * 1.15); baseAtk = Math.floor(baseAtk * 1.2); }
-    else if (jobKey === 'CLERIC') { baseDef = Math.floor(baseDef * 1.2); baseHp = Math.floor(baseHp * 1.15); }
-    else if (jobKey === 'SNIPER') { baseAtk = Math.floor(baseAtk * 1.25); baseLuk = Math.floor(baseLuk * 1.1); }
-    else if (jobKey === 'RANGER') { baseAtk = Math.floor(baseAtk * 1.15); baseHp = Math.floor(baseHp * 1.1); }
-    else if (jobKey === 'ASSASSIN') { baseLuk = Math.floor(baseLuk * 1.25); baseAtk = Math.floor(baseAtk * 1.15); }
-    else if (jobKey === 'SHADOW') { baseLuk = Math.floor(baseLuk * 1.15); }
+    const { hp: baseHp, atk: baseAtk, def: baseDef, luk: baseLuk } =
+        getJobCombatStats(pStats, jobKey);
 
     // 💡 최종 체력 계산 및 세션 데이터 주입
     const hpPerPoint = Number(sysConfig.hp_per_point) || 10;
@@ -3180,6 +3507,7 @@ async function startTower() {
 
     // 학생별 동료 옵션을 이번 전투에 한 번만 합산합니다.
     applyMercenaryCombatPassives(currentStudent, battleState);
+    applyJobCombatPassives(currentStudent, battleState);
 
     const currentSkinId = currentStudent.equipped_skin || 'HD001';
     const skinObj = skinsData.find(x => String(x.skin_id) === String(currentSkinId));
@@ -3453,6 +3781,11 @@ async function startWorldBossRaid(wbId) {
     closeSubModal();
     document.getElementById('singlePlayerContainer').style.display = 'block';
     document.getElementById('partyPlayerContainer').style.display = 'none';
+
+    // 레이드에서 숨겼던 대표 상태창을 다시 표시합니다.
+    document.getElementById('bottomPlayerStatus').style.display = 'block';
+    document.getElementById('bottomPartyStatus').style.display = 'none';
+
     document.getElementById('raidStageInfo').style.display = 'block';
 
     const pStats = getPlayerTotalStats();
@@ -3481,16 +3814,18 @@ async function startWorldBossRaid(wbId) {
         relicEffects: { dodge: 0, critRate: 0, critDmg: 0, regen: 0, skillProb: 0, goldMult: 0 }
     };
 
-    // 가호 보정
-    const bColor = String(currentStudent.blessing).trim();
-    if (bColor === 'Red') battleState.playerAtk = Math.floor(battleState.playerAtk * 1.1);
-    else if (bColor === 'Blue') battleState.playerDef = Math.floor(battleState.playerDef * 1.1);
-    else if (bColor === 'Green') { battleState.playerMaxHp = Math.floor(battleState.playerMaxHp * 1.1); battleState.playerCurrentHp = battleState.playerMaxHp; }
-    else if (bColor === 'Yellow') battleState.playerLuk = Math.floor(battleState.playerLuk * 1.1);
-    battleState.purpleDodgeActive = (bColor === 'Purple');
+    const jobStats = getJobCombatStats(pStats, currentStudent.blessing);
+
+    battleState.playerMaxHp =
+        jobStats.hp * (Number(sysConfig.hp_per_point) || 10);
+    battleState.playerCurrentHp = battleState.playerMaxHp;
+    battleState.playerAtk = jobStats.atk;
+    battleState.playerDef = jobStats.def;
+    battleState.playerLuk = jobStats.luk;
 
     // 월드 보스에서도 현재 학생의 동료 패시브를 적용합니다.
     applyMercenaryCombatPassives(currentStudent, battleState);
+    applyJobCombatPassives(currentStudent, battleState);
 
     // 대표 스킨 및 아바타
     const currentSkinId = currentStudent.equipped_skin || 'HD001';
@@ -3573,11 +3908,22 @@ function worldBossPlayerTurnAuto() {
 
     // 스킬 추첨 및 공격 연산 (철저한 본인 스펙 반영)
     let pAtk = battleState.playerAtk;
+    let pDef = battleState.playerDef;
     let pLuk = battleState.playerLuk;
     let bDef = Number(battleState.wbBossData.def) || 10;
 
+    battleState.playerEffects.forEach(eff => {
+        if (eff.type === '광폭화') { pAtk *= 1.2; pDef *= 0.8; }
+        if (eff.type === '마력집중') pAtk *= 2.0;
+        if (eff.type === '보호막') pDef = Math.floor(pDef * 1.5);
+        if (['공격감소', '화상', '저주'].includes(eff.type)) pAtk *= 0.8;
+        if (['방어감소', '방깎출혈', '저주'].includes(eff.type)) pDef *= 0.8;
+        if (['행운감소', '저주'].includes(eff.type)) pLuk *= 0.8;
+    });
+
     let usedSkill = null;
     for (let i = 0; i < battleState.skills.length; i++) {
+        if (battleState.playerEffects.some(e => e.type === '침묵')) break;
         let sk = battleState.skills[i];
         if (sk.currentCd === 0) {
             let finalProb = (Number(sk.base_prob) || 50) + (pLuk * 0.5);
@@ -3597,7 +3943,9 @@ function worldBossPlayerTurnAuto() {
     playAnim(attackTarget, 'anim-attack-p', 300);
 
     let multiplier = usedSkill ? (Number(usedSkill.multiplier) || Number(usedSkill.muliplier) || 1.5) : 1.0;
-    const isCrit = (Math.random() * 100) < (
+    const hasStealth = battleState.playerEffects.some(e => e.type === '은신');
+
+    const isCrit = hasStealth || (Math.random() * 100) < (
         (pLuk * 0.5) + battleState.relicEffects.critRate
     );
     const critMult = isCrit ? 1.5 + battleState.relicEffects.critDmg : 1.0;
@@ -3615,11 +3963,33 @@ function worldBossPlayerTurnAuto() {
     const isHealing = !!usedSkill && (
         mainSkillType === 'heal' || special === '회복'
     );
+    const isBuff = !!usedSkill && mainSkillType === 'buff';
+    const isAttacking = !isHealing && !isBuff;
+
+    const hitCount = isAttacking && battleState.playerEffects.some(
+        e => e.type === '더블히트'
+    ) ? 2 : 1;
+
+    const hadManaCharge = battleState.playerEffects.some(
+        e => e.type === '마력집중'
+    );
+
+    const buffTypes = [
+        '은신', '보호막', '광폭화', '마력집중',
+        '회피증가', '재생', '더블히트'
+    ];
+
+    const effectDuration = usedSkill ? Number(usedSkill.duration) || 0 : 0;
+
+    const newPlayerEffect =
+        usedSkill && buffTypes.includes(special) && effectDuration > 0
+            ? { type: special, duration: effectDuration }
+            : null;
 
     const passive = battleState.mercPassives;
     const effectiveDef = getMercenaryEffectiveDefense(bDef, passive);
 
-    let hitDmg = isHealing ? 0 : Math.max(
+    let hitDmg = (isHealing || isBuff) ? 0 : Math.max(
         10,
         Math.floor(
             ((pAtk * multiplier * critMult) - effectiveDef) *
@@ -3631,12 +4001,13 @@ function worldBossPlayerTurnAuto() {
     );
 
     // 💡 [기믹 2] 철벽: N턴 주기마다 피해를 1로 고정
-    if (!isHealing && (gType === 'shield' || gType === '철벽') && gVal > 0 && battleState.wbTurn % gVal === 0) {
+    if (isAttacking && (gType === 'shield' || gType === '철벽') && gVal > 0 && battleState.wbTurn % gVal === 0) {
         hitDmg = 1;
         logBattle('🛡️ <b style="color:#34D399;">[철벽] 보스가 단단한 방어막을 전개하여 피해를 1로 줄였습니다!</b>');
     }
 
-    battleState.wbDamageTotal += hitDmg;
+    const totalHitDmg = hitDmg * hitCount;
+    battleState.wbDamageTotal += totalHitDmg;
 
     setTimeout(() => {
         let logPrefix = usedSkill ? `✨ [스킬] ${usedSkill.name}!` : `⚔️ [일반 공격]`;
@@ -3649,7 +4020,7 @@ function worldBossPlayerTurnAuto() {
 
                 let stat = pAtk;
                 if (scaling === 'hp') stat = battleState.playerMaxHp;
-                if (scaling === 'def') stat = battleState.playerDef;
+                if (scaling === 'def') stat = pDef;
                 if (scaling === 'luk') stat = pLuk;
 
                 const healScale = Number(
@@ -3668,8 +4039,14 @@ function worldBossPlayerTurnAuto() {
 
             logBattle(`${logPrefix} 체력 ${healing} 회복!`);
             updateHpBars();
+        } else if (isBuff) {
+            if (!newPlayerEffect) {
+                logBattle(`${logPrefix} 적용할 강화 효과가 없습니다.`);
+            }
         } else {
-            logBattle(`${logPrefix} ${isCrit ? "💥크리티컬! " : ""}보스에게 <b>${hitDmg.toLocaleString()}</b>의 피해!`);
+            const hitText = hitCount > 1 ? ` (${hitCount}회 타격 합계)` : '';
+
+            logBattle(`${logPrefix} ${isCrit ? "💥크리티컬! " : ""}보스에게 <b>${totalHitDmg.toLocaleString()}</b>의 피해!${hitText}`);
             playAnim('battleMonsterImg', 'anim-damage', 250);
         }
         document.getElementById('raidStageInfo').innerText = `[ ${battleState.wbTurn} / ${battleState.wbMaxTurns} 턴 ] 누적 딜량: ${battleState.wbDamageTotal.toLocaleString()}`;
@@ -3677,7 +4054,30 @@ function worldBossPlayerTurnAuto() {
         battleState.skills.forEach(sk => { if (sk !== usedSkill && sk.currentCd > 0) sk.currentCd--; });
         renderBattleSkillsUI();
 
+        // 공격에 사용한 기존 은신 효과를 소모합니다.
+        if (isAttacking && hasStealth) {
+            battleState.playerEffects = battleState.playerEffects.filter(
+                e => e.type !== '은신'
+            );
+        }
+
+        // 기존 마력집중은 스킬 사용 후 소모합니다.
+        if (usedSkill && hadManaCharge) {
+            battleState.playerEffects = battleState.playerEffects.filter(
+                e => e.type !== '마력집중'
+            );
+        }
+
         decrementStatusEffects(true);
+
+        // 새 효과는 기존 효과의 턴 차감 이후 등록합니다.
+        // 1턴 버프가 사용 즉시 사라지는 것을 방지합니다.
+        if (newPlayerEffect) {
+            battleState.playerEffects.push(newPlayerEffect);
+            logBattle(`${logPrefix} [${newPlayerEffect.type}] 효과! (${effectDuration}턴)`);
+        }
+
+        renderStatusEffectsUI();
         battleState.turnTimer = setTimeout(worldBossMonsterTurnAuto, 1000);
     }, 400);
 }
@@ -3701,7 +4101,21 @@ function worldBossMonsterTurnAuto() {
     }
 
     let turnScaling = 1.0 + (battleState.wbTurn * 0.08); // 턴 경과에 따른 점증 공격력
-    let bossDamage = Math.max(5, Math.floor((bAtk * turnScaling) - (battleState.playerDef * 0.6)));
+    let pDef = battleState.playerDef;
+
+    battleState.playerEffects.forEach(eff => {
+        if (eff.type === '보호막') pDef = Math.floor(pDef * 1.5);
+        if (eff.type === '광폭화') pDef *= 0.8;
+        if (['방어감소', '방깎출혈', '저주'].includes(eff.type)) pDef *= 0.8;
+    });
+
+    const dodgeRate = battleState.relicEffects.dodge +
+        (battleState.playerEffects.some(e => e.type === '회피증가') ? 40 : 0);
+
+    let bossDamage = Math.max(
+        5,
+        Math.floor((bAtk * turnScaling) - (pDef * 0.6))
+    );
     bossDamage = reduceMercenaryIncomingDamage(
         bossDamage,
         battleState.mercPassives
@@ -3711,12 +4125,12 @@ function worldBossMonsterTurnAuto() {
         if (battleState.purpleDodgeActive) {
             logBattle('🟣 <b style="color:#d966ff;">[가호] 보스의 공격을 어둠의 장막으로 1회 무효화했습니다!</b>');
             battleState.purpleDodgeActive = false;
+        } else if (battleState.playerEffects.some(e => e.type === '은신')) {
+            logBattle('🌫️ 은신으로 보스의 공격을 피했습니다!');
         } else if (
-            battleState.mercPassives &&
-            battleState.relicEffects.dodge > 0 &&
-            (Math.random() * 100) < battleState.relicEffects.dodge
+            dodgeRate > 0 && (Math.random() * 100) < dodgeRate
         ) {
-            logBattle('💨 동료의 지원으로 보스 공격을 회피했습니다!');
+            logBattle('💨 보스의 공격을 회피했습니다!');
         } else {
             battleState.playerCurrentHp = Math.max(0, battleState.playerCurrentHp - bossDamage);
             logBattle(`💥 보스의 맹공! 플레이어가 <b>${bossDamage}</b> 피해를 입었습니다.`);

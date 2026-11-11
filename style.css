@@ -1555,3 +1555,46 @@ font-weight: bold;
         grid-template-columns: 1fr;
     }
 }
+
+/* 편성 인원에 맞춰 캐릭터 배치 칸을 조정 */
+#singlePlayerContainer .battle-formation {
+    display: grid !important;
+    grid-template-columns: repeat(
+        var(--formation-count, 1),
+        minmax(0, 140px)
+    );
+    justify-content: center;
+    align-items: end;
+    gap: 6px !important;
+    width: 100%;
+}
+
+#singlePlayerContainer .battle-formation > div {
+    width: 100% !important;
+    height: auto !important;
+    min-width: 0;
+    aspect-ratio: 1;
+    margin-bottom: 0 !important;
+}
+
+/* 플레이어는 배치 칸의 전체 크기 */
+.battle-formation #battlePlayerImg {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain;
+    image-rendering: pixelated;
+}
+
+/* 용병은 발 위치를 맞추고 플레이어보다 작게 표시 */
+.battle-formation #merc1BattleBox,
+.battle-formation #merc2BattleBox {
+    justify-content: flex-end;
+}
+
+.battle-formation #merc1BattleImg,
+.battle-formation #merc2BattleImg {
+    width: 80% !important;
+    height: 80% !important;
+    object-fit: contain;
+    image-rendering: pixelated;
+}

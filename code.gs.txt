@@ -966,118 +966,173 @@ function updateBattleResult(studentName, isWin, isBoss = false, isFlee = false) 
 
 // 💡 [신규] 매주 월요일 초기화 스크립트 (시스템 설정값을 정상적으로 불러오도록 패치)
 function resetWeeklyBattles() {
+  const base = 'https://learning-explorer-default-rtdb.firebaseio.com/gameData/';
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const config = {};
 
-  // 1. 시스템 탭에서 최대 횟수 모두 읽어오기
-  const sysSheet = ss.getSheetByName("system");
-  const sysData = sysSheet.getDataRange().getValues();
-  
-  let maxBattles = 2;
-  let maxRaid = 1;
-  let maxTower = 1;
-  let maxBoss = 3;
+  ss.getSheetByName('system').getDataRange().getValues().forEach(row => {
+    config[String(row[0]).trim()] = row[1];
+  });
 
-  for (let i = 0; i < sysData.length; i++) {
-    if (sysData[i][0] === "max_weekly_battles") maxBattles = Number(sysData[i][1]) || 2;
-    if (sysData[i][0] === "max_weekly_raid") maxRaid = Number(sysData[i][1]) || 1;
-    if (sysData[i][0] === "max_weekly_tower") maxTower = Number(sysData[i][1]) || 1;
-    if (sysData[i][0] === "max_weekly_boss") maxBoss = Number(sysData[i][1]) || 3;
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const day = kst.getUTCDay();
+  kst.setUTCDate(kst.getUTCDate() + (day === 0 ? -6 : 1) - day);
+  const week = kst.toISOString().slice(0, 10);
+
+  function readJson(url) {
+    const res = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true
+    });
+
+    if (res.getResponseCode() !== 200) {
+      throw new Error('조회 실패 HTTP ' + res.getResponseCode());
+    }
+
+    return JSON.parse(res.getContentText());
   }
 
-  // 2. 학생 탭의 횟수를 덮어쓰기
-  const stSheet = ss.getSheetByName("students");
-  const stData = stSheet.getDataRange().getValues();
-  const headers = stData[0].map(h => String(h).trim());
-  const nameIdx = headers.indexOf("name");
-  const weeklyIdx = headers.indexOf("weekly_battles");
-  const raidIdx = headers.indexOf("weekly_raid");
-  let towerIdx = headers.indexOf("weekly_tower");
-  let bossIdx = headers.indexOf("weekly_boss");
+  const last = readJson(base + 'system/config/last_weekly_reset.json');
+  const sheet = ss.getSheetByName('students');
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(h => String(h).trim());
+  const nameIdx = headers.indexOf('name');
 
-  // 도전의 탑 열이 없으면 즉시 생성
-  if (towerIdx === -1) {
-    towerIdx = headers.length;
-    stSheet.getRange(1, towerIdx + 1).setValue("weekly_tower");
+  if (nameIdx < 0) {
+    throw new Error('students 시트 name 열이 없습니다.');
   }
 
-  // 보스 도전 기회 열 안정성 확보 검증
-  if (bossIdx === -1) {
-    bossIdx = stSheet.getLastColumn();
-    stSheet.getRange(1, bossIdx + 1).setValue("weekly_boss");
-  }
+  const limits = {
+    weekly_battles: Number(config.max_weekly_battles) || 2,
+    weekly_boss: Number(config.max_weekly_boss) || 3,
+    weekly_raid: Number(config.max_weekly_raid) || 1,
+    weekly_tower: Number(config.max_weekly_tower) || 1
+  };
 
-  for (let i = 1; i < stData.length; i++) {
-    if (weeklyIdx > -1) stSheet.getRange(i + 1, weeklyIdx + 1).setValue(maxBattles);
-    if (raidIdx > -1) stSheet.getRange(i + 1, raidIdx + 1).setValue(maxRaid);
-    if (bossIdx > -1) stSheet.getRange(i + 1, bossIdx + 1).setValue(maxBoss);
-    stSheet.getRange(i + 1, towerIdx + 1).setValue(maxTower);
-  }
+  // 기존의 탑·보스 횟수 열 자동 생성 동작을 유지합니다.
+  ['weekly_tower', 'weekly_boss'].forEach(key => {
+    if (!headers.includes(key)) {
+      headers.push(key);
+      sheet.getRange(1, headers.length).setValue(key);
+    }
+  });
 
-  // 🛡️ 학생 전체 데이터를 다시 보내지 않고 주간 횟수 4개만 Firebase에 반영
-  try {
-    const resetPayload = {
-      weekly_battles: maxBattles,
-      weekly_raid: maxRaid,
-      weekly_tower: maxTower,
-      weekly_boss: maxBoss
-    };
+  for (let row = 1; row < values.length; row++) {
+    const name = String(values[row][nameIdx] || '').trim();
+    if (!name) continue;
 
-    const requests = [];
+    const url = base + 'students/' + encodeURIComponent(name) + '.json';
+    let saved = null;
 
-    for (let i = 1; i < stData.length; i++) {
-      const studentName = nameIdx > -1
-        ? String(stData[i][nameIdx]).trim()
-        : String(stData[i][0]).trim();
-
-      if (!studentName) continue;
-
-      requests.push({
-        url: "https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/" +
-          encodeURIComponent(studentName) +
-          ".json",
-        method: "PATCH",
-        contentType: "application/json",
-        payload: JSON.stringify(resetPayload),
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const res = UrlFetchApp.fetch(url, {
+        headers: { 'X-Firebase-ETag': 'true' },
         muteHttpExceptions: true
       });
-    }
 
-    if (requests.length > 0) {
-      UrlFetchApp.fetchAll(requests);
-    }
-
-    // 이번 주 월요일 날짜 키도 Firebase에 확정
-    var nowKst = new Date(
-      Utilities.formatDate(
-        new Date(),
-        "Asia/Seoul",
-        "yyyy/MM/dd HH:mm:ss"
-      )
-    );
-
-    var kstDay = nowKst.getDay();
-    var diffMon = (kstDay === 0 ? -6 : 1) - kstDay;
-    nowKst.setDate(nowKst.getDate() + diffMon);
-
-    var mondayKey = Utilities.formatDate(
-      nowKst,
-      "Asia/Seoul",
-      "yyyy-MM-dd"
-    );
-
-    UrlFetchApp.fetch(
-      "https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json",
-      {
-        method: "PUT",
-        contentType: "application/json",
-        payload: JSON.stringify(mondayKey)
+      if (res.getResponseCode() !== 200) {
+        throw new Error(name + ' 조회 실패');
       }
+
+      const student = JSON.parse(res.getContentText());
+      if (!student) {
+        throw new Error(name + ' Firebase 학생 데이터 없음');
+      }
+
+      // 프론트나 다른 트리거가 이미 처리했다면 다시 충전하지 않습니다.
+      if (String(student.weekly_reset_key || '') >= week) {
+        saved = student;
+        break;
+      }
+
+      if (last && String(last) < week) {
+        Object.assign(student, limits);
+      }
+      student.weekly_reset_key = week;
+
+      const responseHeaders = res.getAllHeaders();
+      const etagKey = Object.keys(responseHeaders).find(
+        key => key.toLowerCase() === 'etag'
+      );
+
+      if (!etagKey) {
+        throw new Error('Firebase ETag 없음');
+      }
+
+      const write = UrlFetchApp.fetch(url, {
+        method: 'PUT',
+        contentType: 'application/json',
+        headers: { 'If-Match': responseHeaders[etagKey] },
+        payload: JSON.stringify(student),
+        muteHttpExceptions: true
+      });
+
+      if (write.getResponseCode() === 412) continue;
+
+      if (write.getResponseCode() !== 200) {
+        throw new Error(name + ' 저장 실패');
+      }
+
+      saved = student;
+      break;
+    }
+
+    if (!saved) {
+      throw new Error(name + ' 동시 저장 충돌, 트리거 재실행 필요');
+    }
+
+    // 기본 최대치가 아니라 확인한 실제 잔여 횟수를 시트에 반영합니다.
+    Object.keys(limits).forEach(key => {
+      const col = headers.indexOf(key);
+      if (col > -1) {
+        sheet.getRange(row + 1, col + 1).setValue(saved[key] ?? limits[key]);
+      }
+    });
+  }
+
+  // 전체 성공 후에만 기준일을 확정합니다.
+  const url = base + 'system/config/last_weekly_reset.json';
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const res = UrlFetchApp.fetch(url, {
+      headers: { 'X-Firebase-ETag': 'true' },
+      muteHttpExceptions: true
+    });
+
+    if (res.getResponseCode() !== 200) {
+      throw new Error('기준일 조회 실패');
+    }
+
+    if (String(JSON.parse(res.getContentText()) || '') >= week) {
+      return;
+    }
+
+    const hdr = res.getAllHeaders();
+    const key = Object.keys(hdr).find(
+      k => k.toLowerCase() === 'etag'
     );
 
-    Logger.log("✅ 주간 횟수 4종 Firebase 안전 초기화 완료");
-  } catch (e) {
-    Logger.log("주간 초기화 후 Firebase 동기화 실패: " + e.toString());
+    if (!key) {
+      throw new Error('기준일 ETag 없음');
+    }
+
+    const write = UrlFetchApp.fetch(url, {
+      method: 'PUT',
+      contentType: 'application/json',
+      headers: { 'If-Match': hdr[key] },
+      payload: JSON.stringify(week),
+      muteHttpExceptions: true
+    });
+
+    if (write.getResponseCode() === 412) continue;
+
+    if (write.getResponseCode() !== 200) {
+      throw new Error('기준일 저장 실패');
+    }
+
+    return;
   }
+
+  throw new Error('기준일 저장 충돌, 재실행 필요');
 }
 
 // 💡 [신규] 도전의 탑 결과 저장 (골드 지급 없음, RM 교환권 인벤토리행)

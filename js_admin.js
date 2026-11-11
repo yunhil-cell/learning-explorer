@@ -365,77 +365,99 @@ function forceResetWeeklyBattlesAdmin() {
     );
 }
 
+let weeklyForceResetSaving = false;
+
 async function executeForceResetWeekly() {
-    showGlobalLoading("🔄 주간 횟수 초기화 처리 중...");
+    if (weeklyForceResetSaving) return;
+    weeklyForceResetSaving = true;
 
-    const maxBattles = Number(sysConfig.max_weekly_battles) || 2;
-    const maxBoss = Number(sysConfig.max_weekly_boss) || 3;
-    const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
-    const maxTower = Number(sysConfig.max_weekly_tower) || 1;
-
-    const students = window.allStudentsData || [];
-    const resetPayload = {
-        weekly_battles: maxBattles,
-        weekly_boss: maxBoss,
-        weekly_raid: maxRaid,
-        weekly_tower: maxTower
-    };
+    showGlobalLoading('🔄 주간 횟수 초기화 처리 중...');
 
     try {
-        const currentMondayKey = getKSTMondayKey();
-        const updatePromises = students.map(s => {
-            if (!s || !s.name) return Promise.resolve();
-            const sName = encodeURIComponent(String(s.name).trim());
-            return fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(resetPayload)
+        const week = getKSTMondayKey();
+
+        let operation = JSON.parse(
+            sessionStorage.getItem('pending_weekly_force_reset') || 'null'
+        );
+
+        // 실패 재시도와 같은 탭의 새로고침에는 같은 작업을 이어갑니다.
+        if (!operation || operation.week !== week) {
+            const names = [...new Set(
+                (window.allStudentsData || [])
+                    .filter(s => s && s.name)
+                    .map(s => String(s.name).trim())
+                    .filter(Boolean)
+            )];
+
+            if (!names.length) {
+                throw new Error('학생 목록이 없습니다.');
+            }
+
+            operation = {
+                id: 'RESET_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+                week,
+                names,
+                limits: getWeeklyResetFields()
+            };
+
+            // 일부 저장 후 실패해도 같은 대상·설정값으로 재시도합니다.
+            sessionStorage.setItem(
+                'pending_weekly_force_reset',
+                JSON.stringify(operation)
+            );
+        }
+
+        for (const name of operation.names) {
+            const tx = await runStudentAtomicTransaction(name, student => {
+                if (student.weekly_force_reset_id === operation.id) {
+                    return {};
+                }
+
+                Object.assign(student, operation.limits);
+                student.weekly_reset_key = operation.week;
+                student.weekly_force_reset_id = operation.id;
+
+                return {};
             });
-        });
 
-        // 🛡️ 1. 학생 전원의 PATCH 응답 상태 엄격 검증
-        const responses = await Promise.all(updatePromises);
-        const hasFailed = responses.some(res => res && !res.ok);
-        if (hasFailed) {
-            throw new Error("일부 학생의 주간 횟수 초기화 요청이 실패했습니다.");
+            const cached = (window.allStudentsData || []).find(s =>
+                s && String(s.name).trim() === name
+            );
+            if (cached) Object.assign(cached, tx.student);
         }
 
-        // 🛡️ 2. 기준 날짜 저장 성공 여부까지 확실히 검증
-        const dateRes = await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(currentMondayKey)
-        });
+        await runFirebasePathAtomicTransaction(
+            'https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json',
+            current => ({
+                data: typeof current === 'string' && current > week
+                    ? current
+                    : week
+            })
+        );
 
-        if (!dateRes.ok) {
-            throw new Error("기준 날짜 저장에 실패했습니다: HTTP " + dateRes.status);
-        }
+        sysConfig.last_weekly_reset = week;
 
-        // 🛡️ 3. 서버 저장이 모두 성공한 후에만 화면/메모리 갱신!
-        students.forEach(s => {
-            if (!s || !s.name) return;
-            s.weekly_battles = maxBattles;
-            s.weekly_boss = maxBoss;
-            s.weekly_raid = maxRaid;
-            s.weekly_tower = maxTower;
-        });
+        // 전체 성공 뒤에만 작업 기록을 지웁니다.
+        sessionStorage.removeItem('pending_weekly_force_reset');
 
-        if (currentStudent) {
-            currentStudent.weekly_battles = maxBattles;
-            currentStudent.weekly_boss = maxBoss;
-            currentStudent.weekly_raid = maxRaid;
-            currentStudent.weekly_tower = maxTower;
-        }
+        renderButtons(window.allStudentsData || []);
 
-        if (sysConfig) sysConfig.last_weekly_reset = currentMondayKey;
+        showUiAlert(
+            '🎉 초기화 완료',
+            '전체 학생의 주간 횟수를 초기화했습니다.',
+            "renderClassroomDashboard('overview')"
+        );
+    } catch (err) {
+        console.error('주간 강제 초기화 실패:', err);
+
+        showUiAlert(
+            '초기화 재시도 필요',
+            '전체 학생의 초기화를 완료하지 못했습니다.<br>통신 상태를 확인한 뒤 다시 시도해주세요.',
+            'executeForceResetWeekly()'
+        );
+    } finally {
+        weeklyForceResetSaving = false;
         hideGlobalLoading();
-        showUiAlert("🎉 초기화 완료", "전체 학생의 주간 횟수가 성공적으로 초기화되었습니다!", "renderClassroomDashboard('overview')");
-        renderButtons(students);
-    } catch(e) {
-        hideGlobalLoading();
-        // 실패 시 서버 최신 데이터를 다시 불러와 화면 롤백
-        if (typeof fetchFastGameData === 'function') fetchFastGameData();
-        showUiAlert("❌ 초기화 실패", e.message, "");
     }
 }
 
@@ -580,8 +602,17 @@ function toggleTeacherMode() {
 
 // 💡 3. 교사 핀번호 검증 로직 (! 제거 처리 추가)
 function checkTeacherPin(inputPin) {
-    // 시트에 저장된 값(예: !090909)에서 '!'를 떼어내고 순수 숫자만 추출합니다.
-    const correctPin = String(sysConfig.teacher_PIN || '!123456').replace('!', '').trim();
+    // 기존 저장 형식의 맨 앞 '!'만 제거하고 6자리 숫자인지 확인합니다.
+    const correctPin = String(sysConfig.teacher_PIN ?? '').trim().replace(/^!/, '');
+
+    if (!/^\d{6}$/.test(correctPin)) {
+        showUiAlert(
+            '교사 PIN 설정 필요',
+            'system 시트의 teacher_PIN을 6자리 숫자로 설정해주세요.',
+            ''
+        );
+        return;
+    }
 
     if (inputPin === correctPin) {
         isTeacherMode = true;
@@ -736,7 +767,7 @@ function renderQuestAdmin(tab, selectedQuestId = null, selectedStudent = null) {
                         ? '<input type="checkbox" class="quest-sub-chk" data-name="' + s.student_name + '" style="width:18px; height:18px; accent-color:#8B5CF6; cursor:pointer; margin-right:8px;" onchange="updateQuestBatchCount()">'
                         : '';
 
-                    const ansText = String(s.answer_text || '(텍스트 없음)').replace(/[\n\r]/g, '<br>');
+                    const ansText = escapeAuraHtml(s.answer_text || '(텍스트 없음)').replace(/\r?\n|\r/g, '<br>');
 
                     return '<div style="background:#0F172A; border:1px solid #334155; border-radius:8px; padding:15px; margin-top:10px; text-align:left;">' +
                         '  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' +
@@ -797,7 +828,7 @@ function renderQuestAdmin(tab, selectedQuestId = null, selectedStudent = null) {
                     const qInfo = questsData.find(q => String(q.quest_id) === String(s.quest_id));
                     const qTitle = qInfo ? qInfo.title : "삭제된 퀘스트";
                     const badgeColor = s.status === '승인완료' ? 'var(--Highlight)' : '#444';
-                    const ansText = String(s.answer_text || '').replace(/[\n\r]/g, '<br>');
+                    const ansText = escapeAuraHtml(s.answer_text || '').replace(/\r?\n|\r/g, '<br>');
                     let dateStr = "날짜 알 수 없음";
                     if (s.submitted_at) {
                         const d = new Date(s.submitted_at);

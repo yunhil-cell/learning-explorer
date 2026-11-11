@@ -432,12 +432,19 @@ async function runStudentAtomicTransaction(studentName, mutateFn, maxRetries = 6
                 cache: 'no-store',
                 headers: {
                     'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
+                    'Pragma': 'no-cache',
+                    // 읽은 학생 데이터의 버전 정보를 함께 요청합니다.
+                    'X-Firebase-ETag': 'true'
                 }
             });
 
             if (!readResponse.ok) {
                 throw new Error("학생 최신 데이터 조회 실패: HTTP " + readResponse.status);
+            }
+
+            const etag = readResponse.headers.get('ETag');
+            if (!etag) {
+                throw new Error('Firebase ETag을 확인할 수 없습니다.');
             }
 
             const freshData = (await readResponse.json()) || { name: studentKey };
@@ -489,18 +496,25 @@ async function runStudentAtomicTransaction(studentName, mutateFn, maxRetries = 6
                 };
             }
 
-            // 💡 3. [전체 덮어쓰기 PUT 제거 ➔ 핀포인트 PATCH 전환]
-            // weekly_... 횟수를 건드리지 않는 기능은 횟수 필드를 Firebase로 아예 전송하지 않음!
+            // 학생 한 명의 최신 데이터에 변경을 적용해 조건부 저장합니다.
             const writeResponse = await fetch(url, {
-                method: 'PATCH',
+                method: 'PUT',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'If-Match': etag
                 },
-                body: JSON.stringify(changedFields)
+                body: JSON.stringify(draft)
             });
 
+            // 다른 기기가 먼저 수정했다면 최신값을 읽고 다시 계산합니다.
+            if (writeResponse.status === 412) {
+                continue;
+            }
+
             if (!writeResponse.ok) {
-                throw new Error("학생 필드 부분 저장 실패: HTTP " + writeResponse.status);
+                throw new Error(
+                    '학생 조건부 저장 실패: HTTP ' + writeResponse.status
+                );
             }
 
             // 최신 서버 데이터에 변경된 필드만 안전 병합
@@ -956,37 +970,62 @@ async function syncFreshCurrentStudent(silent = true) {
 // 💡 [매일 오전 7시 이후 최초 1회 강제 캐시 파괴 새로고침 엔진]
 function checkDailyMorningReload() {
     try {
-        const now = new Date();
-        const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-        const kst = new Date(utc + (9 * 60 * 60 * 1000));
-        const hours = kst.getHours();
-
-        // 오전 7시 이후 감지 시
-        if (hours >= 7) {
-            const y = kst.getFullYear();
-            const m = String(kst.getMonth() + 1).padStart(2, '0');
-            const d = String(kst.getDate()).padStart(2, '0');
-            const todayKey = `${y}-${m}-${d}`;
-
-            const lastReload = localStorage.getItem('last_daily_morning_reload');
-
-            // 오늘 아직 새로고침을 안 했다면 (어제 켜둔 좀비 탭 포함)
-            if (lastReload !== todayKey) {
-                // 🛡️ 무한 새로고침 루프 방지: 날짜를 먼저 기록 후 리로드
-                localStorage.setItem('last_daily_morning_reload', todayKey);
-                const cleanUrl = window.location.origin + window.location.pathname;
-                window.location.replace(cleanUrl + '?_reload=' + Date.now());
-                return true;
-            }
+        if (document.readyState === 'loading' || document.visibilityState !== 'visible') {
+            return false;
         }
+
+        // 기기 시간대와 관계없이 한국 시간으로 판단합니다.
+        const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+        if (kst.getUTCHours() < 7) return false;
+
+        const busyIds = [
+            'detailModal', 'subModal', 'battleModal', 'uiPopup',
+            'hofModal', 'globalLoadingOverlay', 'loading'
+        ];
+
+        const hasOpenWork = busyIds.some(id => {
+            const el = document.getElementById(id);
+            return el && getComputedStyle(el).display !== 'none';
+        });
+        if (hasOpenWork) return false;
+
+        // 입력 중에는 새로고침하지 않습니다.
+        if (document.querySelector(
+            'input:focus, textarea:focus, select:focus, [contenteditable]:focus'
+        )) return false;
+
+        // 학생 데이터의 저장·동기화 대기열이 남아 있으면 연기합니다.
+        if (Object.keys(studentWriteQueues).length > 0) return false;
+
+        if (
+            (typeof battleState !== 'undefined' && battleState.isAutoRunning) ||
+            (typeof isEnteringSingleBattle !== 'undefined' && isEnteringSingleBattle) ||
+            (typeof raidEntrySaving !== 'undefined' && raidEntrySaving) ||
+            (typeof raidRecoveryPromise !== 'undefined' && raidRecoveryPromise) ||
+            (typeof weeklyForceResetSaving !== 'undefined' && weeklyForceResetSaving)
+        ) return false;
+
+        const todayKey = kst.toISOString().slice(0, 10);
+
+        if (localStorage.getItem('last_daily_morning_reload') === todayKey) {
+            return false;
+        }
+
+        // 실제로 새로고침할 때만 날짜를 기록합니다.
+        localStorage.setItem('last_daily_morning_reload', todayKey);
+
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.location.replace(cleanUrl + '?_reload=' + Date.now());
+        return true;
     } catch (e) {
-        console.error("아침 자동 새로고침 검사 예외:", e);
+        console.error('아침 자동 새로고침 검사 예외:', e);
     }
+
     return false;
 }
 
-// 스크립트 실행 즉시 7시 검사
-checkDailyMorningReload();
+// DOM과 스크립트 초기화 후 첫 새로고침 검사를 실행합니다.
+window.addEventListener('DOMContentLoaded', checkDailyMorningReload);
 
 // 자동 동기화: 화면 복귀(탭 전환/화면 켜짐) 시에는 7시 검사 및 대시보드 화면 즉시 갱신
 let studentBackgroundSyncRunning = false;
@@ -1071,10 +1110,29 @@ async function fetchFastGameData() {
             cache: 'no-store',
             headers: { 'Cache-Control': 'no-cache' }
         });
+
+        if (!res.ok) {
+            throw new Error('데이터 조회 실패: HTTP ' + res.status);
+        }
+
         const data = await res.json();
-        if (data) initGameData(data);
+        if (!data) {
+            throw new Error('게임 데이터가 없습니다.');
+        }
+
+        // 주간 초기화 확인이 끝난 뒤 학생 선택 화면을 표시합니다.
+        await initGameData(data);
+        return true;
     } catch (e) {
-        console.error("파이어베이스 데이터 로딩 실패:", e);
+        console.error('파이어베이스 데이터 로딩 실패:', e);
+
+        showUiAlert(
+            '데이터 확인 필요',
+            '최신 데이터 또는 주간 초기화를 확인하지 못했습니다.<br>통신 상태를 확인한 뒤 다시 시도해주세요.',
+            'fetchFastGameData()'
+        );
+
+        return false;
     }
 }
 
@@ -1082,7 +1140,8 @@ async function fetchFastGameData() {
 function manualRefresh() {
     showUiAlert("🔄 동기화 중...", "최신 정보를 불러옵니다.", "");
 
-    fetchFastGameData().then(() => {
+    fetchFastGameData().then(success => {
+        if (!success) return;
         if (currentStudent && window.allStudentsData) {
             currentStudent = window.allStudentsData.find(s => s.name === currentStudent.name) || currentStudent;
             if (document.getElementById('detailModal').style.display === 'flex') {
@@ -1093,7 +1152,7 @@ function manualRefresh() {
     });
 }
 
-function initGameData(data) {
+async function initGameData(data) {
     if (typeof data === 'string' && data.startsWith("Error")) { alert(data); return; }
     sysConfig = data.system.config || {};
     enhanceData = data.system.enhance || [];
@@ -1125,7 +1184,7 @@ function initGameData(data) {
     initWorldBossState();
     
     // 💡 [필수 호출] 매주 월요일 자정 주간 횟수 자동 초기화 검사 및 실행
-    checkAndPerformWeeklyReset(data);
+    await checkAndPerformWeeklyReset(data);
 
     // 💡 학생 개별 방 객체(Object Map)를 안전 변환 + 이름 키 정본 우선 + 시트 행 순서 정렬
     let studentsArray = [];
@@ -1161,100 +1220,84 @@ function initGameData(data) {
     }
 
     renderButtons(studentsArray);
+
+    // 같은 탭을 새로고침했다면 완료되지 않은 입장 차감을 복구합니다.
+    if (typeof recoverPendingRaidEntry === 'function' && !raidEntrySaving) {
+        recoverPendingRaidEntry().catch(err => {
+            console.error('레이드 입장 횟수 복구 실패:', err);
+
+            showUiAlert(
+                '레이드 복구 대기',
+                '일부 파티원의 횟수를 아직 복구하지 못했습니다.<br>통신 상태를 확인한 뒤 다시 시도해주세요.',
+                'retryPendingRaidEntry()'
+            );
+        });
+    }
 }
 
 // 💡 [정밀 계산] 디바이스 환경 무관 KST 기준 이번 주 월요일 날짜 키(YYYY-MM-DD) 반환
 function getKSTMondayKey() {
-    const now = new Date();
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const kstDate = new Date(utc + (9 * 60 * 60 * 1000));
-    const day = kstDate.getDay();
-    const diffToMonday = (day === 0 ? -6 : 1) - day;
-    kstDate.setDate(kstDate.getDate() + diffToMonday);
-    const y = kstDate.getFullYear();
-    const m = String(kstDate.getMonth() + 1).padStart(2, '0');
-    const d = String(kstDate.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const day = kst.getUTCDay();
+    kst.setUTCDate(kst.getUTCDate() + (day === 0 ? -6 : 1) - day);
+    return kst.toISOString().slice(0, 10);
 }
 
 // 💡 [신규] Firebase 기반 주간 횟수 자동 초기화 엔진 (오프셋 버그 완전 해결)
+function getWeeklyResetFields() {
+    return {
+        weekly_battles: Number(sysConfig.max_weekly_battles) || 2,
+        weekly_boss: Number(sysConfig.max_weekly_boss) || 3,
+        weekly_raid: Number(sysConfig.max_weekly_raid) || 1,
+        weekly_tower: Number(sysConfig.max_weekly_tower) || 1
+    };
+}
+
 async function checkAndPerformWeeklyReset(data) {
     if (!data || !data.students) return;
 
-    const currentMondayKey = getKSTMondayKey();
-    const lastReset = String((sysConfig && sysConfig.last_weekly_reset) || '').trim();
+    const week = getKSTMondayKey();
+    const url = 'https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json';
 
-    // 1. 이미 이번 주 월요일 키와 일치하면 절대 초기화하지 않고 즉시 종료
-    if (lastReset === currentMondayKey) return;
-
-    // 2. 최초 실행 시 또는 날짜 키가 없을 때는 학생 횟수를 보존하고 기준 날짜만 저장
-    if (!lastReset) {
-        sysConfig.last_weekly_reset = currentMondayKey;
-        fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(currentMondayKey)
-        });
-        return;
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) {
+        throw new Error('초기화 기준일 조회 실패');
     }
 
-    console.log(`🔄 주간 초기화 실행 (이전: ${lastReset} -> 이번 주: ${currentMondayKey})`);
+    const last = await response.json();
+    const students = firebaseCollectionToArray(data.students);
+    const limits = getWeeklyResetFields();
 
-    const maxBattles = Number(sysConfig.max_weekly_battles) || 2;
-    const maxBoss = Number(sysConfig.max_weekly_boss) || 3;
-    const maxRaid = Number(sysConfig.max_weekly_raid) || 1;
-    const maxTower = Number(sysConfig.max_weekly_tower) || 1;
+    for (const s of students) {
+        if (!s || !s.name) continue;
 
-    let studentsList = Array.isArray(data.students) ? data.students : Object.values(data.students);
+        const tx = await runStudentAtomicTransaction(s.name, student => {
+            // 이미 이번 주에 처리했다면 사용 후 잔여 횟수를 유지합니다.
+            if (String(student.weekly_reset_key || '') >= week) {
+                return {};
+            }
 
-    studentsList.forEach(s => {
-        if (!s || !s.name) return;
-        s.weekly_battles = maxBattles;
-        s.weekly_boss = maxBoss;
-        s.weekly_raid = maxRaid;
-        s.weekly_tower = maxTower;
-    });
+            // 기준일이 없거나 이미 이번 주이면 기존 횟수를 보존합니다.
+            if (last && String(last) < week) {
+                Object.assign(student, limits);
+            }
 
-    sysConfig.last_weekly_reset = currentMondayKey;
-
-    try {
-        const resetPayload = {
-            weekly_battles: maxBattles,
-            weekly_boss: maxBoss,
-            weekly_raid: maxRaid,
-            weekly_tower: maxTower
-        };
-        const updatePromises = studentsList.map(s => {
-            if (!s || !s.name) return Promise.resolve();
-            const sName = encodeURIComponent(String(s.name).trim());
-            return fetch(`https://learning-explorer-default-rtdb.firebaseio.com/gameData/students/${sName}.json`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(resetPayload)
-            });
+            // 횟수와 초기화 기준일을 같은 트랜잭션에서 저장합니다.
+            student.weekly_reset_key = week;
+            return {};
         });
 
-        // 🛡️ 자동 초기화 시에도 학생 전원 응답 상태 검증 후 날짜 저장
-        const responses = await Promise.all(updatePromises);
-        const hasFailed = responses.some(res => res && !res.ok);
-        if (hasFailed) {
-            throw new Error("일부 학생의 자동 초기화 요청 실패");
-        }
-
-        const dateRes = await fetch('https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(currentMondayKey)
-        });
-
-        if (!dateRes.ok) {
-            throw new Error("기준 날짜 저장 실패: HTTP " + dateRes.status);
-        }
-
-        console.log("✅ Firebase 주간 횟수 정기 초기화 완료!");
-    } catch (e) {
-        console.error("❌ 주간 초기화 Firebase 저장 실패:", e);
+        Object.assign(s, tx.student);
     }
+
+    // 학생 전원의 처리가 끝난 뒤에만 전체 기준일을 확정합니다.
+    await runFirebasePathAtomicTransaction(url, current => ({
+        data: typeof current === 'string' && current > week
+            ? current
+            : week
+    }));
+
+    sysConfig.last_weekly_reset = week;
 }
 
 // 💡 백그라운드 이미지 캐싱 함수 (화면에는 보이지 않음)
@@ -2367,12 +2410,12 @@ function showStudentQuestDetail(questId) {
     const isApproved = mySub && (mySub.status === '승인완료' || mySub.status === '승인 완료 ✅');
     const isRequireText = String(q.require_text).toLowerCase() === 'true';
 
-    let myAnswer = mySub ? mySub.answer_text : '';
+    let myAnswer = escapeAuraHtml(mySub ? mySub.answer_text : '');
 
     let inputHtml = '';
     if (isSubmitted) {
         // 💡 이미 제출했다면 텍스트를 읽기 전용으로만 표시
-        const ansDisp = myAnswer ? String(myAnswer).replace(/[\n\r]/g, '<br>') : '(제출한 텍스트가 없습니다)';
+        const ansDisp = myAnswer ? String(myAnswer).replace(/\r?\n|\r/g, '<br>') : '(제출한 텍스트가 없습니다)';
         let btnMsg = isApproved ? '✅ 이미 승인된 의뢰입니다' : '⏳ 승인 대기 중... (수정 불가)';
         let btnBg = isApproved ? '#059669' : '#D97706';
 
