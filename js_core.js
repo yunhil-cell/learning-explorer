@@ -1257,6 +1257,13 @@ async function checkAndPerformWeeklyReset(data) {
     if (!data || !data.students) return;
 
     const week = getKSTMondayKey();
+    const loadedWeek = String(
+        data.system?.config?.last_weekly_reset || ''
+    ).trim();
+
+    // 처음 가져온 데이터에서 이번 주 초기화가 완료됐으면 재조회하지 않습니다.
+    if (loadedWeek >= week) return;
+
     const url = 'https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json';
 
     const response = await fetch(url, { cache: 'no-store' });

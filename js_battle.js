@@ -842,11 +842,19 @@ function setupPlayerSkills() {
             member.box.style.aspectRatio = '1';
             member.box.style.marginBottom = '0';
 
-            // 같은 배치 칸을 기준으로 플레이어 100%, 용병 80%입니다.
+            // 플레이어는 100%, 용병은 배치 칸의 최대 80%로 표시합니다.
             const size = member.slot === 0 ? '100%' : '80%';
             member.image.style.setProperty('width', size, 'important');
             member.image.style.setProperty('height', size, 'important');
             member.image.style.objectFit = 'contain';
+
+            if (member.slot !== 0) {
+                // 현재 용병 원본 48×48 기준, 최대 2배까지만 확대합니다.
+                const mercMaxSize = 48 * 2;
+                member.image.style.setProperty('max-width', mercMaxSize + 'px', 'important');
+                member.image.style.setProperty('max-height', mercMaxSize + 'px', 'important');
+                member.image.style.imageRendering = 'pixelated';
+            }
         });
     }
 
