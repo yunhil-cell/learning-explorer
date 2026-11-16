@@ -465,12 +465,12 @@ async function saveSingleBattleExit(kind, nowTime) {
         }
 
         // 기본 한도와 관계없이 차감했던 1회만 돌려줍니다.
-        // 새 주 초기화 표식이 있다면 이전 주 횟수는 더하지 않습니다.
+        // 새 주 초기화 표식이 더 최신인 경우에만 이전 주 횟수를 더하지 않습니다.
         if (
             !isBoss &&
-            (
-                !student.weekly_reset_key ||
-                student.weekly_reset_key === entry.week
+            !(
+                student.weekly_reset_key &&
+                String(student.weekly_reset_key) > String(entry.week)
             )
         ) {
             student.weekly_battles =
@@ -556,10 +556,10 @@ async function fleeBattle() {
 
         await syncFreshCurrentStudent(true);
 
-        showUiAlert(
+        showUiConfirm(
             "❌ 저장 오류",
-            "후퇴 정보를 저장하지 못했습니다: " + err.message,
-            "renderDashboard()"
+            "후퇴 정보를 저장하지 못했습니다.<br>다시 시도하시겠습니까?<br><span style='font-size:0.85em; color:#aaa;'>" + err.message + "</span>",
+            "fleeBattle()"
         );
     }
 }
@@ -1657,10 +1657,10 @@ function showBattleResult(isWin) {
 
             await syncFreshCurrentStudent(true);
 
-            showUiAlert(
+            showUiConfirm(
                 "❌ 저장 오류",
-                "패배 정보를 저장하지 못했습니다: " + err.message,
-                "document.getElementById('battleModal').style.display = 'none'; renderDashboard();"
+                "패배 정보를 저장하지 못했습니다.<br>다시 시도하시겠습니까?<br><span style='font-size:0.85em; color:#aaa;'>" + err.message + "</span>",
+                "showBattleResult(false)"
             );
         });
 

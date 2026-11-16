@@ -1237,7 +1237,8 @@ async function initGameData(data) {
 
 // 💡 [정밀 계산] 디바이스 환경 무관 KST 기준 이번 주 월요일 날짜 키(YYYY-MM-DD) 반환
 function getKSTMondayKey() {
-    const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    // 월요일 오전 6시(KST)를 주간 전환 기준으로 사용합니다. (9시간 - 6시간 = +3시간)
+    const kst = new Date(Date.now() + 3 * 60 * 60 * 1000);
     const day = kst.getUTCDay();
     kst.setUTCDate(kst.getUTCDate() + (day === 0 ? -6 : 1) - day);
     return kst.toISOString().slice(0, 10);
@@ -1261,8 +1262,13 @@ async function checkAndPerformWeeklyReset(data) {
         data.system?.config?.last_weekly_reset || ''
     ).trim();
 
-    // 처음 가져온 데이터에서 이번 주 초기화가 완료됐으면 재조회하지 않습니다.
-    if (loadedWeek >= week) return;
+    const students = firebaseCollectionToArray(data.students);
+    const targetStudents = loadedWeek >= week
+        ? students.filter(s => s && s.name && String(s.weekly_reset_key || '').trim() < week)
+        : students.filter(s => s && s.name);
+
+    // 전체 기준일과 모든 학생의 개별 초기화 키가 이번 주 이상이면 즉시 종료합니다.
+    if (loadedWeek >= week && targetStudents.length === 0) return;
 
     const url = 'https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config/last_weekly_reset.json';
 
@@ -1272,20 +1278,19 @@ async function checkAndPerformWeeklyReset(data) {
     }
 
     const last = await response.json();
-    const students = firebaseCollectionToArray(data.students);
     const limits = getWeeklyResetFields();
 
-    for (const s of students) {
-        if (!s || !s.name) continue;
-
+    for (const s of targetStudents) {
         const tx = await runStudentAtomicTransaction(s.name, student => {
+            const studentWeek = String(student.weekly_reset_key || '').trim();
+
             // 이미 이번 주에 처리했다면 사용 후 잔여 횟수를 유지합니다.
-            if (String(student.weekly_reset_key || '') >= week) {
+            if (studentWeek >= week) {
                 return {};
             }
 
-            // 기준일이 없거나 이미 이번 주이면 기존 횟수를 보존합니다.
-            if (last && String(last) < week) {
+            // 전체 기준일이 이전 주였거나, 학생 개인 키가 이전 주 날짜로 누락된 경우 초기화합니다.
+            if ((last && String(last) < week) || (studentWeek !== '' && studentWeek < week)) {
                 Object.assign(student, limits);
             }
 
@@ -1297,12 +1302,14 @@ async function checkAndPerformWeeklyReset(data) {
         Object.assign(s, tx.student);
     }
 
-    // 학생 전원의 처리가 끝난 뒤에만 전체 기준일을 확정합니다.
-    await runFirebasePathAtomicTransaction(url, current => ({
-        data: typeof current === 'string' && current > week
-            ? current
-            : week
-    }));
+    // 전체 기준일이 이전 주였다면 학생 전원의 처리가 끝난 뒤 기준일을 확정합니다.
+    if (!last || String(last) < week) {
+        await runFirebasePathAtomicTransaction(url, current => ({
+            data: typeof current === 'string' && current > week
+                ? current
+                : week
+        }));
+    }
 
     sysConfig.last_weekly_reset = week;
 }

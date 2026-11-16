@@ -974,7 +974,8 @@ function resetWeeklyBattles() {
     config[String(row[0]).trim()] = row[1];
   });
 
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  // 프론트엔드와 동일하게 월요일 오전 6시(KST)를 주간 전환 기준으로 사용합니다.
+  const kst = new Date(Date.now() + 3 * 60 * 60 * 1000);
   const day = kst.getUTCDay();
   kst.setUTCDate(kst.getUTCDate() + (day === 0 ? -6 : 1) - day);
   const week = kst.toISOString().slice(0, 10);
@@ -1038,13 +1039,15 @@ function resetWeeklyBattles() {
         throw new Error(name + ' Firebase 학생 데이터 없음');
       }
 
+      const studentWeek = String(student.weekly_reset_key || '').trim();
+
       // 프론트나 다른 트리거가 이미 처리했다면 다시 충전하지 않습니다.
-      if (String(student.weekly_reset_key || '') >= week) {
+      if (studentWeek >= week) {
         saved = student;
         break;
       }
 
-      if (last && String(last) < week) {
+      if ((last && String(last) < week) || (studentWeek !== '' && studentWeek < week)) {
         Object.assign(student, limits);
       }
       student.weekly_reset_key = week;
