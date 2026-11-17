@@ -111,6 +111,7 @@
             <span id="monsterHpText" style="color: #F8FAFC; font-weight:bold; font-size:0.85em;">HP: ? / ?</span>
           </div>
           <div class="stage-hp-track">
+            <div id="monsterHpTrail" class="hp-trail-fill"></div>
             <div id="monsterHpBar" class="stage-hp-fill-enemy"></div>
           </div>
         </div>
@@ -157,27 +158,35 @@
         </div>
       </div>
 
-      <!-- 💡 3. 하단 플레이어 상태창 & 컴팩트 로그 패널 -->
+      <!-- 💡 3. 하단 4등분 상태창(아군 3칸) & 컴팩트 로그 패널(1칸) -->
       <div class="battle-bottom-panel">
-        <!-- 싱글용 상태창 -->
-        <div id="bottomPlayerStatus" class="bottom-player-status">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <div id="battlePlayerName" class="bottom-player-name">플레이어</div>
-            <div id="playerHpText" class="bottom-player-hp">HP: ? / ?</div>
+        <div class="bottom-allies-area">
+          <!-- 싱글용 3칸 (플레이어 + 동료1 + 동료2) -->
+          <div id="bottomSingleAllies" class="bottom-single-allies">
+            <div id="bottomPlayerStatus" class="bottom-player-status">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; gap:4px;">
+                <div id="battlePlayerName" class="bottom-player-name">플레이어</div>
+                <div id="playerHpText" class="bottom-player-hp">HP: ? / ?</div>
+              </div>
+              <div class="bottom-hp-track">
+                <div id="playerHpTrail" class="hp-trail-fill"></div>
+                <div id="playerHpBar" class="bottom-hp-fill-player"></div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-top:6px;">
+                <div id="playerStatusIcons" style="display:flex; gap:3px; min-height:20px; flex-wrap:wrap;"></div>
+                <div id="playerBattleSkills" style="display:flex; gap:4px; justify-content:flex-end; min-height:36px;"></div>
+              </div>
+            </div>
+
+            <div id="bottomMerc1Status" class="bottom-merc-status"></div>
+            <div id="bottomMerc2Status" class="bottom-merc-status"></div>
           </div>
-          <div class="bottom-hp-track">
-            <div id="playerHpBar" class="bottom-hp-fill-player"></div>
-          </div>
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px;">
-            <div id="playerStatusIcons" style="display:flex; gap:4px; min-height:22px; flex-wrap:wrap;"></div>
-            <div id="playerBattleSkills" style="display:flex; gap:6px; justify-content:flex-end; min-height:42px;"></div>
-          </div>
+
+          <!-- 3인 파티용 3칸 -->
+          <div id="bottomPartyStatus" class="bottom-party-status" style="display:none;"></div>
         </div>
 
-        <!-- 💡 [신규] 3인 파티용 상태창 (알아서 3등분 됨) -->
-        <div id="bottomPartyStatus" class="bottom-party-status" style="display:none;"></div>
-
-        <!-- 우측 로그 패널 -->
+        <!-- 우측 1칸: 컴팩트 로그 패널 -->
         <div class="bottom-log-panel">
           <div id="battleLog" class="battle-log-compact"></div>
           <button class="btn-main battle-flee-btn" onclick="fleeBattle()">후퇴 (도망)</button>

@@ -1071,6 +1071,7 @@ filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
 
 .stage-boss-bar-wrap { margin-top: 6px; }
 .stage-hp-track {
+  position: relative;
   width: 100%;
   background: #1E293B;
   height: 10px;
@@ -1078,11 +1079,23 @@ filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
   border: 1px solid #334155;
   overflow: hidden;
 }
+.hp-trail-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: #FFFFFF;
+  z-index: 1;
+  transition: width 0.4s ease-out 0.45s;
+}
 .stage-hp-fill-enemy {
+  position: relative;
+  z-index: 2;
   width: 100%;
   background: linear-gradient(90deg, #F59E0B, #EF4444);
   height: 100%;
-  transition: width 0.3s;
+  transition: width 0.15s ease-out;
 }
 
 /* 횡스크롤 전투 필드 (고정 높이 + 프레임 밀착) */
@@ -1242,96 +1255,112 @@ filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
   flex-wrap: wrap;
 }
 
-/* 💡 하단 플레이어 상태 & 컴팩트 로그 패널 (여백 없이 칸 구분) */
+/* 💡 하단 4등분 레이아웃 (아군 3칸 + 전투 로그 1칸) */
 .battle-bottom-panel {
-  display: flex;
+  display: grid;
+  grid-template-columns: 3fr 1fr;
   gap: 0;
   align-items: stretch;
   background: #0F172A;
 }
-.bottom-player-status {
-  flex: 1;
-  background: #0F172A;
-  border: none;
+.bottom-allies-area {
+  min-width: 0;
   border-right: 2px solid #334155;
-  border-radius: 0;
-  padding: 10px 14px;
+  display: flex;
+}
+.bottom-single-allies {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.bottom-player-status,
+.bottom-merc-status {
+  min-width: 0;
+  background: #0F172A;
+  border-right: 1px solid #334155;
+  padding: 8px 10px;
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.bottom-merc-status:last-child {
+  border-right: none;
 }
 .bottom-party-status {
-  flex: 1.5;
-  display: flex;
-  gap: 6px;
-  padding: 8px 10px;
-  border-right: 2px solid #334155;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
   background: #0F172A;
 }
 .bottom-log-panel {
-  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 6px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: #0B1120;
 }
 .bottom-player-name {
   color: var(--Highlight);
   font-weight: bold;
-  font-size: 1.05em;
+  font-size: 0.92em;
+  min-width: 0;
 }
 .bottom-player-hp {
   color: #34D399;
   font-weight: bold;
-  font-size: 0.9em;
+  font-size: 0.78em;
+  white-space: nowrap;
 }
 .bottom-hp-track {
+  position: relative;
   width: 100%;
   background: #1E293B;
-  height: 10px;
-  border-radius: 5px;
+  height: 9px;
+  border-radius: 4px;
   border: 1px solid #334155;
   overflow: hidden;
 }
 .bottom-hp-fill-player {
+  position: relative;
+  z-index: 2;
   width: 100%;
   background: linear-gradient(90deg, #10B981, #34D399);
   height: 100%;
-  transition: width 0.3s;
-}
-
-.bottom-log-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  transition: width 0.15s ease-out;
 }
 .battle-log-compact {
-  height: 80px;
+  height: 82px;
   background: rgba(0, 0, 0, 0.6);
   border: 1px solid #1E293B;
-  border-radius: 8px;
-  padding: 8px 12px;
+  border-radius: 6px;
+  padding: 6px 8px;
   overflow-y: auto;
   text-align: left;
-  font-size: 0.88em;
+  font-size: 0.76em;
   color: #CBD5E1;
-  line-height: 1.4;
+  line-height: 1.35;
+  word-break: keep-all;
 }
 .battle-flee-btn {
   margin-top: 0 !important;
-  padding: 8px !important;
+  padding: 6px !important;
   background: #334155 !important;
   color: #E2E8F0 !important;
-  font-size: 0.9em !important;
-  border-radius: 8px !important;
+  font-size: 0.82em !important;
+  border-radius: 6px !important;
 }
 
 @media (max-width: 768px) {
   .battle-stage { height: 210px; min-height: 210px; padding: 12px 14px; }
   .battle-hero-avatar, .battle-hero-img { width: 95px !important; height: 95px !important; }
   .monster-stage-anchor { min-height: 140px; }
-  .battle-bottom-panel { flex-direction: column; gap: 0; }
-  .bottom-player-status, .bottom-party-status { border-right: none; border-bottom: 2px solid #334155; }
-  .bottom-party-status { flex-direction: row; flex-wrap: wrap; }
+  .battle-bottom-panel { grid-template-columns: 1fr; }
+  .bottom-allies-area { border-right: none; border-bottom: 2px solid #334155; }
+  .bottom-player-status, .bottom-merc-status { padding: 6px 7px; }
 }
 
 /* 💡 신규: 공지사항 알림 N 뱃지 스타일 */

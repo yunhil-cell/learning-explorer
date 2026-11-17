@@ -241,8 +241,8 @@ async function enterBattle(monsterId, isBoss = false) {
     closeSubModal();
     document.getElementById('singlePlayerContainer').style.display = 'block';
     document.getElementById('partyPlayerContainer').style.display = 'none';
-    document.getElementById('bottomPlayerStatus').style.display = 'block'; // 💡 싱글 하단 켬
-    document.getElementById('bottomPartyStatus').style.display = 'none';   // 💡 파티 하단 끔
+    document.getElementById('bottomSingleAllies').style.display = 'grid';
+    document.getElementById('bottomPartyStatus').style.display = 'none';
     document.getElementById('raidStageInfo').style.display = 'none';
 
     const pStats = getPlayerTotalStats();
@@ -403,15 +403,37 @@ async function enterBattle(monsterId, isBoss = false) {
     }
 }
 
-// --- 2. 체력바 UI 갱신 (에러 원인 복구) ---
+// 체력바와 지연 흰색 잔상 바를 함께 갱신하는 헬퍼 (감소 시 0.45초 지연, 회복/초기화 시 즉시 반영)
+function setHpBarWidth(barEl, trailEl, pct) {
+    const clamped = Math.max(0, Math.min(100, pct));
+    if (trailEl) {
+        const prev = parseFloat(trailEl.style.width);
+        const cur = Number.isFinite(prev) ? prev : 100;
+        trailEl.style.transitionDelay = clamped < cur ? '0.45s' : '0s';
+        trailEl.style.width = clamped + '%';
+    }
+    if (barEl) {
+        barEl.style.width = clamped + '%';
+    }
+}
+
+// --- 2. 체력바 UI 갱신 ---
 function updateHpBars() {
     const pPercent = Math.max(0, (battleState.playerCurrentHp / battleState.playerMaxHp) * 100);
     const mPercent = Math.max(0, (battleState.monsterCurrentHp / battleState.monsterMaxHp) * 100);
 
-    document.getElementById('playerHpBar').style.width = pPercent + '%';
+    setHpBarWidth(
+        document.getElementById('playerHpBar'),
+        document.getElementById('playerHpTrail'),
+        pPercent
+    );
     document.getElementById('playerHpText').innerText = 'HP: ' + battleState.playerCurrentHp + ' / ' + battleState.playerMaxHp;
 
-    document.getElementById('monsterHpBar').style.width = mPercent + '%';
+    setHpBarWidth(
+        document.getElementById('monsterHpBar'),
+        document.getElementById('monsterHpTrail'),
+        mPercent
+    );
     document.getElementById('monsterHpText').innerText = 'HP: ' + battleState.monsterCurrentHp + ' / ' + battleState.monsterMaxHp;
 
     // 💡 체력이 바뀔 때마다 상태이상 뱃지도 같이 다시 그려줍니다!
@@ -921,14 +943,54 @@ function setupPlayerSkills() {
             }
         }
     });
+
+    // 하단 2·3번 칸에 원정대 동료 1·2 상태 카드 렌더링
+    const mercSlots = [
+        { elId: 'bottomMerc1Status', mercId: currentStudent.party_m1, skillContainerId: 'merc1BattleSkills', label: '동료 1' },
+        { elId: 'bottomMerc2Status', mercId: currentStudent.party_m2, skillContainerId: 'merc2BattleSkills', label: '동료 2' }
+    ];
+    const optNameMap = {
+        'HP_UP': '건강', 'ATK_UP': '공격', 'DEF_UP': '방어', 'LUK_UP': '행운',
+        'CRIT_UP': '치명타', 'CRIT_DMG_UP': '치명피해', 'DAMAGE_REDUCE': '피해감소',
+        'DEF_PEN': '방어관통', 'DMG_UP': '피해증가', 'SKILL_DMG': '스킬피해',
+        'HEAL_UP': '회복량', 'EVD_UP': '회피'
+    };
+
+    mercSlots.forEach(slot => {
+        const el = document.getElementById(slot.elId);
+        if (!el) return;
+        const mObj = slot.mercId && (mercenariesData || []).find(m => String(m.merc_id).trim() === String(slot.mercId).trim());
+        if (!mObj) {
+            el.innerHTML =
+                '<div style="color:#64748B; font-size:0.8em; font-weight:bold;">[' + slot.label + ']</div>' +
+                '<div style="color:#475569; font-size:0.8em; text-align:center; margin:auto 0;">미배치</div>' +
+                '<div id="' + slot.skillContainerId + '" style="min-height:36px;"></div>';
+            return;
+        }
+        const tier = String(mObj.tier || 'C').toUpperCase();
+        const tierColor = tier === 'S' ? '#F59E0B' : (tier === 'A' ? '#A855F7' : (tier === 'B' ? '#3B82F6' : '#10B981'));
+        const optType = String(mObj.option_type || '').toUpperCase();
+        const optName = optNameMap[optType] || optType;
+        const optVal = String(mObj.option_calc_type || '').toUpperCase() === 'PERCENT'
+            ? Math.round((Number(mObj.option_value) || 0) * 100) + '%'
+            : (mObj.option_value || 0);
+
+        el.innerHTML =
+            '<div style="display:flex; justify-content:space-between; align-items:center; gap:4px;">' +
+            '  <div style="color:#F8FAFC; font-weight:bold; font-size:0.9em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + mObj.name + '</div>' +
+            '  <span style="color:' + tierColor + '; font-weight:bold; font-size:0.75em; white-space:nowrap;">[' + tier + '급]</span>' +
+            '</div>' +
+            '<div style="display:flex; justify-content:space-between; align-items:flex-end; gap:6px; margin-top:6px;">' +
+            '  <div style="color:#94A3B8; font-size:0.75em; line-height:1.3;">' + (optName ? optName + ' +' + optVal : '원정대 지원') + '</div>' +
+            '  <div id="' + slot.skillContainerId + '" style="display:flex; gap:4px; justify-content:flex-end; min-height:36px;"></div>' +
+            '</div>';
+    });
+
     renderBattleSkillsUI();
 }
 
 function renderBattleSkillsUI() {
-    const container = document.getElementById('playerBattleSkills');
-    let html = '';
-
-    battleState.skills.forEach(sk => {
+    const buildSkillBadge = (sk) => {
         const isReady = sk.currentCd === 0;
         const iconSrc = sk.icon_url || 'https://via.placeholder.com/50/222222/FFFFFF?text=SK';
         const filterStyle = isReady ? '' : 'filter: grayscale(100%) opacity(0.6);';
@@ -937,16 +999,29 @@ function renderBattleSkillsUI() {
         const isAdvSkill = String(sk.skill_id).startsWith('SK_ADV_');
         const boxRadius = isAdvSkill ? '50%' : '8px';
         const imgRadius = isAdvSkill ? '50%' : '6px';
-        const borderStyle = isReady ? 'border: 2px solid ' + bColor + '; box-shadow: 0 0 ' + (isAdvSkill ? '15px ' : '10px ') + bColor + ';' : 'border: 2px solid #555;';
-        const overlay = isReady ? '' : '<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:1.8em; font-weight:bold; color:white; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;">' + sk.currentCd + '</div>';
+        const borderStyle = isReady ? 'border: 2px solid ' + bColor + '; box-shadow: 0 0 ' + (isAdvSkill ? '12px ' : '8px ') + bColor + ';' : 'border: 2px solid #555;';
+        const overlay = isReady ? '' : '<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:1.3em; font-weight:bold; color:white; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;">' + sk.currentCd + '</div>';
 
-        html +=
-            '<div style="position:relative; width:50px; height:50px; border-radius:' + boxRadius + '; background:#111; ' + borderStyle + ' ' + filterStyle + ' transition: 0.3s; overflow:hidden;">' +
+        return '<div style="position:relative; width:36px; height:36px; border-radius:' + boxRadius + '; background:#111; ' + borderStyle + ' ' + filterStyle + ' transition: 0.3s; overflow:hidden;">' +
             '  <img src="' + iconSrc + '" style="width:100%; height:100%; object-fit:contain; border-radius:' + imgRadius + '; padding:2px;">' +
             '  ' + overlay +
             '</div>';
+    };
+
+    const slots = [
+        { ownerType: 'hero', elId: 'playerBattleSkills' },
+        { ownerType: 'm1', elId: 'merc1BattleSkills' },
+        { ownerType: 'm2', elId: 'merc2BattleSkills' }
+    ];
+
+    slots.forEach(s => {
+        const container = document.getElementById(s.elId);
+        if (!container) return;
+        container.innerHTML = battleState.skills
+            .filter(sk => sk.ownerType === s.ownerType)
+            .map(buildSkillBadge)
+            .join('');
     });
-    container.innerHTML = html;
 }
 
 // 💡 [신규] 서든데스 배율 계산 헬퍼 함수
@@ -2368,8 +2443,8 @@ async function enterRaid(dungeonId) {
 
     document.getElementById('singlePlayerContainer').style.display = 'none';
     document.getElementById('partyPlayerContainer').style.display = 'flex';
-    document.getElementById('bottomPlayerStatus').style.display = 'none';  // 💡 싱글 하단 끔
-    document.getElementById('bottomPartyStatus').style.display = 'flex';   // 💡 파티 하단 켬
+    document.getElementById('bottomSingleAllies').style.display = 'none';
+    document.getElementById('bottomPartyStatus').style.display = 'grid';
     document.getElementById('battlePlayerName').innerText = "모험가 파티";
 
     // 💡 [ID 보존] 새 battleState 객체 리터럴 내부에 raidSessionId를 직접 보존!
@@ -2496,12 +2571,13 @@ function renderPartyUI() {
 
         // 2. 하단 상태창에는 3등분된 정보 카드 렌더링
         statusHtml += `
-            <div id="partyStatusCard_${p.uiIndex}" style="flex:1; background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; justify-content: space-between; opacity: ${opacity};">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                    <div style="color:var(--${getJobColor(sData.blessing)}); font-weight:bold; font-size:0.9em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px;">${sData.name}</div>
-                    <div id="partyHpText_${p.uiIndex}" style="color:#34D399; font-weight:bold; font-size:0.8em;">${p.currentHp}</div>
+            <div id="partyStatusCard_${p.uiIndex}" style="min-width:0; background: #0F172A; border-right: ${index < 2 ? '1px solid #334155' : 'none'}; padding: 8px 10px; display: flex; flex-direction: column; justify-content: space-between; opacity: ${opacity};">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; gap:4px;">
+                    <div style="color:var(--${getJobColor(sData.blessing)}); font-weight:bold; font-size:0.9em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sData.name}</div>
+                    <div id="partyHpText_${p.uiIndex}" style="color:#34D399; font-weight:bold; font-size:0.78em; white-space:nowrap;">${p.currentHp} / ${p.maxHp}</div>
                 </div>
-                <div class="bottom-hp-track" style="height:6px; margin-bottom:6px; background:#1E293B; border:1px solid #334155; border-radius:3px; overflow:hidden;">
+                <div class="bottom-hp-track" style="margin-bottom:6px;">
+                    <div id="partyHpTrail_${p.uiIndex}" class="hp-trail-fill" style="width: ${hpPercent}%;"></div>
                     <div id="partyHpBar_${p.uiIndex}" class="bottom-hp-fill-player" style="width: ${hpPercent}%;"></div>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:4px;">
@@ -2520,10 +2596,13 @@ function renderPartyUI() {
 
 function updatePartyHpBars() {
     battleState.party.forEach(p => {
-        if (p.isDead) return;
         const hpPercent = Math.max(0, (p.currentHp / p.maxHp) * 100);
-        document.getElementById(`partyHpBar_${p.uiIndex}`).style.width = hpPercent + '%';
-        document.getElementById(`partyHpText_${p.uiIndex}`).innerText = `HP: ${p.currentHp} / ${p.maxHp}`;
+        setHpBarWidth(
+            document.getElementById(`partyHpBar_${p.uiIndex}`),
+            document.getElementById(`partyHpTrail_${p.uiIndex}`),
+            hpPercent
+        );
+        document.getElementById(`partyHpText_${p.uiIndex}`).innerText = `${p.currentHp} / ${p.maxHp}`;
 
         let sHtml = p.effects.map(eff => `<span>${effectIconMap[eff.type] || '✨'}</span>`).join('');
         document.getElementById(`partyStatus_${p.uiIndex}`).innerHTML = sHtml;
@@ -2578,7 +2657,11 @@ function startRaidStage() {
     mImg.classList.add('pixelated-monster');
 
     renderMonsterSkillsUI();
-    document.getElementById('monsterHpBar').style.width = '100%';
+    setHpBarWidth(
+        document.getElementById('monsterHpBar'),
+        document.getElementById('monsterHpTrail'),
+        100
+    );
     document.getElementById('monsterHpText').innerText = `HP: ${battleState.monsterMaxHp} / ${battleState.monsterMaxHp}`;
 
     logBattle(`[${currentRaidStage}계층] <b>${targetMonster.name}</b> 등장!`);
@@ -2839,7 +2922,11 @@ function raidPlayerTurnAuto() {
                 battleState.monsterCurrentHp = Math.max(0, battleState.monsterCurrentHp - finalDmg);
                 logBattle(`${hitCount > 1 ? "&lt;" + h + "타&gt; " : ""}${isCritHit ? "💥치명타! " : ""}적에게 ${finalDmg} 피해!`);
 
-                document.getElementById('monsterHpBar').style.width = (battleState.monsterCurrentHp / battleState.monsterMaxHp * 100) + '%';
+                setHpBarWidth(
+                    document.getElementById('monsterHpBar'),
+                    document.getElementById('monsterHpTrail'),
+                    (battleState.monsterCurrentHp / battleState.monsterMaxHp) * 100
+                );
                 document.getElementById('monsterHpText').innerText = `HP: ${battleState.monsterCurrentHp} / ${battleState.monsterMaxHp}`;
                 playAnim('battleMonsterImg', 'anim-damage', 250);
             }, effectDelay + (250 * h));
@@ -2918,7 +3005,11 @@ function raidMonsterTurnAuto() {
         } // for문 끝
     } // 💡 isRoundEnd 괄호 닫기
 
-    document.getElementById('monsterHpBar').style.width = (battleState.monsterCurrentHp / battleState.monsterMaxHp * 100) + '%';
+    setHpBarWidth(
+        document.getElementById('monsterHpBar'),
+        document.getElementById('monsterHpTrail'),
+        (battleState.monsterCurrentHp / battleState.monsterMaxHp) * 100
+    );
     document.getElementById('monsterHpText').innerText = `HP: ${battleState.monsterCurrentHp} / ${battleState.monsterMaxHp}`;
 
     if (battleState.monsterCurrentHp <= 0) {
@@ -3511,8 +3602,8 @@ async function startTower() {
     document.getElementById('singlePlayerContainer').style.display = 'block';
     document.getElementById('partyPlayerContainer').style.display = 'none';
 
-    // 레이드에서 숨겼던 대표 상태창을 다시 표시합니다.
-    document.getElementById('bottomPlayerStatus').style.display = 'block';
+    // 레이드에서 숨겼던 싱글 하단 3칸을 다시 표시합니다.
+    document.getElementById('bottomSingleAllies').style.display = 'grid';
     document.getElementById('bottomPartyStatus').style.display = 'none';
 
     document.getElementById('raidStageInfo').style.display = 'block';
@@ -3833,8 +3924,8 @@ async function startWorldBossRaid(wbId) {
     document.getElementById('singlePlayerContainer').style.display = 'block';
     document.getElementById('partyPlayerContainer').style.display = 'none';
 
-    // 레이드에서 숨겼던 대표 상태창을 다시 표시합니다.
-    document.getElementById('bottomPlayerStatus').style.display = 'block';
+    // 레이드에서 숨겼던 싱글 하단 3칸을 다시 표시합니다.
+    document.getElementById('bottomSingleAllies').style.display = 'grid';
     document.getElementById('bottomPartyStatus').style.display = 'none';
 
     document.getElementById('raidStageInfo').style.display = 'block';
