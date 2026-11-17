@@ -1619,7 +1619,7 @@ font-weight: bold;
 }
 
 .battle-stage.anim-stage-pan {
-    background-size: 120% 105% !important;
+    background-size: 125% auto !important;
     animation: stagePanMove var(--enc-dur, 1.2s) ease-out forwards;
 }
 
