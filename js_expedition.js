@@ -776,7 +776,7 @@ function openAuraWardrobe() {
             renderAuraLayerHtml(preview) +
             (skinUrl
                 ? '<img class="avatar-skin" src="' + escapeAuraHtml(skinUrl) +
-                  '" alt="" style="width:100%; height:100%; object-fit:contain; transform:scaleX(-1);">'
+                  '" alt="" style="width:100%; height:100%; object-fit:contain;">'
                 : '') +
             '</div>' +
             '<p><b>' + escapeAuraHtml(aura.name || id) + '</b></p>' +
@@ -950,7 +950,7 @@ function openWardrobe(tab = 'skin') {
             '<div style="' + borderStyle + ' border-radius:12px; padding:10px 6px; text-align:center; cursor:pointer; transition:0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.03);" ' +
             'onmouseover="this.style.transform=\'scale(1.04)\'" onmouseout="this.style.transform=\'none\'" ' +
             'onclick="showSkinDetail(\'' + skin.skin_id + '\')">' +
-            '  <img src="' + skin.skin_url + '" style="width:75px; height:75px; object-fit:contain; margin-bottom:6px; transform: scaleX(-1);">' +
+            '  <img src="' + skin.skin_url + '" style="width:75px; height:75px; object-fit:contain; margin-bottom:6px;">' +
             '  <div style="font-size:0.85em; ' + textStyle + ' word-break:keep-all; line-height:1.2;">' + skin.name + '</div>' +
             '  ' + statusBadge +
             '</div>';
@@ -1005,7 +1005,7 @@ function showSkinDetail(skinId) {
         '<h2 style="color:var(--Highlight);">✨ 외형 상세 정보</h2>' +
         '<div style="background:#F8FAFC; padding:40px 20px; border-radius:15px; margin-bottom:20px; border:1px solid var(--BorderColor); display:flex; flex-direction:column; align-items:center; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">' +
         // 💡 아바타 이미지 2배 확대 (150px) 및 후광 이펙트 추가
-        '  <img src="' + skin.skin_url + '" style="width:150px; height:150px; object-fit:contain; filter: drop-shadow(0 10px 15px rgba(0,0,0,0.15)); transform: scaleX(-1); margin-bottom: 25px;">' +
+        '  <img src="' + skin.skin_url + '" style="width:150px; height:150px; object-fit:contain; filter: drop-shadow(0 10px 15px rgba(0,0,0,0.15)); margin-bottom: 25px;">' +
         '  <h3 style="color:var(--Yellow); margin:0 0 10px 0; font-size: 1.6em;">' + skin.name + '</h3>' +
         '  <p style="color:var(--TextMain); font-size:1.1em; line-height:1.6; word-break:keep-all; max-width:80%;">' + desc + '</p>' +
         '</div>' +

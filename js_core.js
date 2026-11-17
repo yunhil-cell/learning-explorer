@@ -1999,7 +1999,7 @@ function renderDashboard() {
         '    <div style="flex-grow:1; display:flex; flex-direction:column; justify-content:center; align-items:center; width: 100%; min-height: 180px;">' +
         '      <div class="aura-avatar" style="width:80%; max-width:220px; height:220px;">' +
         renderAuraLayerHtml(s) +
-        '        <img class="avatar-skin" src="' + skinImgUrl + '" style="width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 4px 6px rgba(0,0,0,0.1)); transform:scaleX(-1);">' +
+        '        <img class="avatar-skin" src="' + skinImgUrl + '" style="width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 4px 6px rgba(0,0,0,0.1));">' +
         '      </div>' +
         '      <div style="font-size:0.8em; color:var(--Purple); margin-top:8px; line-height:1.5;">' +
         (getEquippedAura(s)

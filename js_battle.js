@@ -395,7 +395,8 @@ async function enterBattle(monsterId, isBoss = false) {
     document.getElementById('battleModal').style.display = 'flex';
 
     battleState.isAutoRunning = true;
-    battleState.turnTimer = setTimeout(playerTurnAuto, 1000);
+    playEncounterAnim(1200, targetMonster.name);
+    battleState.turnTimer = setTimeout(playerTurnAuto, 1250);
     } finally {
         // 정상 입장·입장 불가·저장 오류 모두 재시도 가능하도록 해제
         isEnteringSingleBattle = false;
@@ -431,6 +432,46 @@ function showSkillBanner(text, color = 'var(--Highlight)') {
     setTimeout(() => {
         if (banner) banner.style.display = 'none';
     }, 1200);
+}
+
+// 💡 [신규] 배경 패닝 + 아군 걷기 + 몬스터 조우 연출 재생 함수
+function playEncounterAnim(duration = 1200, monsterName = '') {
+    const stage = document.querySelector('.battle-stage');
+    const allies = document.querySelector('.stage-allies');
+    const enemies = document.querySelector('.stage-enemies');
+    if (!stage || !allies || !enemies) return;
+
+    clearTimeout(battleState.encounterBannerTimer);
+    clearTimeout(battleState.encounterCleanTimer);
+
+    const durSec = (duration / 1000) + 's';
+    stage.style.setProperty('--enc-dur', durSec);
+    allies.style.setProperty('--enc-dur', durSec);
+    enemies.style.setProperty('--enc-dur', durSec);
+
+    stage.classList.remove('anim-stage-pan');
+    allies.classList.remove('anim-encounter-allies');
+    enemies.classList.remove('anim-encounter-enemy');
+
+    void stage.offsetWidth; // 리플로우 강제 트리거
+
+    stage.classList.add('anim-stage-pan');
+    allies.classList.add('anim-encounter-allies');
+    enemies.classList.add('anim-encounter-enemy');
+
+    if (monsterName) {
+        battleState.encounterBannerTimer = setTimeout(() => {
+            if (battleState.isAutoRunning && !battleState.isFleeing) {
+                showSkillBanner('⚠️ ' + monsterName + ' 조우!', '#FBBF24');
+            }
+        }, Math.floor(duration * 0.55));
+    }
+
+    battleState.encounterCleanTimer = setTimeout(() => {
+        stage.classList.remove('anim-stage-pan');
+        allies.classList.remove('anim-encounter-allies');
+        enemies.classList.remove('anim-encounter-enemy');
+    }, duration + 50);
 }
 
 // --- 3. 전투 로그 출력 ---
@@ -2448,7 +2489,7 @@ function renderPartyUI() {
                 <div style="font-weight:bold; color:var(--${sData.blessing || 'Highlight'}); text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-size: 0.9em; margin-bottom: 5px;">${sData.name}</div>
                 <div class="aura-avatar" style="width:85px; height:85px;">
                     ${renderAuraLayerHtml(sData)}
-                    <img class="avatar-skin" src="${skinImgUrl}" style="width:85px; height:85px; object-fit:contain; transform:scaleX(-1); filter:drop-shadow(0 0 5px rgba(255,255,255,0.2));">
+                    <img class="avatar-skin" src="${skinImgUrl}" style="width:85px; height:85px; object-fit:contain; filter:drop-shadow(0 0 5px rgba(255,255,255,0.2));">
                     <img id="partyEffect_${p.uiIndex}" src="" onerror="this.style.display='none'" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; object-fit: contain; pointer-events: none; display: none; z-index: 20;">
                 </div>
             </div>`;
@@ -2551,7 +2592,8 @@ function startRaidStage() {
     document.getElementById('battleModal').style.display = 'flex';
     battleState.isAutoRunning = true;
     battleState.currentTurnIdx = 0;
-    battleState.turnTimer = setTimeout(raidPlayerTurnAuto, 1500);
+    playEncounterAnim(1200, targetMonster.name);
+    battleState.turnTimer = setTimeout(raidPlayerTurnAuto, 1400);
 }
 
 function raidPlayerTurnAuto() {
@@ -3623,7 +3665,8 @@ function setupTowerBattleStage() {
 
     document.getElementById('battleModal').style.display = 'flex';
     battleState.isAutoRunning = true;
-    battleState.turnTimer = setTimeout(playerTurnAuto, 1000);
+    playEncounterAnim(650, targetMonster.name);
+    battleState.turnTimer = setTimeout(playerTurnAuto, 750);
 }
 
 function handleTowerMonsterDefeat() {
@@ -3879,7 +3922,8 @@ async function startWorldBossRaid(wbId) {
     logBattle(`(목표: ${battleState.wbMaxTurns}턴 동안 살아남으며 최대 피해를 입히세요!)`);
 
     document.getElementById('battleModal').style.display = 'flex';
-    battleState.turnTimer = setTimeout(worldBossPlayerTurnAuto, 1000);
+    playEncounterAnim(1200, activeBoss.name);
+    battleState.turnTimer = setTimeout(worldBossPlayerTurnAuto, 1250);
 }
 
 function worldBossPlayerTurnAuto() {
