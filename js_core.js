@@ -2857,23 +2857,37 @@ async function executeJobAdvancement(advJobKey) {
     }
 }
 
-// 💡 [신규] 공지사항 개별 상세 정보 팝업
+// 💡 공지사항 개별 상세 정보 (#subModal 내부 전환)
 function showNoticeDetail(noticeId) {
     const n = noticesData.find(x => String(x.notice_id) === String(noticeId));
     if (!n) return;
 
+    const subModal = document.getElementById('subModal');
+    const subBody = document.getElementById('subModalBody');
+
+    subModal.querySelector('.modal-content').style.background = 'var(--Bg)';
+    subModal.querySelector('.modal-content').style.borderColor = '#F87171';
+
     const contentFormatted = String(n.content).replace(/[\n\r]/g, '<br>');
     const dateStr = n.date ? new Date(n.date).toLocaleDateString() : '';
 
-    let detailHtml =
+    let catColor = '#3B82F6';
+    if (n.category === '이벤트') catColor = '#F59E0B';
+    else if (n.category === '긴급') catColor = '#EF4444';
+
+    subBody.innerHTML =
         '<div style="text-align:left;">' +
-        '  <div style="font-size:0.9em; color:var(--TextLock); margin-bottom:5px;">' + dateStr + ' 소식</div>' +
-        '  <h3 style="margin:0 0 15px 0; color:white; border-bottom:2px solid #F87171; padding-bottom:10px;">' + n.title + '</h3>' +
-        '  <div style="background:var(--Bg); padding:20px; border-radius:10px; color:var(--TextSub); line-height:1.7; min-height:100px; max-height:40vh; overflow-y:auto; font-size:1.05em; word-break:break-all;">' + contentFormatted + '</div>' +
+        '  <button class="small-btn" style="background:var(--TextSub); margin-bottom:15px;" onclick="openNoticeBoard()">⬅ 목록으로 돌아가기</button>' +
+        '  <div style="font-size:0.9em; color:var(--TextLock); margin-bottom:6px;">' +
+        '    <span style="color:' + catColor + '; font-weight:bold; margin-right:6px;">[' + (n.category || '안내') + ']</span>' +
+        '    ' + dateStr + ' 소식' +
+        '  </div>' +
+        '  <h2 style="margin:0 0 15px 0; color:var(--TextMain); border-bottom:2px solid #F87171; padding-bottom:10px; font-size:1.35em;">' + n.title + '</h2>' +
+        '  <div style="background:#FFFFFF; border:1px solid var(--BorderColor); padding:20px; border-radius:10px; color:var(--TextMain); line-height:1.75; min-height:140px; max-height:48vh; overflow-y:auto; font-size:1.02em; word-break:keep-all;">' + contentFormatted + '</div>' +
+        '  <button style="margin-top:15px; width:100%; padding:13px; border-radius:10px; border:none; background:var(--TextSub); color:white; font-size:1.05em; cursor:pointer;" onclick="closeSubModal()">닫기</button>' +
         '</div>';
 
-    // 게임 UI 팝업(showUiAlert)을 활용하여 상세 내용 표시
-    showUiAlert('📜 상세 내용', detailHtml, 'openNoticeBoard()');
+    subModal.style.display = 'flex';
 }
 
 // ==========================================
