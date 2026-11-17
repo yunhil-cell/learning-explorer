@@ -1037,32 +1037,44 @@ height: 120px;
 filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
 }
 
-/* 💡 [신규] 정통 횡스크롤 전투 UI 스타일 */
+/* 💡 정통 횡스크롤 RPG 프레임 전투 UI 스타일 */
 .battle-modal-content {
-  max-width: 900px !important;
-  padding: 18px 20px !important;
-  background: #0B1120 !important;
-  border: 2px solid #EF4444 !important;
-  box-shadow: 0 0 25px rgba(239, 68, 68, 0.25) !important;
+  width: 92% !important;
+  max-width: 860px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: 92vh !important;
+  padding: 0 !important;
+  background: #0F172A !important;
+  border: 2.5px solid #475569 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.75) !important;
   display: flex !important;
   flex-direction: column !important;
-  justify-content: space-between !important;
+  justify-content: flex-start !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+.battle-modal-content .battle-flee-btn {
+  margin-top: 0 !important;
 }
 
 .battle-top-bar {
   background: #0F172A;
-  border: 1px solid #1E293B;
-  border-radius: 10px;
+  border: none;
+  border-bottom: 2px solid #334155;
+  border-radius: 0;
   padding: 10px 14px;
-  margin-bottom: 10px;
+  margin-bottom: 0;
 }
 
 .stage-boss-bar-wrap { margin-top: 6px; }
 .stage-hp-track {
   width: 100%;
   background: #1E293B;
-  height: 12px;
-  border-radius: 6px;
+  height: 10px;
+  border-radius: 4px;
   border: 1px solid #334155;
   overflow: hidden;
 }
@@ -1073,23 +1085,26 @@ filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
   transition: width 0.3s;
 }
 
-/* 횡스크롤 전투 필드 (바닥면 3D 원근감) */
+/* 횡스크롤 전투 필드 (고정 높이 + 프레임 밀착) */
 .battle-stage {
   position: relative;
-  min-height: 270px;
-  background: radial-gradient(ellipse at bottom, #1E1B4B 0%, #0F172A 70%, #090D16 100%); /* 이미지 없을 시 기본값 */
+  height: 290px;
+  min-height: 290px;
+  background: radial-gradient(ellipse at bottom, #1E1B4B 0%, #0F172A 70%, #090D16 100%);
   background-size: cover;
-  background-position: center bottom; /* 💡 하단 지면을 기준선으로 완벽 정렬 */
+  background-position: center bottom;
   background-repeat: no-repeat;
-  border: 1.5px solid #1E293B;
-  border-radius: 14px;
-  padding: 15px 25px;
+  border: none;
+  border-bottom: 2px solid #334155;
+  border-radius: 0;
+  padding: 18px 24px;
   display: flex;
   justify-content: space-between;
-  align-items: flex-end; /* 💡 캐릭터들을 바닥에 밀착 */
-  margin-bottom: 12px;
-  overflow: visible;
+  align-items: flex-end;
+  margin-bottom: 0;
+  overflow: hidden;
   box-shadow: inset 0 -20px 30px rgba(0, 0, 0, 0.6);
+  box-sizing: border-box;
 }
 
 /* 중앙 스킬/기믹 배너 */
@@ -1213,6 +1228,7 @@ filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
 }
 .monster-stage-img {
   max-width: 100%;
+  max-height: 225px;
   object-fit: contain;
   filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.5));
   transition: width 0.3s, height 0.3s;
@@ -1226,30 +1242,37 @@ filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
   flex-wrap: wrap;
 }
 
-/* 💡 하단 플레이어 상태 & 컴팩트 로그 패널 */
+/* 💡 하단 플레이어 상태 & 컴팩트 로그 패널 (여백 없이 칸 구분) */
 .battle-bottom-panel {
-  display: flex; /* flex로 변경하여 싱글/파티 모드 유동적 대응 */
-  gap: 12px;
+  display: flex;
+  gap: 0;
   align-items: stretch;
+  background: #0F172A;
 }
 .bottom-player-status {
-  flex: 1; /* 싱글 상태창은 절반 차지 */
+  flex: 1;
   background: #0F172A;
-  border: 1px solid #1E293B;
-  border-radius: 10px;
+  border: none;
+  border-right: 2px solid #334155;
+  border-radius: 0;
   padding: 10px 14px;
   text-align: left;
 }
 .bottom-party-status {
-  flex: 1.5; /* 💡 파티 상태창은 3칸이 들어가므로 공간 더 확보 */
+  flex: 1.5;
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  padding: 8px 10px;
+  border-right: 2px solid #334155;
+  background: #0F172A;
 }
 .bottom-log-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 10px 12px;
+  background: #0B1120;
 }
 .bottom-player-name {
   color: var(--Highlight);
@@ -1303,11 +1326,12 @@ filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
 }
 
 @media (max-width: 768px) {
-  .battle-stage { min-height: 220px; padding: 10px 12px; }
+  .battle-stage { height: 210px; min-height: 210px; padding: 12px 14px; }
   .battle-hero-avatar, .battle-hero-img { width: 95px !important; height: 95px !important; }
   .monster-stage-anchor { min-height: 140px; }
-  .battle-bottom-panel { flex-direction: column; gap: 8px; } /* 모바일 세로 정렬 */
-  .bottom-party-status { flex-direction: row; flex-wrap: wrap; } /* 모바일에서 3장 유연하게 */
+  .battle-bottom-panel { flex-direction: column; gap: 0; }
+  .bottom-player-status, .bottom-party-status { border-right: none; border-bottom: 2px solid #334155; }
+  .bottom-party-status { flex-direction: row; flex-wrap: wrap; }
 }
 
 /* 💡 신규: 공지사항 알림 N 뱃지 스타일 */

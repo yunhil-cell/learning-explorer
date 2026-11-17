@@ -323,7 +323,7 @@ async function enterBattle(monsterId, isBoss = false) {
 
     const pNameEl = document.getElementById('battlePlayerName');
     pNameEl.innerHTML = getTitleHtml(currentStudent);
-    pNameEl.style.color = `var(--${currentStudent.blessing || 'Highlight'})`;
+    pNameEl.style.color = `var(--${getJobColor(currentStudent.blessing)})`;
     pNameEl.style.textShadow = '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000';
 
     document.getElementById('battleMonsterName').innerText = targetMonster.name;
@@ -1084,7 +1084,7 @@ function playerTurnAuto() {
             logBattle('⏱️ <b style="color:var(--Red);">[타임 오버] 보스가 폭주하여 전멸기를 사용합니다!</b>');
             battleState.playerCurrentHp = 0;
             updateHpBars();
-            playAnim('battlePlayerImg', 'anim-damage-p', 400);
+            playAnim('battlePlayerBox', 'anim-damage-p', 400);
         }
     }
 
@@ -1154,7 +1154,7 @@ function playerTurnAuto() {
     }
 
     // 스킬 주체(대표 캐릭터 vs 동료 1 vs 동료 2)에 따른 돌진 애니메이션 타깃 지정
-    let attackAnimTarget = 'battlePlayerImg';
+    let attackAnimTarget = 'battlePlayerBox';
     if (usedSkill) {
         if (usedSkill.ownerType === 'm1') attackAnimTarget = 'merc1BattleImg';
         else if (usedSkill.ownerType === 'm2') attackAnimTarget = 'merc2BattleImg';
@@ -1390,7 +1390,7 @@ function applyDamageToMonster(baseDmg, finalDef, prefixText, isSkill = false) {
     if (isReflectTurn && reflectDmg > 0) {
         battleState.playerCurrentHp = Math.max(0, battleState.playerCurrentHp - reflectDmg);
         logBattle('⚡ <b style="color:#F59E0B;">[반사 방패] 보스의 가시 방패가 피해의 30%(' + reflectDmg + ')를 플레이어에게 반사했습니다!</b>');
-        playAnim('battlePlayerImg', 'anim-damage-p', 250);
+        playAnim('battlePlayerBox', 'anim-damage-p', 250);
     }
 
     updateHpBars();
@@ -1605,7 +1605,7 @@ function monsterTurnAuto() {
 
             logBattle('나에게 ' + finalDmg + '의 피해!');
             updateHpBars();
-            playAnim('battlePlayerImg', 'anim-damage-p', 400);
+            playAnim('battlePlayerBox', 'anim-damage-p', 400);
 
             // 일반 스킬 흡혈
             if (effectType === '흡혈' || effectType === '맹독흡혈') {
@@ -2486,7 +2486,7 @@ function renderPartyUI() {
         // 1. 전투 무대 중앙에는 닉네임과 아바타만 렌더링 (전진 모션 대상)
         avatarHtml += `
             <div id="partyMember_${p.uiIndex}" style="opacity: ${opacity}; display:flex; flex-direction:column; align-items:center;">
-                <div style="font-weight:bold; color:var(--${sData.blessing || 'Highlight'}); text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-size: 0.9em; margin-bottom: 5px;">${sData.name}</div>
+                <div style="font-weight:bold; color:var(--${getJobColor(sData.blessing)}); text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-size: 0.9em; margin-bottom: 5px;">${sData.name}</div>
                 <div class="aura-avatar" style="width:85px; height:85px;">
                     ${renderAuraLayerHtml(sData)}
                     <img class="avatar-skin" src="${skinImgUrl}" style="width:85px; height:85px; object-fit:contain; filter:drop-shadow(0 0 5px rgba(255,255,255,0.2));">
@@ -2498,7 +2498,7 @@ function renderPartyUI() {
         statusHtml += `
             <div id="partyStatusCard_${p.uiIndex}" style="flex:1; background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; justify-content: space-between; opacity: ${opacity};">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                    <div style="color:var(--${sData.blessing || 'Highlight'}); font-weight:bold; font-size:0.9em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px;">${sData.name}</div>
+                    <div style="color:var(--${getJobColor(sData.blessing)}); font-weight:bold; font-size:0.9em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px;">${sData.name}</div>
                     <div id="partyHpText_${p.uiIndex}" style="color:#34D399; font-weight:bold; font-size:0.8em;">${p.currentHp}</div>
                 </div>
                 <div class="bottom-hp-track" style="height:6px; margin-bottom:6px; background:#1E293B; border:1px solid #334155; border-radius:3px; overflow:hidden;">
@@ -3567,7 +3567,7 @@ async function startTower() {
 
     const pNameEl = document.getElementById('battlePlayerName');
     pNameEl.innerText = currentStudent.name;
-    pNameEl.style.color = `var(--${currentStudent.blessing || 'Highlight'})`;
+    pNameEl.style.color = `var(--${getJobColor(currentStudent.blessing)})`;
     pNameEl.style.textShadow = '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000';
 
     document.getElementById('battleLog').innerHTML = '';
@@ -3937,7 +3937,7 @@ function worldBossPlayerTurnAuto() {
         logBattle('⏱️ <b style="color:var(--Red);">[타임 오버] 보스가 폭주하여 즉사 전멸기를 사용합니다!</b>');
         battleState.playerCurrentHp = 0;
         updateHpBars();
-        playAnim('battlePlayerImg', 'anim-damage-p', 400);
+        playAnim('battlePlayerBox', 'anim-damage-p', 400);
         setTimeout(() => finishWorldBossSession(false), 1200);
         return;
     }
@@ -3987,7 +3987,7 @@ function worldBossPlayerTurnAuto() {
         }
     }
 
-    let attackTarget = 'battlePlayerImg';
+    let attackTarget = 'battlePlayerBox';
     if (usedSkill) {
         if (usedSkill.ownerType === 'm1') attackTarget = 'merc1BattleImg';
         else if (usedSkill.ownerType === 'm2') attackTarget = 'merc2BattleImg';
@@ -4187,7 +4187,7 @@ function worldBossMonsterTurnAuto() {
             battleState.playerCurrentHp = Math.max(0, battleState.playerCurrentHp - bossDamage);
             logBattle(`💥 보스의 맹공! 플레이어가 <b>${bossDamage}</b> 피해를 입었습니다.`);
             updateHpBars();
-            playAnim('battlePlayerImg', 'anim-damage-p', 400);
+            playAnim('battlePlayerBox', 'anim-damage-p', 400);
 
             // 💡 [기믹 4] 흡혈: 플레이어에게 입힌 피해 비례 흡혈
             if ((gType === 'lifesteal' || gType === '흡혈') && gVal > 0) {
