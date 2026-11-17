@@ -1916,7 +1916,7 @@ function renderDashboard() {
             '    <button class="btn-main" style="margin-top:0; padding:9px; background:#0D9488; color:white;" onclick="openMercenaryShop()">동료 뽑기</button>' +
             '    <button class="btn-main" style="margin-top:0; padding:9px; background:#D97706; color:white;" onclick="openForge()">대장간 진입</button>' +
             '  </div>' +
-            '  <div style="display:grid; grid-template-columns: 1fr; gap: 5px; max-height:200px; overflow-y:auto; overflow-x:hidden; padding-right:4px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;">' +
+            '  <div style="display:grid; grid-template-columns: 1fr; gap: 5px; max-height:255px; overflow-y:auto; overflow-x:hidden; padding-right:4px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;">' +
             shopItemsHtml +
             '  </div>' +
             '</div>';
