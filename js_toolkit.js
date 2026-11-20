@@ -10,7 +10,7 @@ const TOOLKIT_THEMES = {
   sky:      { name: '스카이 블루', bg: 'linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%)', text: '#1E293B' }
 };
 
-const FONT_SCALE_MAP = { 1: 0.85, 2: 0.95, 3: 1.0, 4: 1.15, 5: 1.3 };
+const FONT_SCALE_MAP = { 1: 0.95, 2: 1.1, 3: 1.25, 4: 1.45, 5: 1.65 };
 
 let toolkitState = {
   topZ: 10,
@@ -153,6 +153,7 @@ function toggleWidget(type) {
   const cfg = defaults[type];
   if (!cfg) return;
 
+  const scale = FONT_SCALE_MAP[(toolkitState.settings && toolkitState.settings.fontScale) || 3] || 1.25;
   const offset = (toolkitState.widgets.length % 6) * 28;
   toolkitState.topZ += 1;
   toolkitState.widgets.push({
@@ -161,8 +162,8 @@ function toggleWidget(type) {
     title: cfg.title,
     x: 40 + offset,
     y: 40 + offset,
-    w: cfg.w,
-    h: cfg.h,
+    w: Math.round(cfg.w * scale),
+    h: Math.round(cfg.h * scale),
     z: toolkitState.topZ,
     data: cfg.data
   });
@@ -172,6 +173,7 @@ function toggleWidget(type) {
 }
 
 function createMemoWidget() {
+  const scale = FONT_SCALE_MAP[(toolkitState.settings && toolkitState.settings.fontScale) || 3] || 1.25;
   const offset = (toolkitState.widgets.length % 6) * 26;
   const memoId = 'memo_' + Date.now();
   toolkitState.topZ += 1;
@@ -181,16 +183,17 @@ function createMemoWidget() {
     title: '📝 메모',
     x: 60 + offset,
     y: 60 + offset,
-    w: 320,
-    h: 240,
+    w: Math.round(320 * scale),
+    h: Math.round(240 * scale),
     z: toolkitState.topZ,
-    data: { text: '', color: '#FEF3C7', fontSize: 18 }
+    data: { text: '', color: '#FEF3C7', fontSize: 22 }
   });
   saveToolkitState();
   renderAllWidgets();
 }
 
 function createBoardWidget() {
+  const scale = FONT_SCALE_MAP[(toolkitState.settings && toolkitState.settings.fontScale) || 3] || 1.25;
   const offset = (toolkitState.widgets.length % 6) * 26;
   const boardId = 'board_' + Date.now();
   toolkitState.topZ += 1;
@@ -200,10 +203,10 @@ function createBoardWidget() {
     title: '✏️ 칠판 판서',
     x: 80 + offset,
     y: 40 + offset,
-    w: 480,
-    h: 360,
+    w: Math.round(480 * scale),
+    h: Math.round(360 * scale),
     z: toolkitState.topZ,
-    data: { html: '', fontSize: 20 }
+    data: { html: '', fontSize: 24 }
   });
   saveToolkitState();
   renderAllWidgets();
@@ -399,6 +402,9 @@ function renderTimerBody(w, body) {
   const rt = timerRuntime[w.id];
   const isTimer = w.data.mode !== 'stopwatch';
   const displayMs = isTimer ? rt.remainMs : rt.elapsedMs;
+  const curTotal = Number(w.data.totalSec) || 300;
+  const curMin = Math.floor(curTotal / 60);
+  const curSec = curTotal % 60;
 
   body.innerHTML = `
     <div class="tk-timer-wrap">
@@ -406,8 +412,17 @@ function renderTimerBody(w, body) {
         <button class="tk-mini-btn ${isTimer ? 'primary' : ''}" onclick="switchTimerMode('${w.id}', 'timer')">타이머</button>
         <button class="tk-mini-btn ${!isTimer ? 'primary' : ''}" onclick="switchTimerMode('${w.id}', 'stopwatch')">스톱워치</button>
       </div>
-      <div id="tm_disp_${w.id}" class="tk-timer-display ${rt.ended ? 'ended' : ''}">${formatMsDisplay(displayMs)}</div>
+      <div id="tm_disp_${w.id}" class="tk-timer-display ${rt.ended ? 'ended' : ''}"><span>${formatMsDisplay(displayMs)}</span></div>
       ${isTimer ? `
+        <div class="tk-btn-row" style="margin-bottom:5px; align-items:center;">
+          <input id="tm_min_${w.id}" type="number" min="0" max="99" value="${curMin}"
+            style="width:48px; padding:3px 4px; border:1px solid #CBD5E1; border-radius:5px; text-align:center; font-weight:bold; font-size:0.8em;">
+          <span style="font-size:0.78em; font-weight:bold;">분</span>
+          <input id="tm_sec_${w.id}" type="number" min="0" max="59" value="${curSec}"
+            style="width:48px; padding:3px 4px; border:1px solid #CBD5E1; border-radius:5px; text-align:center; font-weight:bold; font-size:0.8em;">
+          <span style="font-size:0.78em; font-weight:bold;">초</span>
+          <button class="tk-mini-btn primary" onclick="applyCustomTimer('${w.id}')">설정</button>
+        </div>
         <div class="tk-btn-row" style="margin-bottom:6px;">
           <button class="tk-mini-btn" onclick="setTimerPreset('${w.id}', 60)">1분</button>
           <button class="tk-mini-btn" onclick="setTimerPreset('${w.id}', 180)">3분</button>
@@ -421,6 +436,13 @@ function renderTimerBody(w, body) {
       </div>
     </div>
   `;
+}
+
+function applyCustomTimer(id) {
+  const m = Math.max(0, Number(document.getElementById('tm_min_' + id)?.value) || 0);
+  const s = Math.max(0, Math.min(59, Number(document.getElementById('tm_sec_' + id)?.value) || 0));
+  const total = Math.max(1, m * 60 + s);
+  setTimerPreset(id, total);
 }
 
 function switchTimerMode(id, mode) {
@@ -482,7 +504,7 @@ function toggleTimerRun(id) {
     const disp = document.getElementById('tm_disp_' + id);
     if (disp) {
       const ms = w.data.mode !== 'stopwatch' ? rt.remainMs : rt.elapsedMs;
-      disp.innerHTML = formatMsDisplay(ms);
+      disp.innerHTML = `<span>${formatMsDisplay(ms)}</span>`;
       disp.classList.toggle('ended', rt.ended);
     }
     if (rt.ended) renderWidgetBody(w);
@@ -658,32 +680,18 @@ function removeCheckItem(id, idx) {
   renderWidgetBody(w);
 }
 
-// [6] 주사위 (흰색 바탕 + 검정 점 눈 + 최대 10개)
-const DIE_PIP_MAP = {
-  1: [4],
-  2: [2, 6],
-  3: [2, 4, 6],
-  4: [0, 2, 6, 8],
-  5: [0, 2, 4, 6, 8],
-  6: [0, 2, 3, 5, 6, 8]
-};
-
-function renderSingleDieHtml(val, sizePx) {
-  const pips = DIE_PIP_MAP[val] || [4];
-  let cells = '';
-  for (let i = 0; i < 9; i++) {
-    cells += `<div class="tk-pip-slot">${pips.includes(i) ? '<span class="tk-pip"></span>' : ''}</div>`;
-  }
-  return `<div class="tk-die" style="width:${sizePx}px; height:${sizePx}px;">${cells}</div>`;
-}
-
+// [6] 주사위 (흰색 바탕 숫자 + 360도 구르는 애니메이션 + 최대 10개)
 function renderDiceBody(w, body) {
   const count = Math.min(10, Math.max(1, Number(w.data.count) || 1));
   const values = Array.isArray(w.data.values) ? w.data.values.slice(0, count) : Array(count).fill(1);
   while (values.length < count) values.push(1);
 
   const sizePx = count <= 2 ? 78 : (count <= 4 ? 62 : 50);
-  const diceHtml = values.map(v => renderSingleDieHtml(v, sizePx)).join('');
+  const fontPx = Math.round(sizePx * 0.5);
+  const rollingClass = w._rolling ? 'rolling' : '';
+  const diceHtml = values.map((v, idx) =>
+    `<div class="tk-die ${rollingClass}" style="width:${sizePx}px; height:${sizePx}px; font-size:${fontPx}px; animation-delay:${(idx % 3) * 0.06}s;">${v}</div>`
+  ).join('');
   const totalSum = values.reduce((a, b) => a + Number(b || 0), 0);
 
   let opts = '';
@@ -718,18 +726,24 @@ function setDiceCount(id, count) {
 
 function rollDice(id) {
   const w = toolkitState.widgets.find(x => x.id === id);
-  if (!w) return;
+  if (!w || w._rolling) return;
   const count = Math.min(10, Math.max(1, Number(w.data.count) || 1));
+  w._rolling = true;
+  renderWidgetBody(w);
+
   let ticks = 0;
   const anim = setInterval(() => {
     w.data.values = Array.from({ length: count }, () => Math.floor(Math.random() * 6) + 1);
-    renderWidgetBody(w);
+    const boxes = document.querySelectorAll(`#body_${id} .tk-die`);
+    boxes.forEach((box, i) => { box.innerText = w.data.values[i]; });
     ticks++;
-    if (ticks >= 8) {
+    if (ticks >= 10) {
       clearInterval(anim);
+      w._rolling = false;
       saveToolkitState();
+      renderWidgetBody(w);
     }
-  }, 55);
+  }, 65);
 }
 
 // [7] QR 코드
@@ -871,9 +885,21 @@ function renderSettingsModal() {
 
 function setFontScale(level) {
   if (!toolkitState.settings) toolkitState.settings = {};
+  const prevLevel = Number(toolkitState.settings.fontScale) || 3;
+  const prevScale = FONT_SCALE_MAP[prevLevel] || 1.25;
+  const nextScale = FONT_SCALE_MAP[level] || 1.25;
+  const ratio = nextScale / prevScale;
+
+  // 열려 있는 위젯 창 크기도 글자 크기 비율에 맞춰 함께 조절
+  toolkitState.widgets.forEach(w => {
+    w.w = Math.max(190, Math.round(w.w * ratio));
+    w.h = Math.max(140, Math.round(w.h * ratio));
+  });
+
   toolkitState.settings.fontScale = level;
   applyToolkitSettings();
   saveToolkitState();
+  renderAllWidgets();
   renderSettingsModal();
 }
 
