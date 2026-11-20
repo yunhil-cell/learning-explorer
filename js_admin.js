@@ -35,9 +35,12 @@ function updateTeacherBtnUI() {
     }
 }
 
-// 🧰 교실 툴킷 별도 팝업 실행
-function openClassroomToolkit() {
-    if (!checkTeacherAuth()) return;
+// 🧰 교실 툴킷 별도 팝업 실행 (window.open 차단 시 <a> 기본 새 탭으로 폴백)
+function openClassroomToolkit(e) {
+    if (!checkTeacherAuth()) {
+        if (e) e.preventDefault();
+        return false;
+    }
     window.isTeacherMode = true;
     const w = Math.min(1360, window.screen.availWidth - 60);
     const h = Math.min(840, window.screen.availHeight - 60);
@@ -46,13 +49,12 @@ function openClassroomToolkit() {
         'learningExplorerToolkit',
         `width=${w},height=${h},left=30,top=30,resizable=yes,scrollbars=no`
     );
-    if (!win) {
-        // 팝업 차단 시 새 탭으로 열기 시도
-        const tab = window.open('toolkit.html', '_blank');
-        if (!tab) {
-            showUiAlert('⚠️ 팝업 차단됨', '브라우저 주소창 우측의 <b>팝업 차단</b>을 허용한 뒤 다시 눌러주세요.', '');
-        }
+    if (win) {
+        if (e) e.preventDefault();
+        return false;
     }
+    // window.open이 null로 막히면 <a href="toolkit.html" target="_blank"> 기본 동작으로 새 탭 열기
+    return true;
 }
 
 function disableTeacherMode() {
