@@ -218,10 +218,10 @@ function createBoardWidget() {
     title: '✏️ 칠판 판서',
     x: 80 + offset,
     y: 40 + offset,
-    w: Math.round(480 * scale),
-    h: Math.round(360 * scale),
+    w: Math.round(540 * scale),
+    h: Math.round(380 * scale),
     z: toolkitState.topZ,
-    data: { html: '', fontSize: 24 }
+    data: { html: '', fontSize: 60 }
   });
   saveToolkitState();
   renderAllWidgets();
@@ -845,10 +845,10 @@ function updateQrUrl(id) {
 
 // [8] 판서/문서 에디터 (글자크기·글자색·형광펜 드롭다운 + 고정폭 공백 2칸=한글 1칸)
 function renderBoardBody(w, body) {
-  const fontSize = Number(w.data.fontSize) || 24;
+  const fontSize = Number(w.data.fontSize) || 60;
   const isChalk = w.data.bgMode === 'chalk';
 
-  const sizeList = [12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 42, 48];
+  const sizeList = [20, 24, 28, 32, 36, 42, 48, 60, 72, 84, 96];
   const sizeOpts = sizeList.map(sz =>
     `<option value="${sz}" ${fontSize === sz ? 'selected' : ''}>${sz}px</option>`
   ).join('');
