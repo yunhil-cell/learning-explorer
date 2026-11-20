@@ -38,17 +38,26 @@ function updateTeacherBtnUI() {
 // 🧰 교실 툴킷 별도 팝업 실행
 function openClassroomToolkit() {
     if (!checkTeacherAuth()) return;
+    window.isTeacherMode = true;
     const w = Math.min(1360, window.screen.availWidth - 60);
     const h = Math.min(840, window.screen.availHeight - 60);
-    window.open(
+    const win = window.open(
         'toolkit.html',
         'learningExplorerToolkit',
         `width=${w},height=${h},left=30,top=30,resizable=yes,scrollbars=no`
     );
+    if (!win) {
+        // 팝업 차단 시 새 탭으로 열기 시도
+        const tab = window.open('toolkit.html', '_blank');
+        if (!tab) {
+            showUiAlert('⚠️ 팝업 차단됨', '브라우저 주소창 우측의 <b>팝업 차단</b>을 허용한 뒤 다시 눌러주세요.', '');
+        }
+    }
 }
 
 function disableTeacherMode() {
     isTeacherMode = false;
+    window.isTeacherMode = false;
     clearTimeout(teacherModeTimer);
     updateTeacherBtnUI();
 
@@ -631,6 +640,7 @@ function checkTeacherPin(inputPin) {
 
     if (inputPin === correctPin) {
         isTeacherMode = true;
+        window.isTeacherMode = true;
         updateTeacherBtnUI(); // UI 즉시 빨간색으로 변경
         showUiAlert('🔓 승인 완료', '교사 모드가 활성화되었습니다.<br><span style="font-size:0.8em; color:#aaa;">(학생들의 장비를 강화할 수 있습니다.<br>마지막 동작 후 5분 뒤 자동 잠금)</span>', '');
 
