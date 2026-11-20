@@ -7,6 +7,7 @@ let teacherModeTimer = null;
 // 💡 버튼 UI를 실시간으로 업데이트하는 헬퍼 함수
 function updateTeacherBtnUI() {
     const btn = document.getElementById('mainTeacherBtn');
+    const toolkitBtn = document.getElementById('toolkitAdminBtn');
     const questBtn = document.getElementById('questAdminBtn');
     const noticeBtn = document.getElementById('noticeAdminBtn');
     const exchangeBtn = document.getElementById('exchangeAdminBtn');
@@ -16,6 +17,7 @@ function updateTeacherBtnUI() {
     if (isTeacherMode) {
         btn.style.background = '#ff4d4d';
         btn.innerHTML = '🔓 교사 모드 ON';
+        if (toolkitBtn) toolkitBtn.style.display = 'block';
         if (questBtn) questBtn.style.display = 'block';
         if (noticeBtn) noticeBtn.style.display = 'block';
         if (exchangeBtn) exchangeBtn.style.display = 'block';
@@ -24,12 +26,25 @@ function updateTeacherBtnUI() {
     } else {
         btn.style.background = '#444';
         btn.innerHTML = '🔒 교사 모드 OFF';
+        if (toolkitBtn) toolkitBtn.style.display = 'none';
         if (questBtn) questBtn.style.display = 'none';
         if (noticeBtn) noticeBtn.style.display = 'none';
         if (exchangeBtn) exchangeBtn.style.display = 'none';
         if (statBtn) statBtn.style.display = 'none';
         if (logBtn) logBtn.style.display = 'none';
     }
+}
+
+// 🧰 교실 툴킷 별도 팝업 실행
+function openClassroomToolkit() {
+    if (!checkTeacherAuth()) return;
+    const w = Math.min(1360, window.screen.availWidth - 60);
+    const h = Math.min(840, window.screen.availHeight - 60);
+    window.open(
+        'toolkit.html',
+        'learningExplorerToolkit',
+        `width=${w},height=${h},left=30,top=30,resizable=yes,scrollbars=no`
+    );
 }
 
 function disableTeacherMode() {
