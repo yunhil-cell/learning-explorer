@@ -105,13 +105,14 @@ function loadToolkitState() {
     console.error('툴킷 상태 로드 실패:', e);
   }
 
+  const defaultScale = FONT_SCALE_MAP[3] || 1.25;
   // 최초 실행 시 기본 위젯 2개 배치
   toolkitState = {
     topZ: 12,
     settings: { fontScale: 3, theme: 'indigo' },
     widgets: [
-      { id: 'clock', type: 'clock', title: '⏰ 디지털 시계', x: 24, y: 24, w: 340, h: 170, z: 10, data: {} },
-      { id: 'memo_1', type: 'memo', title: '📝 메모', x: 24, y: 210, w: 340, h: 240, z: 11, data: { text: '', color: '#FEF3C7', fontSize: 18 } }
+      { id: 'clock', type: 'clock', title: '⏰ 디지털 시계', x: 24, y: 24, w: Math.round(340 * defaultScale), h: Math.round(170 * defaultScale), z: 10, data: {} },
+      { id: 'memo_1', type: 'memo', title: '📝 메모', x: 24, y: Math.round(24 + 170 * defaultScale + 16), w: Math.round(340 * defaultScale), h: Math.round(240 * defaultScale), z: 11, data: { text: '', color: '#FEF3C7', fontSize: 22 } }
     ]
   };
   saveToolkitState();
@@ -122,12 +123,26 @@ function saveToolkitState() {
 }
 
 function resetToolkitLayout() {
-  localStorage.removeItem(TOOLKIT_STORAGE_KEY);
   Object.keys(timerRuntime).forEach(id => {
     clearInterval(timerRuntime[id].interval);
     delete timerRuntime[id];
   });
-  loadToolkitState();
+
+  // 현재 설정(글자 크기 배율·테마)은 유지한 채 창 배치만 초기화
+  const curSettings = toolkitState.settings || { fontScale: 3, theme: 'indigo' };
+  const scale = FONT_SCALE_MAP[curSettings.fontScale] || 1.25;
+  const clkH = Math.round(170 * scale);
+
+  toolkitState = {
+    topZ: 12,
+    settings: curSettings,
+    widgets: [
+      { id: 'clock', type: 'clock', title: '⏰ 디지털 시계', x: 24, y: 24, w: Math.round(340 * scale), h: clkH, z: 10, data: {} },
+      { id: 'memo_1', type: 'memo', title: '📝 메모', x: 24, y: 24 + clkH + 16, w: Math.round(340 * scale), h: Math.round(240 * scale), z: 11, data: { text: '', color: '#FEF3C7', fontSize: 22 } }
+    ]
+  };
+  saveToolkitState();
+  applyToolkitSettings();
   renderAllWidgets();
 }
 
@@ -543,24 +558,28 @@ function playTimerBeep() {
   }
 }
 
-// [3] 포스트잇 메모 (다중 생성)
+// [3] 포스트잇 메모 (다중 생성 + 글자 크기 드롭다운)
 function renderMemoBody(w, body) {
   const colors = ['#FEF3C7', '#DCFCE7', '#DBEAFE', '#FCE7F3', '#FFFFFF'];
   const bg = w.data.color || '#FEF3C7';
-  const fontSize = Number(w.data.fontSize) || 18;
+  const fontSize = Number(w.data.fontSize) || 22;
   body.style.background = bg;
 
   const dots = colors.map(c =>
     `<span class="tk-color-dot" style="background:${c};" onclick="changeMemoColor('${w.id}', '${c}')"></span>`
   ).join('');
 
+  const sizeList = [12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 42, 48];
+  const sizeOpts = sizeList.map(sz =>
+    `<option value="${sz}" ${fontSize === sz ? 'selected' : ''}>${sz}px</option>`
+  ).join('');
+
   body.innerHTML = `
     <div class="tk-memo-toolbar">
       <div style="display:flex; gap:5px;">${dots}</div>
-      <div style="display:flex; gap:4px;">
-        <button class="tk-mini-btn" onclick="changeMemoFont('${w.id}', -2)">A-</button>
-        <button class="tk-mini-btn" onclick="changeMemoFont('${w.id}', 2)">A+</button>
-      </div>
+      <select class="tk-board-select" onchange="setMemoFontSize('${w.id}', Number(this.value))">
+        ${sizeOpts}
+      </select>
     </div>
     <textarea id="memo_txt_${w.id}" class="tk-memo-area" style="font-size:${fontSize}px;" placeholder="여기에 메모를 입력하세요..."></textarea>
   `;
@@ -581,10 +600,10 @@ function changeMemoColor(id, color) {
   renderWidgetBody(w);
 }
 
-function changeMemoFont(id, delta) {
+function setMemoFontSize(id, sizePx) {
   const w = toolkitState.widgets.find(x => x.id === id);
   if (!w) return;
-  w.data.fontSize = Math.min(48, Math.max(12, (Number(w.data.fontSize) || 18) + delta));
+  w.data.fontSize = sizePx;
   saveToolkitState();
   renderWidgetBody(w);
 }
@@ -680,18 +699,45 @@ function removeCheckItem(id, idx) {
   renderWidgetBody(w);
 }
 
-// [6] 주사위 (흰색 바탕 숫자 + 360도 구르는 애니메이션 + 최대 10개)
+// [6] 3D 정육면체 주사위 (최대 10개 + 3축 구르기)
+const CUBE_FACE_ROT = {
+  1: { x: 0,   y: 0 },
+  2: { x: 0,   y: -90 },
+  3: { x: -90, y: 0 },
+  4: { x: 90,  y: 0 },
+  5: { x: 0,   y: 90 },
+  6: { x: 0,   y: 180 }
+};
+
+function buildCubeHtml(val, sizePx, spinOffset, idx) {
+  const half = sizePx / 2;
+  const fontPx = Math.round(sizePx * 0.48);
+  const rot = CUBE_FACE_ROT[val] || { x: 0, y: 0 };
+  const rx = rot.x + (spinOffset * 360);
+  const ry = rot.y + (spinOffset * 360);
+
+  return `
+    <div class="tk-dice-scene" id="dscene_${idx}" style="width:${sizePx}px; height:${sizePx}px; margin:6px;">
+      <div class="tk-cube" style="transform: rotateX(${rx}deg) rotateY(${ry}deg); font-size:${fontPx}px;">
+        <div class="tk-cube-face" style="transform: translateZ(${half}px);">1</div>
+        <div class="tk-cube-face" style="transform: rotateY(90deg) translateZ(${half}px);">2</div>
+        <div class="tk-cube-face" style="transform: rotateX(90deg) translateZ(${half}px);">3</div>
+        <div class="tk-cube-face" style="transform: rotateX(-90deg) translateZ(${half}px);">4</div>
+        <div class="tk-cube-face" style="transform: rotateY(-90deg) translateZ(${half}px);">5</div>
+        <div class="tk-cube-face" style="transform: rotateY(180deg) translateZ(${half}px);">6</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderDiceBody(w, body) {
   const count = Math.min(10, Math.max(1, Number(w.data.count) || 1));
   const values = Array.isArray(w.data.values) ? w.data.values.slice(0, count) : Array(count).fill(1);
   while (values.length < count) values.push(1);
+  const spins = Number(w._spins) || 0;
 
-  const sizePx = count <= 2 ? 78 : (count <= 4 ? 62 : 50);
-  const fontPx = Math.round(sizePx * 0.5);
-  const rollingClass = w._rolling ? 'rolling' : '';
-  const diceHtml = values.map((v, idx) =>
-    `<div class="tk-die ${rollingClass}" style="width:${sizePx}px; height:${sizePx}px; font-size:${fontPx}px; animation-delay:${(idx % 3) * 0.06}s;">${v}</div>`
-  ).join('');
+  const sizePx = count <= 2 ? 70 : (count <= 4 ? 56 : 44);
+  const diceHtml = values.map((v, idx) => buildCubeHtml(v, sizePx, spins, `${w.id}_${idx}`)).join('');
   const totalSum = values.reduce((a, b) => a + Number(b || 0), 0);
 
   let opts = '';
@@ -706,7 +752,7 @@ function renderDiceBody(w, body) {
           style="padding:4px 8px; border:1px solid #CBD5E1; border-radius:6px; font-weight:bold; font-size:0.85em;">
           ${opts}
         </select>
-        <span style="font-size:0.85em; font-weight:bold; color:#334155;">합계: <b style="color:#EF4444;">${totalSum}</b></span>
+        <span style="font-size:0.85em; font-weight:bold; color:#334155;">합계: <b id="dsum_${w.id}" style="color:#EF4444;">${totalSum}</b></span>
       </div>
       <div class="tk-dice-grid">${diceHtml}</div>
       <button class="tk-mini-btn warn" style="width:100%; padding:8px; font-size:0.92em;" onclick="rollDice('${w.id}')">🎲 던지기</button>
@@ -727,23 +773,34 @@ function setDiceCount(id, count) {
 function rollDice(id) {
   const w = toolkitState.widgets.find(x => x.id === id);
   if (!w || w._rolling) return;
-  const count = Math.min(10, Math.max(1, Number(w.data.count) || 1));
   w._rolling = true;
-  renderWidgetBody(w);
+  const count = Math.min(10, Math.max(1, Number(w.data.count) || 1));
+  w._spins = (Number(w._spins) || 0) + 2;
+  w.data.values = Array.from({ length: count }, () => Math.floor(Math.random() * 6) + 1);
 
-  let ticks = 0;
-  const anim = setInterval(() => {
-    w.data.values = Array.from({ length: count }, () => Math.floor(Math.random() * 6) + 1);
-    const boxes = document.querySelectorAll(`#body_${id} .tk-die`);
-    boxes.forEach((box, i) => { box.innerText = w.data.values[i]; });
-    ticks++;
-    if (ticks >= 10) {
-      clearInterval(anim);
-      w._rolling = false;
-      saveToolkitState();
-      renderWidgetBody(w);
+  const cubes = document.querySelectorAll(`#body_${id} .tk-cube`);
+  const scenes = document.querySelectorAll(`#body_${id} .tk-dice-scene`);
+  cubes.forEach((cube, idx) => {
+    const val = w.data.values[idx];
+    const rot = CUBE_FACE_ROT[val] || { x: 0, y: 0 };
+    const rx = rot.x + (w._spins * 360) + (idx % 2 === 0 ? 0 : 360);
+    const ry = rot.y + (w._spins * 360) + (idx % 2 === 1 ? 0 : 360);
+    cube.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+  });
+  scenes.forEach(sc => {
+    sc.classList.remove('bouncing');
+    void sc.offsetWidth;
+    sc.classList.add('bouncing');
+  });
+
+  setTimeout(() => {
+    w._rolling = false;
+    const sumEl = document.getElementById('dsum_' + id);
+    if (sumEl) {
+      sumEl.innerText = w.data.values.reduce((a, b) => a + Number(b || 0), 0);
     }
-  }, 65);
+    saveToolkitState();
+  }, 740);
 }
 
 // [7] QR 코드
@@ -786,24 +843,44 @@ function updateQrUrl(id) {
   renderWidgetBody(w);
 }
 
-// [8] 칠판 판서 (서식 강조 + 고정폭 공백 2칸=한글 1칸)
+// [8] 판서/문서 에디터 (글자크기·글자색·형광펜 드롭다운 + 고정폭 공백 2칸=한글 1칸)
 function renderBoardBody(w, body) {
-  const fontSize = Number(w.data.fontSize) || 20;
+  const fontSize = Number(w.data.fontSize) || 24;
+  const isChalk = w.data.bgMode === 'chalk';
+
+  const sizeList = [12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 42, 48];
+  const sizeOpts = sizeList.map(sz =>
+    `<option value="${sz}" ${fontSize === sz ? 'selected' : ''}>${sz}px</option>`
+  ).join('');
 
   body.innerHTML = `
-    <div class="tk-board-wrap">
+    <div class="tk-board-wrap ${isChalk ? 'chalk-mode' : ''}">
       <div class="tk-board-toolbar">
-        <button class="tk-board-btn" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'foreColor', '#FFFFFF')">흰색</button>
-        <button class="tk-board-btn" style="color:#FDE047;" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'foreColor', '#FDE047')">노랑</button>
-        <button class="tk-board-btn" style="color:#F9A8D4;" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'foreColor', '#F9A8D4')">분홍</button>
-        <button class="tk-board-btn" style="color:#7DD3FC;" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'foreColor', '#7DD3FC')">하늘</button>
-        <button class="tk-board-btn" style="background:#FACC15; color:#000;" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'hiliteColor', '#FACC15')">형광</button>
-        <button class="tk-board-btn" style="background:#F472B6; color:#000;" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'hiliteColor', '#F472B6')">분홍강조</button>
-        <button class="tk-board-btn" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'hiliteColor', 'transparent')">형광해제</button>
-        <button class="tk-board-btn" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'underline')"><u>밑줄</u></button>
+        <select class="tk-board-select" title="글자 크기" onchange="applyBoardFontSize('${w.id}', Number(this.value))">
+          ${sizeOpts}
+        </select>
+        <select class="tk-board-select" title="글자 색상" onchange="if(this.value){ execBoardCmd('${w.id}', 'foreColor', this.value); this.value=''; }">
+          <option value="">글자색</option>
+          <option value="#1E293B">검정</option>
+          <option value="#FFFFFF">흰색</option>
+          <option value="#DC2626">빨강</option>
+          <option value="#EA580C">주황</option>
+          <option value="#CA8A04">노랑</option>
+          <option value="#16A34A">초록</option>
+          <option value="#2563EB">파랑</option>
+          <option value="#7C3AED">보라</option>
+        </select>
+        <select class="tk-board-select" title="형광펜" onchange="if(this.value){ execBoardCmd('${w.id}', 'hiliteColor', this.value); this.value=''; }">
+          <option value="">형광펜</option>
+          <option value="#FEF08A">노랑 형광</option>
+          <option value="#BBF7D0">연두 형광</option>
+          <option value="#BAE6FD">하늘 형광</option>
+          <option value="#FBCFE8">분홍 형광</option>
+          <option value="transparent">형광펜 없음</option>
+        </select>
         <button class="tk-board-btn" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'bold')"><b>굵게</b></button>
-        <button class="tk-board-btn" onclick="changeBoardFont('${w.id}', -2)">A-</button>
-        <button class="tk-board-btn" onclick="changeBoardFont('${w.id}', 2)">A+</button>
+        <button class="tk-board-btn" onmousedown="event.preventDefault(); execBoardCmd('${w.id}', 'underline')"><u>밑줄</u></button>
+        <button class="tk-board-btn" onclick="toggleBoardBg('${w.id}')">${isChalk ? '화이트' : '칠판'}</button>
         <button class="tk-board-btn" onclick="clearBoardContent('${w.id}')">지우기</button>
       </div>
       <div id="board_ed_${w.id}" class="tk-board-editor" contenteditable="true" style="font-size:${fontSize}px;"></div>
@@ -837,10 +914,36 @@ function execBoardCmd(id, cmd, val = null) {
   saveToolkitState();
 }
 
-function changeBoardFont(id, delta) {
+function applyBoardFontSize(id, sizePx) {
+  const ed = document.getElementById('board_ed_' + id);
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!ed || !w) return;
+
+  const sel = window.getSelection();
+  // 드래그 선택된 텍스트가 있으면 해당 영역만 px 적용, 없으면 에디터 기본 크기 변경
+  if (sel && sel.rangeCount > 0 && !sel.isCollapsed && ed.contains(sel.anchorNode)) {
+    const range = sel.getRangeAt(0);
+    const span = document.createElement('span');
+    span.style.fontSize = sizePx + 'px';
+    try {
+      range.surroundContents(span);
+    } catch (e) {
+      span.appendChild(range.extractContents());
+      range.insertNode(span);
+    }
+    w.data.html = ed.innerHTML;
+    saveToolkitState();
+  } else {
+    w.data.fontSize = sizePx;
+    saveToolkitState();
+    renderWidgetBody(w);
+  }
+}
+
+function toggleBoardBg(id) {
   const w = toolkitState.widgets.find(x => x.id === id);
   if (!w) return;
-  w.data.fontSize = Math.min(48, Math.max(12, (Number(w.data.fontSize) || 20) + delta));
+  w.data.bgMode = w.data.bgMode === 'chalk' ? 'white' : 'chalk';
   saveToolkitState();
   renderWidgetBody(w);
 }

@@ -379,36 +379,51 @@
       overflow-y: auto;
       padding: 4px;
     }
-    @keyframes diceTumble {
-      0%   { transform: translate(0, 0) rotate(0deg) scale(1); }
-      20%  { transform: translate(-6px, -14px) rotate(-95deg) scale(1.1); }
-      45%  { transform: translate(6px, 2px) rotate(-190deg) scale(0.95); }
-      70%  { transform: translate(-4px, -10px) rotate(-285deg) scale(1.08); }
-      90%  { transform: translate(2px, 0) rotate(-350deg) scale(1.02); }
-      100% { transform: translate(0, 0) rotate(-360deg) scale(1); }
+    @keyframes diceBounce3D {
+      0%   { transform: translateY(0) scale(1); }
+      30%  { transform: translateY(-22px) scale(1.1); }
+      60%  { transform: translateY(3px) scale(0.95); }
+      85%  { transform: translateY(-8px) scale(1.03); }
+      100% { transform: translateY(0) scale(1); }
     }
-    .tk-die {
+    .tk-dice-scene {
+      perspective: 420px;
+      flex-shrink: 0;
+    }
+    .tk-dice-scene.bouncing {
+      animation: diceBounce3D 0.65s ease-out;
+    }
+    .tk-cube {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      transform-style: preserve-3d;
+      transition: transform 0.72s cubic-bezier(0.18, 0.89, 0.32, 1.12);
+    }
+    .tk-cube-face {
+      position: absolute;
+      inset: 0;
       background: #FFFFFF;
       color: #0F172A;
-      border: 2.5px solid #94A3B8;
-      border-radius: 14px;
-      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.18), inset 0 -3px 0 #E2E8F0;
+      border: 2px solid #94A3B8;
+      border-radius: 10px;
+      box-shadow: inset 0 0 8px rgba(15, 23, 42, 0.08);
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: bold;
-      flex-shrink: 0;
-    }
-    .tk-die.rolling {
-      animation: diceTumble 0.45s cubic-bezier(0.3, 0.7, 0.4, 1) infinite;
+      backface-visibility: visible;
     }
 
-    /* 칠판 판서 위젯 */
+    /* 판서/문서 위젯 */
     .tk-board-wrap {
       width: 100%;
       height: 100%;
       display: flex;
       flex-direction: column;
+      background: #FFFFFF;
+    }
+    .tk-board-wrap.chalk-mode {
       background: #143D2B;
       border: 4px solid #78350F;
     }
@@ -418,22 +433,32 @@
       align-items: center;
       gap: 5px;
       padding: 6px 8px;
-      background: rgba(0, 0, 0, 0.28);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      background: #F1F5F9;
+      border-bottom: 1px solid #CBD5E1;
       flex-shrink: 0;
     }
-    .tk-board-btn {
-      border: 1px solid rgba(255, 255, 255, 0.28);
-      background: rgba(255, 255, 255, 0.12);
-      color: #F8FAFC;
+    .tk-board-select {
+      padding: 3px 6px;
+      border: 1px solid #CBD5E1;
       border-radius: 5px;
-      padding: 3px 7px;
+      background: #FFFFFF;
+      color: #1E293B;
+      font-size: 0.78em;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .tk-board-btn {
+      border: 1px solid #CBD5E1;
+      background: #FFFFFF;
+      color: #1E293B;
+      border-radius: 5px;
+      padding: 3px 8px;
       font-size: 0.78em;
       font-weight: bold;
       cursor: pointer;
     }
     .tk-board-btn:hover {
-      background: rgba(255, 255, 255, 0.25);
+      background: #E2E8F0;
     }
     .tk-board-editor {
       flex: 1;
@@ -441,12 +466,15 @@
       padding: 14px;
       outline: none;
       overflow-y: auto;
-      color: #FFFFFF;
+      color: #1E293B;
       font-family: 'Nanum Gothic Coding', 'D2Coding', monospace !important;
       white-space: pre-wrap;
       word-break: break-all;
       line-height: 1.55;
       user-select: text;
+    }
+    .tk-board-wrap.chalk-mode .tk-board-editor {
+      color: #FFFFFF;
     }
     .tk-board-editor * {
       font-family: 'Nanum Gothic Coding', 'D2Coding', monospace !important;
