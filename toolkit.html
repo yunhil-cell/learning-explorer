@@ -707,16 +707,50 @@
       position: relative;
       background: #E2E8F0;
     }
+    .tk-mini-btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
     .tk-seat-toolbar {
+      display: flex;
+      flex-direction: column;
+      background: #FFFFFF;
+      border-bottom: 1px solid #CBD5E1;
+      flex-shrink: 0;
+    }
+    .tk-seat-toolbar-row {
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
       padding: 6px 10px;
-      background: #FFFFFF;
-      border-bottom: 1px solid #CBD5E1;
       gap: 6px;
-      flex-shrink: 0;
+    }
+    .tk-seat-toolbar-row.sub {
+      background: #F8FAFC;
+      border-top: 1px solid #E2E8F0;
+      padding: 5px 10px;
+    }
+    .tk-seat-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 25;
+      padding: 16px;
+    }
+    .tk-seat-overlay-box {
+      background: #FFFFFF;
+      border-radius: 12px;
+      padding: 18px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
     .tk-seat-board {
       flex: 1;

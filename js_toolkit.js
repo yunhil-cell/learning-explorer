@@ -19,6 +19,9 @@ const FONT_SCALE_MAP = { 1: 0.95, 2: 1.1, 3: 1.25, 4: 1.45, 5: 1.65 };
 let toolkitState = {
   topZ: 10,
   settings: { fontScale: 3, theme: 'indigo' },
+  savedData: {},
+  savedLayout: {},
+  seatSlots: [],
   widgets: []
 };
 
@@ -160,6 +163,9 @@ function loadToolkitState() {
     if (saved && Array.isArray(saved.widgets)) {
       toolkitState = saved;
       if (!toolkitState.settings) toolkitState.settings = { fontScale: 3, theme: 'indigo' };
+      if (!toolkitState.savedData) toolkitState.savedData = {};
+      if (!toolkitState.savedLayout) toolkitState.savedLayout = {};
+      if (!Array.isArray(toolkitState.seatSlots)) toolkitState.seatSlots = [];
       return;
     }
   } catch (e) {
@@ -171,6 +177,9 @@ function loadToolkitState() {
   toolkitState = {
     topZ: 12,
     settings: { fontScale: 3, theme: 'indigo' },
+    savedData: {},
+    savedLayout: {},
+    seatSlots: [],
     widgets: [
       { id: 'clock', type: 'clock', title: '디지털 시계', x: 24, y: 24, w: Math.round(340 * defaultScale), h: Math.round(170 * defaultScale), z: 10, data: {} },
       { id: 'memo_1', type: 'memo', title: '메모', x: 24, y: Math.round(24 + 170 * defaultScale + 16), w: Math.round(340 * defaultScale), h: Math.round(240 * defaultScale), z: 11, data: { text: '', color: '#FEF3C7', fontSize: 22 } }
@@ -189,14 +198,27 @@ function resetToolkitLayout() {
     delete timerRuntime[id];
   });
 
-  // 현재 설정(글자 크기 배율·테마)은 유지한 채 창 배치만 초기화
+  // 현재 설정(글자 크기 배율·테마)과 저장된 슬롯/단일 위젯 데이터는 보존하고 창 배치만 초기화
   const curSettings = toolkitState.settings || { fontScale: 3, theme: 'indigo' };
+  const curSavedData = toolkitState.savedData || {};
+  const curSeatSlots = toolkitState.seatSlots || [];
+
+  // 현재 열려 있던 단일 위젯 데이터도 보존
+  toolkitState.widgets.forEach(w => {
+    if (w.type !== 'memo' && w.type !== 'board') {
+      curSavedData[w.type] = JSON.parse(JSON.stringify(w.data || {}));
+    }
+  });
+
   const scale = FONT_SCALE_MAP[curSettings.fontScale] || 1.25;
   const clkH = Math.round(170 * scale);
 
   toolkitState = {
     topZ: 12,
     settings: curSettings,
+    savedData: curSavedData,
+    savedLayout: {},
+    seatSlots: curSeatSlots,
     widgets: [
       { id: 'clock', type: 'clock', title: '디지털 시계', x: 24, y: 24, w: Math.round(340 * scale), h: clkH, z: 10, data: {} },
       { id: 'memo_1', type: 'memo', title: '메모', x: 24, y: 24 + clkH + 16, w: Math.round(340 * scale), h: Math.round(240 * scale), z: 11, data: { text: '', color: '#FEF3C7', fontSize: 22 } }
@@ -235,17 +257,20 @@ function toggleWidget(type) {
 
   const scale = FONT_SCALE_MAP[(toolkitState.settings && toolkitState.settings.fontScale) || 3] || 1.25;
   const offset = (toolkitState.widgets.length % 6) * 28;
+  const savedLayout = (toolkitState.savedLayout && toolkitState.savedLayout[type]) || null;
+  const savedData = (toolkitState.savedData && toolkitState.savedData[type]) || null;
+
   toolkitState.topZ += 1;
   toolkitState.widgets.push({
     id: type,
     type: type,
     title: cfg.title,
-    x: 40 + offset,
-    y: 40 + offset,
-    w: Math.round(cfg.w * scale),
-    h: Math.round(cfg.h * scale),
+    x: savedLayout ? savedLayout.x : (40 + offset),
+    y: savedLayout ? savedLayout.y : (40 + offset),
+    w: savedLayout ? savedLayout.w : Math.round(cfg.w * scale),
+    h: savedLayout ? savedLayout.h : Math.round(cfg.h * scale),
     z: toolkitState.topZ,
-    data: cfg.data
+    data: savedData ? JSON.parse(JSON.stringify(savedData)) : cfg.data
   });
 
   saveToolkitState();
@@ -296,6 +321,13 @@ function closeWidget(id) {
   if (timerRuntime[id]) {
     clearInterval(timerRuntime[id].interval);
     delete timerRuntime[id];
+  }
+  const target = toolkitState.widgets.find(w => w.id === id);
+  if (target && target.type !== 'memo' && target.type !== 'board') {
+    if (!toolkitState.savedData) toolkitState.savedData = {};
+    if (!toolkitState.savedLayout) toolkitState.savedLayout = {};
+    toolkitState.savedData[target.type] = JSON.parse(JSON.stringify(target.data || {}));
+    toolkitState.savedLayout[target.type] = { x: target.x, y: target.y, w: target.w, h: target.h };
   }
   toolkitState.widgets = toolkitState.widgets.filter(w => w.id !== id);
   saveToolkitState();
@@ -1492,6 +1524,38 @@ function spinWheel(id) {
 // [12] 자리 바꾸기 (분단/일자 · 8줄 · 고정원 · 클릭/드래그 스왑 · 순차공개 · PNG)
 // ==========================================
 const seatRevealRuntime = {};
+const seatUndoStacks = {};
+
+function pushSeatHistory(w) {
+  if (!w || !w.data) return;
+  if (!seatUndoStacks[w.id]) seatUndoStacks[w.id] = [];
+  const snap = JSON.parse(JSON.stringify({
+    layoutMode: w.data.layoutMode,
+    groupCount: w.data.groupCount,
+    lineCount: w.data.lineCount,
+    rowCount: w.data.rowCount,
+    revealMode: w.data.revealMode,
+    seats: w.data.seats || [],
+    activeSeats: w.data.activeSeats || [],
+    lockedIdx: w.data.lockedIdx || []
+  }));
+  seatUndoStacks[w.id].push(snap);
+  if (seatUndoStacks[w.id].length > 15) {
+    seatUndoStacks[w.id].shift();
+  }
+}
+
+function undoSeatChange(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  const stack = seatUndoStacks[id];
+  if (!w || !stack || stack.length === 0) return;
+  clearSeatRevealTimer(id);
+  const prev = stack.pop();
+  w.data = Object.assign({}, w.data, prev);
+  w._selectedSeatIdx = null;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
 
 function getSeatDimensions(data) {
   const mode = data.layoutMode === 'line' ? 'line' : 'group';
@@ -1656,25 +1720,48 @@ function renderSeatBody(w, body) {
     }
   }
 
+  const undoStack = seatUndoStacks[w.id] || [];
+  const slots = Array.isArray(toolkitState.seatSlots) ? toolkitState.seatSlots : [];
+  const selectedSlot = w._selectedSlotName || (slots[0] ? slots[0].name : '');
+  const slotOpts = slots.length > 0
+    ? slots.map(sl => `<option value="${escapeTkHtml(sl.name)}" ${selectedSlot === sl.name ? 'selected' : ''}>${escapeTkHtml(sl.name)}</option>`).join('')
+    : '<option value="">저장된 슬롯 없음</option>';
+
   body.innerHTML = `
     <div class="tk-seat-wrap">
       <div class="tk-seat-toolbar">
-        <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
-          <select class="tk-board-select" onchange="setSeatLayoutMode('${w.id}', this.value)">
-            <option value="group" ${dim.mode === 'group' ? 'selected' : ''}>분단형</option>
-            <option value="line" ${dim.mode === 'line' ? 'selected' : ''}>일자형</option>
-          </select>
-          <select class="tk-board-select" onchange="setSeatLayoutCount('${w.id}', Number(this.value))">${countOpts}</select>
-          <select class="tk-board-select" onchange="setSeatRowCount('${w.id}', Number(this.value))">${rowOpts}</select>
-          <select class="tk-board-select" onchange="setSeatRevealMode('${w.id}', this.value)">
-            <option value="instant" ${d.revealMode === 'instant' ? 'selected' : ''}>즉시 공개</option>
-            <option value="all" ${d.revealMode === 'all' ? 'selected' : ''}>한 번에(3·2·1)</option>
-            <option value="seq" ${d.revealMode === 'seq' ? 'selected' : ''}>순차 공개(3·2·1)</option>
-          </select>
+        <div class="tk-seat-toolbar-row">
+          <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+            <select class="tk-board-select" onchange="setSeatLayoutMode('${w.id}', this.value)">
+              <option value="group" ${dim.mode === 'group' ? 'selected' : ''}>분단형</option>
+              <option value="line" ${dim.mode === 'line' ? 'selected' : ''}>일자형</option>
+            </select>
+            <select class="tk-board-select" onchange="setSeatLayoutCount('${w.id}', Number(this.value))">${countOpts}</select>
+            <select class="tk-board-select" onchange="setSeatRowCount('${w.id}', Number(this.value))">${rowOpts}</select>
+            <select class="tk-board-select" onchange="setSeatRevealMode('${w.id}', this.value)">
+              <option value="instant" ${d.revealMode === 'instant' ? 'selected' : ''}>즉시 공개</option>
+              <option value="all" ${d.revealMode === 'all' ? 'selected' : ''}>한 번에(3·2·1)</option>
+              <option value="seq" ${d.revealMode === 'seq' ? 'selected' : ''}>순차 공개(3·2·1)</option>
+            </select>
+          </div>
+          <div style="display:flex; align-items:center; gap:5px;">
+            <button class="tk-mini-btn" onclick="undoSeatChange('${w.id}')" ${undoStack.length === 0 || isRevealing ? 'disabled' : ''}>되돌리기(${undoStack.length})</button>
+            <button class="tk-mini-btn primary" onclick="shuffleSeats('${w.id}')">${isRevealing ? '공개 중...' : '자리 섞기'}</button>
+            <button class="tk-mini-btn" onclick="exportSeatsToPng('${w.id}')">PNG</button>
+          </div>
         </div>
-        <div style="display:flex; align-items:center; gap:5px;">
-          <button class="tk-mini-btn primary" onclick="shuffleSeats('${w.id}')">${isRevealing ? '공개 중...' : '자리 섞기'}</button>
-          <button class="tk-mini-btn" onclick="exportSeatsToPng('${w.id}')">PNG 저장</button>
+        <div class="tk-seat-toolbar-row sub">
+          <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+            <select id="seat_slot_sel_${w.id}" class="tk-board-select" onchange="selectSeatSlotName('${w.id}', this.value)" style="max-width:140px;">${slotOpts}</select>
+            <button class="tk-mini-btn" onclick="loadSelectedSeatSlot('${w.id}')" ${slots.length === 0 || isRevealing ? 'disabled' : ''}>불러오기</button>
+            <button class="tk-mini-btn primary" onclick="openSeatSaveOverlay('${w.id}')" ${isRevealing ? 'disabled' : ''}>저장</button>
+            <button class="tk-mini-btn danger" onclick="deleteSelectedSeatSlot('${w.id}')" ${slots.length === 0 || isRevealing ? 'disabled' : ''}>삭제</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:5px;">
+            <span id="seat_sync_msg_${w.id}" style="font-size:0.74em; color:#475569; font-weight:bold;">${escapeTkHtml(w._syncMsg || '')}</span>
+            <button class="tk-mini-btn warn" onclick="uploadSeatSlotsToFirebase('${w.id}')" ${isRevealing ? 'disabled' : ''}>업로드</button>
+            <button class="tk-mini-btn" style="background:#DBEAFE; color:#1D4ED8; border-color:#93C5FD;" onclick="downloadSeatSlotsFromFirebase('${w.id}')" ${isRevealing ? 'disabled' : ''}>다운로드</button>
+          </div>
         </div>
       </div>
       ${unplacedCount > 0 ? `<div style="background:#FEE2E2; color:#B91C1C; font-size:0.78em; font-weight:bold; padding:4px 10px; text-align:center;">좌석 수가 부족해 ${unplacedCount}명이 배치되지 않았습니다. 분단/줄 수를 늘려주세요.</div>` : ''}
@@ -1685,8 +1772,32 @@ function renderSeatBody(w, body) {
         </div>
       </div>
       ${(rt && rt.countdown) ? `<div class="tk-seat-countdown">${rt.countdown}</div>` : ''}
+      ${w._showSaveOverlay ? `
+        <div class="tk-seat-overlay">
+          <div class="tk-seat-overlay-box">
+            <div style="font-weight:bold; color:#0F172A; font-size:1em;">자리 배치 슬롯 저장</div>
+            <div style="font-size:0.8em; color:#64748B;">저장할 슬롯 이름을 입력하세요. (같은 이름 입력 시 덮어쓰기)</div>
+            <input id="seat_save_name_${w.id}" type="text" value="${escapeTkHtml(w._selectedSlotName || '')}" placeholder="예: 11월 기본자리"
+              style="width:100%; padding:8px 10px; border:1.5px solid #CBD5E1; border-radius:8px; font-weight:bold;">
+            <div style="display:flex; gap:6px; justify-content:flex-end;">
+              <button class="tk-mini-btn" onclick="closeSeatSaveOverlay('${w.id}')">취소</button>
+              <button class="tk-mini-btn primary" onclick="confirmSaveSeatSlot('${w.id}')">확인</button>
+            </div>
+          </div>
+        </div>
+      ` : ''}
     </div>
   `;
+
+  if (w._showSaveOverlay) {
+    const inp = document.getElementById('seat_save_name_' + w.id);
+    if (inp) {
+      inp.focus();
+      inp.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') confirmSaveSeatSlot(w.id);
+      });
+    }
+  }
 }
 
 function clearSeatRevealTimer(id) {
@@ -1766,6 +1877,7 @@ function toggleSeatLock(id, idx) {
 
 function swapTwoSeats(w, idxA, idxB) {
   if (idxA === idxB) return;
+  pushSeatHistory(w);
   w.data.activeSeats[idxA] = true;
   w.data.activeSeats[idxB] = true;
   const tmp = w.data.seats[idxA];
@@ -1831,6 +1943,7 @@ function shuffleSeats(id) {
   if (seatRevealRuntime[id] && seatRevealRuntime[id].active) return;
 
   syncSeatData(w);
+  pushSeatHistory(w);
   const d = w.data;
   const lockedSet = new Set(d.lockedIdx || []);
 
@@ -2000,6 +2113,162 @@ function exportSeatsToPng(id) {
   link.download = `학급_자리배치표_${today}.png`;
   link.href = canvas.toDataURL('image/png');
   link.click();
+}
+
+// ==========================================
+// 자리 슬롯 로컬 저장/불러오기 & Firebase 업로드/다운로드
+// ==========================================
+function selectSeatSlotName(id, name) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w._selectedSlotName = name;
+}
+
+function openSeatSaveOverlay(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w._showSaveOverlay = true;
+  renderWidgetBody(w);
+}
+
+function closeSeatSaveOverlay(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w._showSaveOverlay = false;
+  renderWidgetBody(w);
+}
+
+function confirmSaveSeatSlot(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  const inp = document.getElementById('seat_save_name_' + id);
+  if (!w || !inp) return;
+  const name = inp.value.trim();
+  if (!name) return;
+
+  syncSeatData(w);
+  if (!Array.isArray(toolkitState.seatSlots)) toolkitState.seatSlots = [];
+  const snapshot = JSON.parse(JSON.stringify({
+    layoutMode: w.data.layoutMode,
+    groupCount: w.data.groupCount,
+    lineCount: w.data.lineCount,
+    rowCount: w.data.rowCount,
+    revealMode: w.data.revealMode,
+    seats: w.data.seats,
+    activeSeats: w.data.activeSeats,
+    lockedIdx: w.data.lockedIdx
+  }));
+
+  const existingIdx = toolkitState.seatSlots.findIndex(sl => sl && sl.name === name);
+  const slotObj = { name: name, savedAt: new Date().toISOString(), data: snapshot };
+  if (existingIdx > -1) {
+    toolkitState.seatSlots[existingIdx] = slotObj;
+  } else {
+    toolkitState.seatSlots.push(slotObj);
+  }
+
+  w._selectedSlotName = name;
+  w._showSaveOverlay = false;
+  w._syncMsg = `[${name}] 저장됨`;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function loadSelectedSeatSlot(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  const sel = document.getElementById('seat_slot_sel_' + id);
+  if (!w || !sel || !sel.value) return;
+  const target = (toolkitState.seatSlots || []).find(sl => sl && sl.name === sel.value);
+  if (!target || !target.data) return;
+
+  pushSeatHistory(w);
+  w.data = Object.assign({}, w.data, JSON.parse(JSON.stringify(target.data)));
+  syncSeatData(w);
+  w._selectedSlotName = target.name;
+  w._selectedSeatIdx = null;
+  w._syncMsg = `[${target.name}] 불러옴`;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function deleteSelectedSeatSlot(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  const sel = document.getElementById('seat_slot_sel_' + id);
+  if (!w || !sel || !sel.value) return;
+  toolkitState.seatSlots = (toolkitState.seatSlots || []).filter(sl => sl && sl.name !== sel.value);
+  w._selectedSlotName = toolkitState.seatSlots[0] ? toolkitState.seatSlots[0].name : '';
+  w._syncMsg = '슬롯 삭제됨';
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+async function uploadSeatSlotsToFirebase(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  syncSeatData(w);
+  w._syncMsg = '업로드 중...';
+  renderWidgetBody(w);
+
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    currentData: JSON.parse(JSON.stringify(w.data)),
+    slots: JSON.parse(JSON.stringify(toolkitState.seatSlots || []))
+  };
+
+  try {
+    const res = await fetch(FIREBASE_BASE_URL + '/toolkit/seatBackup.json', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    w._syncMsg = `업로드 완료 (${payload.slots.length}개)`;
+  } catch (e) {
+    w._syncMsg = '업로드 실패';
+    console.error('자리 슬롯 업로드 실패:', e);
+  }
+  renderWidgetBody(w);
+}
+
+async function downloadSeatSlotsFromFirebase(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w._syncMsg = '다운로드 중...';
+  renderWidgetBody(w);
+
+  try {
+    const res = await fetch(FIREBASE_BASE_URL + '/toolkit/seatBackup.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const remote = await res.json();
+    if (!remote) {
+      w._syncMsg = '서버 데이터 없음';
+      renderWidgetBody(w);
+      return;
+    }
+
+    pushSeatHistory(w);
+    const localSlots = Array.isArray(toolkitState.seatSlots) ? toolkitState.seatSlots : [];
+    const remoteSlots = Array.isArray(remote.slots) ? remote.slots : [];
+
+    // 이름 기준 병합 (서버 슬롯 우선 반영 + 로컬 전용 슬롯 유지)
+    const mergedMap = {};
+    localSlots.forEach(sl => { if (sl && sl.name) mergedMap[sl.name] = sl; });
+    remoteSlots.forEach(sl => { if (sl && sl.name) mergedMap[sl.name] = sl; });
+    toolkitState.seatSlots = Object.values(mergedMap);
+
+    if (remote.currentData) {
+      w.data = Object.assign({}, w.data, remote.currentData);
+      syncSeatData(w);
+    }
+    if (!w._selectedSlotName && toolkitState.seatSlots[0]) {
+      w._selectedSlotName = toolkitState.seatSlots[0].name;
+    }
+    w._syncMsg = `다운로드 완료 (${toolkitState.seatSlots.length}개)`;
+    saveToolkitState();
+  } catch (e) {
+    w._syncMsg = '다운로드 실패';
+    console.error('자리 슬롯 다운로드 실패:', e);
+  }
+  renderWidgetBody(w);
 }
 
 function escapeTkHtml(value) {
