@@ -148,6 +148,10 @@
       min-width: 180px;
       min-height: 130px;
     }
+    .tk-window.maximized {
+      border-radius: 0;
+      border: none;
+    }
     .tk-win-header {
       background: #F8FAFC;
       border-bottom: 1px solid #E2E8F0;
@@ -160,6 +164,31 @@
       font-weight: bold;
       color: #334155;
       flex-shrink: 0;
+      gap: 6px;
+    }
+    .tk-win-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .tk-win-btn {
+      border: 1px solid #CBD5E1;
+      background: #FFFFFF;
+      color: #475569;
+      border-radius: 4px;
+      font-size: 0.78em;
+      font-weight: bold;
+      cursor: pointer;
+      padding: 2px 6px;
+      line-height: 1.2;
+    }
+    .tk-win-btn:hover {
+      background: #E2E8F0;
+    }
+    .tk-win-btn.active {
+      background: #3B82F6;
+      border-color: #3B82F6;
+      color: #FFFFFF;
     }
     .tk-win-close {
       border: none;
@@ -544,20 +573,41 @@
       gap: 5px;
     }
     .tk-race-lane {
-      position: relative;
       height: 36px;
       background: #FFFFFF;
       border: 1px solid #E2E8F0;
       border-radius: 8px;
       display: flex;
-      align-items: center;
-      padding: 0 8px;
+      align-items: stretch;
       overflow: hidden;
       flex-shrink: 0;
     }
+    .tk-race-name {
+      width: 72px;
+      flex-shrink: 0;
+      background: #F1F5F9;
+      border-right: 1px solid #E2E8F0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.76em;
+      font-weight: bold;
+      color: #1E293B;
+      padding: 0 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tk-race-road {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+    }
     .tk-race-finish {
       position: absolute;
-      right: 26px;
+      right: 16px;
       top: 0;
       bottom: 0;
       width: 4px;
@@ -566,26 +616,29 @@
     }
     .tk-race-runner {
       position: absolute;
-      left: 0%;
+      left: 1%;
       display: flex;
       align-items: center;
-      gap: 4px;
       transition: left 0.06s linear;
       z-index: 2;
     }
     .tk-race-runner img {
-      width: 28px;
-      height: 28px;
+      width: 30px;
+      height: 30px;
       object-fit: contain;
     }
-    .tk-race-runner span {
-      font-size: 0.72em;
+    .tk-wheel-live {
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.82em;
       font-weight: bold;
-      color: #0F172A;
-      background: rgba(255, 255, 255, 0.85);
-      padding: 1px 4px;
-      border-radius: 4px;
-      white-space: nowrap;
+      color: #FFFFFF;
+      background: #334155;
+      margin-bottom: 2px;
+      min-height: 22px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
 
     /* 돌림판 */

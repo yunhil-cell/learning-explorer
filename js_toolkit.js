@@ -290,14 +290,38 @@ function closeWidget(id) {
   renderAllWidgets();
 }
 
+function getEffectiveZ(w) {
+  if (w.pinned) {
+    return 8500 + (Number(w.z) % 400);
+  }
+  return Math.min(8400, Number(w.z) || 10);
+}
+
 function bringToFront(id) {
   const w = toolkitState.widgets.find(x => x.id === id);
   if (!w) return;
   toolkitState.topZ += 1;
+  if (toolkitState.topZ > 8400) toolkitState.topZ = 100;
   w.z = toolkitState.topZ;
   const el = document.getElementById('win_' + id);
-  if (el) el.style.zIndex = w.z;
+  if (el) el.style.zIndex = getEffectiveZ(w);
   saveToolkitState();
+}
+
+function togglePinWidget(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.pinned = !w.pinned;
+  saveToolkitState();
+  renderAllWidgets();
+}
+
+function toggleMaximizeWidget(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.maximized = !w.maximized;
+  saveToolkitState();
+  renderAllWidgets();
 }
 
 function syncDockActiveState() {
@@ -317,21 +341,33 @@ function renderAllWidgets() {
 
   toolkitState.widgets.forEach(w => {
     const win = document.createElement('div');
-    win.className = 'tk-window';
+    win.className = 'tk-window' + (w.maximized ? ' maximized' : '');
     win.id = 'win_' + w.id;
-    win.style.left = w.x + 'px';
-    win.style.top = w.y + 'px';
-    win.style.width = w.w + 'px';
-    win.style.height = w.h + 'px';
-    win.style.zIndex = w.z;
+
+    if (w.maximized) {
+      win.style.left = '0px';
+      win.style.top = '0px';
+      win.style.width = '100%';
+      win.style.height = '100%';
+    } else {
+      win.style.left = w.x + 'px';
+      win.style.top = w.y + 'px';
+      win.style.width = w.w + 'px';
+      win.style.height = w.h + 'px';
+    }
+    win.style.zIndex = getEffectiveZ(w);
 
     win.innerHTML = `
       <div class="tk-win-header">
         <span>${w.title}</span>
-        <button class="tk-win-close" onclick="closeWidget('${w.id}')">&times;</button>
+        <div class="tk-win-actions">
+          <button class="tk-win-btn ${w.pinned ? 'active' : ''}" onclick="togglePinWidget('${w.id}')" title="항상 위">고정</button>
+          <button class="tk-win-btn ${w.maximized ? 'active' : ''}" onclick="toggleMaximizeWidget('${w.id}')" title="${w.maximized ? '원래 크기' : '최대화'}">${w.maximized ? '복원' : '□'}</button>
+          <button class="tk-win-close" onclick="closeWidget('${w.id}')">&times;</button>
+        </div>
       </div>
       <div class="tk-win-body" id="body_${w.id}"></div>
-      <div class="tk-resize-handle"></div>
+      ${w.maximized ? '' : '<div class="tk-resize-handle"></div>'}
     `;
 
     win.addEventListener('pointerdown', () => bringToFront(w.id));
@@ -348,6 +384,7 @@ function attachDragAndResize(win, w) {
   const resizeHandle = win.querySelector('.tk-resize-handle');
 
   header.addEventListener('pointerdown', (e) => {
+    if (w.maximized) return;
     if (e.target.closest('button, input, select, textarea')) return;
     e.preventDefault();
     const startX = e.clientX;
@@ -374,7 +411,8 @@ function attachDragAndResize(win, w) {
     window.addEventListener('pointerup', onUp);
   });
 
-  resizeHandle.addEventListener('pointerdown', (e) => {
+  if (resizeHandle) resizeHandle.addEventListener('pointerdown', (e) => {
+    if (w.maximized) return;
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
@@ -870,7 +908,9 @@ function getDefaultGameUrl() {
 
 function renderQrBody(w, body) {
   const url = w.data.url || getDefaultGameUrl();
-  const size = Math.max(90, Math.min(w.w - 40, w.h - 110));
+  const curW = w.maximized ? window.innerWidth : w.w;
+  const curH = w.maximized ? window.innerHeight : w.h;
+  const size = Math.max(90, Math.min(curW - 40, curH - 120));
 
   body.innerHTML = `
     <div style="width:100%; height:100%; padding:10px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:8px;">
@@ -1207,10 +1247,12 @@ function renderRaceBody(w, body) {
 
   const lanesHtml = runners.map((s, idx) => `
     <div class="tk-race-lane">
-      <div class="tk-race-finish"></div>
-      <div class="tk-race-runner" id="runner_${w.id}_${idx}" style="left:2%;">
-        <img src="${escapeTkHtml(getStudentAvatarUrl(s))}">
-        <span>${escapeTkHtml(s.name)}</span>
+      <div class="tk-race-name">${escapeTkHtml(s.name)}</div>
+      <div class="tk-race-road">
+        <div class="tk-race-finish"></div>
+        <div class="tk-race-runner" id="runner_${w.id}_${idx}" style="left:1%;">
+          <img src="${escapeTkHtml(getStudentAvatarUrl(s))}">
+        </div>
       </div>
     </div>
   `).join('');
@@ -1239,7 +1281,7 @@ function startRace(id) {
 
   w._racing = true;
   w.data.winner = '';
-  const pos = Array(runners.length).fill(2);
+  const pos = Array(runners.length).fill(1);
 
   const raceInterval = setInterval(() => {
     let winnerName = '';
@@ -1249,9 +1291,9 @@ function startRace(id) {
       pos[i] += (Math.random() * 2.2) + 0.4 + boost;
       const el = document.getElementById(`runner_${id}_${i}`);
       if (el) {
-        el.style.left = Math.min(88, pos[i]) + '%';
+        el.style.left = Math.min(92, pos[i]) + '%';
       }
-      if (pos[i] >= 88 && !winnerName) {
+      if (pos[i] >= 92 && !winnerName) {
         winnerName = runners[i].name;
       }
     }
@@ -1274,10 +1316,22 @@ function startRace(id) {
 // ==========================================
 const WHEEL_COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
 
+function getWheelPointerIndex(angleDeg, itemCount) {
+  if (!itemCount) return -1;
+  const sliceDeg = 360 / itemCount;
+  const pointerAngle = (270 - (angleDeg % 360) + 360) % 360;
+  return Math.floor(pointerAngle / sliceDeg) % itemCount;
+}
+
 function renderWheelBody(w, body) {
   const items = String(w.data.itemsText || '').split('\n').map(x => x.trim()).filter(Boolean);
-  const size = Math.max(150, Math.min(w.w - 40, w.h - (w.data.showEdit ? 220 : 120)));
+  const curW = w.maximized ? window.innerWidth : w.w;
+  const curH = w.maximized ? window.innerHeight : w.h;
+  const size = Math.max(150, Math.min(curW - 40, curH - (w.data.showEdit ? 250 : 155)));
   const angle = Number(w.data.angle) || 0;
+  const curIdx = getWheelPointerIndex(angle, items.length);
+  const curLabel = curIdx >= 0 ? items[curIdx] : '-';
+  const curColor = curIdx >= 0 ? WHEEL_COLORS[curIdx % WHEEL_COLORS.length] : '#334155';
 
   body.innerHTML = `
     <div style="width:100%; height:100%; display:flex; flex-direction:column;">
@@ -1296,6 +1350,7 @@ function renderWheelBody(w, body) {
         </div>
       ` : ''}
       <div class="tk-wheel-stage">
+        <div id="whl_live_${w.id}" class="tk-wheel-live" style="background:${curColor};">${escapeTkHtml(curLabel)}</div>
         <div class="tk-wheel-pointer">▼</div>
         <canvas id="whl_cv_${w.id}" class="tk-wheel-canvas" width="${size}" height="${size}" style="transform:rotate(${angle}deg);"></canvas>
       </div>
@@ -1384,10 +1439,33 @@ function spinWheel(id) {
   const cv = document.getElementById('whl_cv_' + id);
   if (cv) cv.style.transform = `rotate(${w.data.angle}deg)`;
 
+  // 회전 중 매 프레임 12시 방향 화살표가 가리키는 항목을 실시간 표시
+  let rafId = null;
+  const trackPointer = () => {
+    if (!w._spinning) return;
+    const liveEl = document.getElementById('whl_live_' + id);
+    const canvasEl = document.getElementById('whl_cv_' + id);
+    if (liveEl && canvasEl) {
+      const tr = getComputedStyle(canvasEl).transform;
+      if (tr && tr !== 'none') {
+        const vals = tr.split('(')[1].split(')')[0].split(',');
+        const a = parseFloat(vals[0]);
+        const b = parseFloat(vals[1]);
+        const curDeg = (Math.atan2(b, a) * (180 / Math.PI) + 360) % 360;
+        const idx = getWheelPointerIndex(curDeg, items.length);
+        if (idx >= 0) {
+          liveEl.innerText = items[idx];
+          liveEl.style.background = WHEEL_COLORS[idx % WHEEL_COLORS.length];
+        }
+      }
+    }
+    rafId = requestAnimationFrame(trackPointer);
+  };
+  rafId = requestAnimationFrame(trackPointer);
+
   setTimeout(() => {
-    const sliceDeg = 360 / items.length;
-    const pointerAngle = (270 - (w.data.angle % 360) + 360) % 360;
-    const winIdx = Math.floor(pointerAngle / sliceDeg) % items.length;
+    cancelAnimationFrame(rafId);
+    const winIdx = getWheelPointerIndex(w.data.angle, items.length);
     w.data.winner = items[winIdx];
     w._spinning = false;
     saveToolkitState();
