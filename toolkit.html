@@ -723,22 +723,22 @@
   <div id="tkDesktop"></div>
 
   <div class="tk-dock">
-    <div class="tk-dock-title">🧰 교실 툴킷</div>
+    <div class="tk-dock-title">교실 툴킷</div>
     <div class="tk-dock-grid">
-      <button class="tk-tool-btn" data-type="clock" onclick="toggleWidget('clock')"><span>⏰</span><span>시계</span></button>
-      <button class="tk-tool-btn" data-type="memo" onclick="createMemoWidget()"><span class="tk-plus">+</span><span>📝</span><span>메모</span></button>
-      <button class="tk-tool-btn" data-type="timer" onclick="toggleWidget('timer')"><span>⏱️</span><span>타이머</span></button>
-      <button class="tk-tool-btn" data-type="dday" onclick="toggleWidget('dday')"><span>📅</span><span>디데이</span></button>
-      <button class="tk-tool-btn" data-type="checklist" onclick="toggleWidget('checklist')"><span>✅</span><span>체크</span></button>
-      <button class="tk-tool-btn" data-type="dice" onclick="toggleWidget('dice')"><span>🎲</span><span>주사위</span></button>
-      <button class="tk-tool-btn" data-type="qr" onclick="toggleWidget('qr')"><span>📱</span><span>QR코드</span></button>
-      <button class="tk-tool-btn" data-type="board" onclick="createBoardWidget()"><span class="tk-plus">+</span><span>✏️</span><span>판서</span></button>
-      <button class="tk-tool-btn" data-type="pick" onclick="toggleWidget('pick')"><span>🎯</span><span>랜덤뽑기</span></button>
-      <button class="tk-tool-btn" data-type="race" onclick="toggleWidget('race')"><span>🏇</span><span>레이스</span></button>
-      <button class="tk-tool-btn" data-type="wheel" onclick="toggleWidget('wheel')"><span>🎡</span><span>돌림판</span></button>
-      <button class="tk-tool-btn" data-type="seat" onclick="toggleWidget('seat')"><span>🪑</span><span>자리배치</span></button>
+      <button class="tk-tool-btn" data-type="clock" onclick="toggleWidget('clock')"><span>시계</span></button>
+      <button class="tk-tool-btn" data-type="memo" onclick="createMemoWidget()"><span class="tk-plus">+</span><span>메모</span></button>
+      <button class="tk-tool-btn" data-type="timer" onclick="toggleWidget('timer')"><span>타이머</span></button>
+      <button class="tk-tool-btn" data-type="dday" onclick="toggleWidget('dday')"><span>디데이</span></button>
+      <button class="tk-tool-btn" data-type="checklist" onclick="toggleWidget('checklist')"><span>체크</span></button>
+      <button class="tk-tool-btn" data-type="dice" onclick="toggleWidget('dice')"><span>주사위</span></button>
+      <button class="tk-tool-btn" data-type="qr" onclick="toggleWidget('qr')"><span>QR코드</span></button>
+      <button class="tk-tool-btn" data-type="board" onclick="createBoardWidget()"><span class="tk-plus">+</span><span>판서</span></button>
+      <button class="tk-tool-btn" data-type="pick" onclick="toggleWidget('pick')"><span>랜덤뽑기</span></button>
+      <button class="tk-tool-btn" data-type="race" onclick="toggleWidget('race')"><span>레이스</span></button>
+      <button class="tk-tool-btn" data-type="wheel" onclick="toggleWidget('wheel')"><span>돌림판</span></button>
+      <button class="tk-tool-btn" data-type="seat" onclick="toggleWidget('seat')"><span>자리배치</span></button>
     </div>
-    <button class="tk-reset-btn" style="background:#DBEAFE; color:#1D4ED8;" onclick="openSettingsModal()">⚙️ 기본 설정</button>
+    <button class="tk-reset-btn" style="background:#DBEAFE; color:#1D4ED8;" onclick="openSettingsModal()">기본 설정</button>
     <button class="tk-reset-btn" onclick="resetToolkitLayout()">배치 초기화</button>
   </div>
 
@@ -746,15 +746,15 @@
   <div id="tkSettingsModal">
     <div class="tk-settings-card">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-        <h3 style="margin:0; color:#1E293B;">⚙️ 툴킷 기본 설정</h3>
+        <h3 style="margin:0; color:#1E293B;">툴킷 기본 설정</h3>
         <button class="tk-win-close" onclick="closeSettingsModal()">&times;</button>
       </div>
       <div style="margin-bottom:16px;">
-        <div style="font-weight:bold; font-size:0.9em; color:#334155; margin-bottom:8px;">🔠 기본 글자 크기 (1~5단계)</div>
+        <div style="font-weight:bold; font-size:0.9em; color:#334155; margin-bottom:8px;">기본 글자 크기 (1~5단계)</div>
         <div id="tkFontScaleBtns" style="display:flex; gap:6px;"></div>
       </div>
       <div style="margin-bottom:16px;">
-        <div style="font-weight:bold; font-size:0.9em; color:#334155; margin-bottom:8px;">🎨 배경 테마</div>
+        <div style="font-weight:bold; font-size:0.9em; color:#334155; margin-bottom:8px;">배경 테마</div>
         <div id="tkThemeBtns" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
       </div>
       <button onclick="closeSettingsModal()"
@@ -765,7 +765,7 @@
   <!-- 단독 접속 시 교사 PIN 확인 창 -->
   <div id="tkPinGate">
     <div class="tk-pin-card">
-      <h3 style="margin-top:0; color:#1E293B;">🔒 교사 모드 확인</h3>
+      <h3 style="margin-top:0; color:#1E293B;">교사 모드 확인</h3>
       <p style="font-size:0.9em; color:#475569;">교사용 PIN 6자리를 입력하세요.</p>
       <input id="tkPinInput" type="password" maxlength="6" placeholder="6자리 숫자"
         style="width:100%; padding:12px; font-size:1.3em; text-align:center; border:1.5px solid #CBD5E1; border-radius:10px; margin-bottom:14px;">

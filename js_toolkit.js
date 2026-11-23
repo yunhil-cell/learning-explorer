@@ -160,8 +160,8 @@ function loadToolkitState() {
     topZ: 12,
     settings: { fontScale: 3, theme: 'indigo' },
     widgets: [
-      { id: 'clock', type: 'clock', title: '⏰ 디지털 시계', x: 24, y: 24, w: Math.round(340 * defaultScale), h: Math.round(170 * defaultScale), z: 10, data: {} },
-      { id: 'memo_1', type: 'memo', title: '📝 메모', x: 24, y: Math.round(24 + 170 * defaultScale + 16), w: Math.round(340 * defaultScale), h: Math.round(240 * defaultScale), z: 11, data: { text: '', color: '#FEF3C7', fontSize: 22 } }
+      { id: 'clock', type: 'clock', title: '디지털 시계', x: 24, y: 24, w: Math.round(340 * defaultScale), h: Math.round(170 * defaultScale), z: 10, data: {} },
+      { id: 'memo_1', type: 'memo', title: '메모', x: 24, y: Math.round(24 + 170 * defaultScale + 16), w: Math.round(340 * defaultScale), h: Math.round(240 * defaultScale), z: 11, data: { text: '', color: '#FEF3C7', fontSize: 22 } }
     ]
   };
   saveToolkitState();
@@ -186,8 +186,8 @@ function resetToolkitLayout() {
     topZ: 12,
     settings: curSettings,
     widgets: [
-      { id: 'clock', type: 'clock', title: '⏰ 디지털 시계', x: 24, y: 24, w: Math.round(340 * scale), h: clkH, z: 10, data: {} },
-      { id: 'memo_1', type: 'memo', title: '📝 메모', x: 24, y: 24 + clkH + 16, w: Math.round(340 * scale), h: Math.round(240 * scale), z: 11, data: { text: '', color: '#FEF3C7', fontSize: 22 } }
+      { id: 'clock', type: 'clock', title: '디지털 시계', x: 24, y: 24, w: Math.round(340 * scale), h: clkH, z: 10, data: {} },
+      { id: 'memo_1', type: 'memo', title: '메모', x: 24, y: 24 + clkH + 16, w: Math.round(340 * scale), h: Math.round(240 * scale), z: 11, data: { text: '', color: '#FEF3C7', fontSize: 22 } }
     ]
   };
   saveToolkitState();
@@ -206,16 +206,16 @@ function toggleWidget(type) {
   }
 
   const defaults = {
-    clock:     { title: '⏰ 디지털 시계', w: 340, h: 170, data: {} },
-    timer:     { title: '⏱️ 타이머 / 스톱워치', w: 340, h: 260, data: { mode: 'timer', totalSec: 300 } },
-    dday:      { title: '📅 디데이', w: 260, h: 190, data: { label: '종업식', targetDate: new Date().toISOString().slice(0, 10) } },
-    checklist: { title: '✅ 체크리스트', w: 300, h: 320, data: { items: [] } },
-    dice:      { title: '🎲 주사위', w: 240, h: 260, data: { count: 1, values: [1] } },
-    qr:        { title: '📱 QR 코드', w: 270, h: 320, data: { url: getDefaultGameUrl() } },
-    pick:      { title: '🎯 랜덤 뽑기', w: 340, h: 360, data: { noDup: true, excluded: [], picked: [], lastWinner: '', showFilter: false } },
-    race:      { title: '🏇 뽑기 레이스', w: 500, h: 400, data: { excluded: [], winner: '', showFilter: false } },
-    wheel:     { title: '🎡 돌림판', w: 380, h: 430, data: { itemsText: '발표 1\n발표 2\n보너스!\n한 번 더!', angle: 0, winner: '', showEdit: false } },
-    seat:      { title: '🪑 자리 바꾸기', w: 500, h: 420, data: { cols: 5, order: [], lockedIdx: [] } }
+    clock:     { title: '디지털 시계', w: 340, h: 170, data: {} },
+    timer:     { title: '타이머 / 스톱워치', w: 340, h: 260, data: { mode: 'timer', totalSec: 300 } },
+    dday:      { title: '디데이', w: 260, h: 190, data: { label: '종업식', targetDate: new Date().toISOString().slice(0, 10) } },
+    checklist: { title: '체크리스트', w: 300, h: 320, data: { items: [] } },
+    dice:      { title: '주사위', w: 240, h: 260, data: { count: 1, values: [1] } },
+    qr:        { title: 'QR 코드', w: 270, h: 320, data: { url: getDefaultGameUrl() } },
+    pick:      { title: '랜덤 뽑기', w: 340, h: 360, data: { noDup: true, excluded: [], picked: [], lastWinner: '', showFilter: false } },
+    race:      { title: '뽑기 레이스', w: 500, h: 400, data: { excluded: [], winner: '', showFilter: false } },
+    wheel:     { title: '돌림판', w: 380, h: 430, data: { itemsText: '발표 1\n발표 2\n보너스!\n한 번 더!', angle: 0, winner: '', showEdit: false } },
+    seat:      { title: '자리 바꾸기', w: 500, h: 420, data: { cols: 5, order: [], lockedIdx: [] } }
   };
 
   const cfg = defaults[type];
@@ -248,7 +248,7 @@ function createMemoWidget() {
   toolkitState.widgets.push({
     id: memoId,
     type: 'memo',
-    title: '📝 메모',
+    title: '메모',
     x: 60 + offset,
     y: 60 + offset,
     w: Math.round(320 * scale),
@@ -268,7 +268,7 @@ function createBoardWidget() {
   toolkitState.widgets.push({
     id: boardId,
     type: 'board',
-    title: '✏️ 칠판 판서',
+    title: '칠판 판서',
     x: 80 + offset,
     y: 40 + offset,
     w: Math.round(540 * scale),
@@ -812,7 +812,7 @@ function renderDiceBody(w, body) {
         <span style="font-size:0.85em; font-weight:bold; color:#334155;">합계: <b id="dsum_${w.id}" style="color:#EF4444;">${totalSum}</b></span>
       </div>
       <div class="tk-dice-grid">${diceHtml}</div>
-      <button class="tk-mini-btn warn" style="width:100%; padding:8px; font-size:0.92em;" onclick="rollDice('${w.id}')">🎲 던지기</button>
+      <button class="tk-mini-btn warn" style="width:100%; padding:8px; font-size:0.92em;" onclick="rollDice('${w.id}')">던지기</button>
     </div>
   `;
 }
@@ -1113,7 +1113,7 @@ function renderPickBody(w, body) {
         }
       </div>
       <div style="padding:8px 10px; border-top:1px solid #E2E8F0;">
-        <button class="tk-mini-btn primary" style="width:100%; padding:9px; font-size:0.95em;" onclick="runRandomPick('${w.id}')">🎯 뽑기!</button>
+        <button class="tk-mini-btn primary" style="width:100%; padding:9px; font-size:0.95em;" onclick="runRandomPick('${w.id}')">뽑기!</button>
       </div>
     </div>
   `;
@@ -1218,10 +1218,10 @@ function renderRaceBody(w, body) {
   body.innerHTML = `
     <div style="width:100%; height:100%; display:flex; flex-direction:column;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px;">
-        <span style="font-size:0.8em; font-weight:bold; color:#334155;">참가: ${runners.length}명 ${w.data.winner ? `| 🏆 1등: <b style="color:#EF4444;">${escapeTkHtml(w.data.winner)}</b>` : ''}</span>
+        <span style="font-size:0.8em; font-weight:bold; color:#334155;">참가: ${runners.length}명 ${w.data.winner ? `| 1등: <b style="color:#EF4444;">${escapeTkHtml(w.data.winner)}</b>` : ''}</span>
         <div style="display:flex; gap:4px;">
           <button class="tk-mini-btn" onclick="toggleWidgetFilter('${w.id}')">결석제외</button>
-          <button class="tk-mini-btn warn" onclick="startRace('${w.id}')">🏁 출발!</button>
+          <button class="tk-mini-btn warn" onclick="startRace('${w.id}')">출발!</button>
         </div>
       </div>
       ${w.data.showFilter ? `<div class="tk-sub-panel"><b>클릭하여 결석생 제외/복귀:</b><div class="tk-chip-grid">${chipsHtml}</div></div>` : ''}
@@ -1263,7 +1263,7 @@ function startRace(id) {
       // 순위 보존을 위해 상단 텍스트만 갱신 (레인 위치 유지)
       const headerSpan = document.querySelector(`#body_${id} span`);
       if (headerSpan) {
-        headerSpan.innerHTML = `참가: ${runners.length}명 | 🏆 1등: <b style="color:#EF4444;">${escapeTkHtml(winnerName)}</b>`;
+        headerSpan.innerHTML = `참가: ${runners.length}명 | 1등: <b style="color:#EF4444;">${escapeTkHtml(winnerName)}</b>`;
       }
     }
   }, 55);
@@ -1282,7 +1282,7 @@ function renderWheelBody(w, body) {
   body.innerHTML = `
     <div style="width:100%; height:100%; display:flex; flex-direction:column;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px;">
-        <span style="font-size:0.8em; font-weight:bold; color:#334155;">${w.data.winner ? `🎉 결과: <b style="color:#EF4444;">${escapeTkHtml(w.data.winner)}</b>` : `항목 ${items.length}개`}</span>
+        <span style="font-size:0.8em; font-weight:bold; color:#334155;">${w.data.winner ? `결과: <b style="color:#EF4444;">${escapeTkHtml(w.data.winner)}</b>` : `항목 ${items.length}개`}</span>
         <div style="display:flex; gap:4px;">
           <button class="tk-mini-btn" onclick="loadStudentsToWheel('${w.id}')">명단불러오기</button>
           <button class="tk-mini-btn" onclick="toggleWheelEdit('${w.id}')">항목편집</button>
@@ -1300,7 +1300,7 @@ function renderWheelBody(w, body) {
         <canvas id="whl_cv_${w.id}" class="tk-wheel-canvas" width="${size}" height="${size}" style="transform:rotate(${angle}deg);"></canvas>
       </div>
       <div style="padding:8px 10px; border-top:1px solid #E2E8F0;">
-        <button class="tk-mini-btn warn" style="width:100%; padding:8px; font-size:0.95em;" onclick="spinWheel('${w.id}')">🎡 돌리기!</button>
+        <button class="tk-mini-btn warn" style="width:100%; padding:8px; font-size:0.95em;" onclick="spinWheel('${w.id}')">돌리기!</button>
       </div>
     </div>
   `;
@@ -1419,7 +1419,7 @@ function renderSeatBody(w, body) {
     const avatar = st ? getStudentAvatarUrl(st) : '';
     return `
       <div class="tk-seat-card ${isLocked ? 'locked' : ''}" onclick="toggleSeatLock('${w.id}', ${idx})" title="클릭 시 고정석 잠금/해제">
-        ${isLocked ? '<span style="position:absolute; top:2px; right:4px; font-size:0.7em;">🔒</span>' : ''}
+        ${isLocked ? '<span style="position:absolute; top:2px; right:4px; font-size:0.65em; color:#B45309; font-weight:bold;">고정</span>' : ''}
         ${avatar ? `<img src="${escapeTkHtml(avatar)}">` : ''}
         <b>${escapeTkHtml(name)}</b>
       </div>
@@ -1431,9 +1431,9 @@ function renderSeatBody(w, body) {
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px;">
         <div style="display:flex; align-items:center; gap:6px;">
           <select class="tk-board-select" onchange="setSeatCols('${w.id}', Number(this.value))">${colOpts}</select>
-          <span style="font-size:0.75em; color:#64748B;">책상 클릭: 고정석 🔒</span>
+          <span style="font-size:0.75em; color:#64748B;">책상 클릭: 고정석</span>
         </div>
-        <button class="tk-mini-btn primary" onclick="shuffleSeats('${w.id}')">🔀 자리 섞기</button>
+        <button class="tk-mini-btn primary" onclick="shuffleSeats('${w.id}')">자리 섞기</button>
       </div>
       <div class="tk-seat-board">
         <div class="tk-seat-front">칠판 / 교탁 (앞)</div>
