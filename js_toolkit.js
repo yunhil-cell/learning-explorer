@@ -1,5 +1,9 @@
 const TOOLKIT_STORAGE_KEY = 'learning_explorer_toolkit_v1';
-const FIREBASE_CONFIG_URL = 'https://learning-explorer-default-rtdb.firebaseio.com/gameData/system/config.json';
+const FIREBASE_BASE_URL = 'https://learning-explorer-default-rtdb.firebaseio.com/gameData';
+const FIREBASE_CONFIG_URL = FIREBASE_BASE_URL + '/system/config.json';
+
+let tkStudents = [];
+let tkSkins = [];
 
 const TOOLKIT_THEMES = {
   indigo:   { name: '인디고 밤하늘', bg: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 45%, #0F172A 100%)', text: '#F8FAFC' },
@@ -73,12 +77,57 @@ async function verifyToolkitPin() {
   }
 }
 
-function startToolkit() {
+async function startToolkit() {
   loadToolkitState();
   applyToolkitSettings();
   renderAllWidgets();
   if (clockInterval) clearInterval(clockInterval);
   clockInterval = setInterval(updateClockWidgets, 1000);
+
+  await loadToolkitStudents();
+  // 학생 데이터를 받아온 뒤 명단 기반 위젯 다시 그리기
+  toolkitState.widgets.forEach(w => {
+    if (['pick', 'race', 'wheel', 'seat'].includes(w.type)) {
+      renderWidgetBody(w);
+    }
+  });
+}
+
+async function loadToolkitStudents() {
+  try {
+    const [stRes, skRes] = await Promise.all([
+      fetch(FIREBASE_BASE_URL + '/students.json', { cache: 'no-store' }),
+      fetch(FIREBASE_BASE_URL + '/skins.json', { cache: 'no-store' })
+    ]);
+    const stData = await stRes.json();
+    const skData = await skRes.json();
+
+    tkSkins = skData ? (Array.isArray(skData) ? skData : Object.values(skData)).filter(Boolean) : [];
+
+    const uniqueMap = {};
+    if (stData) {
+      if (Array.isArray(stData)) {
+        stData.forEach(s => { if (s && s.name) uniqueMap[String(s.name).trim()] = s; });
+      } else {
+        Object.entries(stData).forEach(([key, s]) => {
+          if (!s || !s.name) return;
+          const sName = String(s.name).trim();
+          if (String(key).trim() === sName || !uniqueMap[sName]) {
+            uniqueMap[sName] = s;
+          }
+        });
+      }
+    }
+    tkStudents = Object.values(uniqueMap).sort((a, b) => (Number(a.sheet_order) || 999) - (Number(b.sheet_order) || 999));
+  } catch (e) {
+    console.error('툴킷 학생/스킨 데이터 로드 실패:', e);
+  }
+}
+
+function getStudentAvatarUrl(student) {
+  const skinId = (student && student.equipped_skin) || 'HD001';
+  const skinObj = tkSkins.find(x => x && String(x.skin_id) === String(skinId));
+  return (skinObj && skinObj.skin_url) ? skinObj.skin_url : 'https://drive.google.com/thumbnail?id=1uoFPxFfpUaxE3eZCbrVU8oEvQLyQTg9b&sz=w200';
 }
 
 function applyToolkitSettings() {
@@ -162,7 +211,11 @@ function toggleWidget(type) {
     dday:      { title: '📅 디데이', w: 260, h: 190, data: { label: '종업식', targetDate: new Date().toISOString().slice(0, 10) } },
     checklist: { title: '✅ 체크리스트', w: 300, h: 320, data: { items: [] } },
     dice:      { title: '🎲 주사위', w: 240, h: 260, data: { count: 1, values: [1] } },
-    qr:        { title: '📱 QR 코드', w: 270, h: 320, data: { url: getDefaultGameUrl() } }
+    qr:        { title: '📱 QR 코드', w: 270, h: 320, data: { url: getDefaultGameUrl() } },
+    pick:      { title: '🎯 랜덤 뽑기', w: 340, h: 360, data: { noDup: true, excluded: [], picked: [], lastWinner: '', showFilter: false } },
+    race:      { title: '🏇 뽑기 레이스', w: 500, h: 400, data: { excluded: [], winner: '', showFilter: false } },
+    wheel:     { title: '🎡 돌림판', w: 380, h: 430, data: { itemsText: '발표 1\n발표 2\n보너스!\n한 번 더!', angle: 0, winner: '', showEdit: false } },
+    seat:      { title: '🪑 자리 바꾸기', w: 500, h: 420, data: { cols: 5, order: [], lockedIdx: [] } }
   };
 
   const cfg = defaults[type];
@@ -339,7 +392,7 @@ function attachDragAndResize(win, w) {
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      if (w.type === 'qr') renderWidgetBody(w);
+      if (w.type === 'qr' || w.type === 'wheel') renderWidgetBody(w);
       saveToolkitState();
     };
 
@@ -360,6 +413,10 @@ function renderWidgetBody(w) {
   else if (w.type === 'dice') renderDiceBody(w, body);
   else if (w.type === 'qr') renderQrBody(w, body);
   else if (w.type === 'board') renderBoardBody(w, body);
+  else if (w.type === 'pick') renderPickBody(w, body);
+  else if (w.type === 'race') renderRaceBody(w, body);
+  else if (w.type === 'wheel') renderWheelBody(w, body);
+  else if (w.type === 'seat') renderSeatBody(w, body);
 }
 
 // ==========================================
@@ -1012,6 +1069,428 @@ function setToolkitTheme(themeKey) {
   applyToolkitSettings();
   saveToolkitState();
   renderSettingsModal();
+}
+
+// ==========================================
+// [9] 랜덤 뽑기 (결석생·중복 제외)
+// ==========================================
+function renderPickBody(w, body) {
+  const excluded = w.data.excluded || [];
+  const picked = w.data.picked || [];
+  const noDup = w.data.noDup !== false;
+
+  const activeList = tkStudents.filter(s => !excluded.includes(s.name));
+  const pool = noDup ? activeList.filter(s => !picked.includes(s.name)) : activeList;
+
+  const winnerObj = tkStudents.find(s => s.name === w.data.lastWinner);
+  const avatarUrl = winnerObj ? getStudentAvatarUrl(winnerObj) : '';
+  const titleText = (winnerObj && winnerObj.equipped_title) ? winnerObj.equipped_title : '';
+
+  const chipsHtml = tkStudents.map(s => {
+    const isEx = excluded.includes(s.name);
+    return `<span class="tk-chip ${isEx ? 'excluded' : ''}" onclick="toggleExcludedStudent('${w.id}', '${escapeTkHtml(s.name)}')">${escapeTkHtml(s.name)}</span>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div style="width:100%; height:100%; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px; flex-wrap:wrap;">
+        <label style="font-size:0.78em; font-weight:bold; display:flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="checkbox" ${noDup ? 'checked' : ''} onchange="togglePickNoDup('${w.id}', this.checked)"> 중복 제외
+        </label>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <span style="font-size:0.75em; color:#64748B;">남은 인원: <b>${pool.length}/${activeList.length}</b></span>
+          <button class="tk-mini-btn" onclick="toggleWidgetFilter('${w.id}')">결석제외</button>
+          <button class="tk-mini-btn" onclick="resetPickHistory('${w.id}')">초기화</button>
+        </div>
+      </div>
+      ${w.data.showFilter ? `<div class="tk-sub-panel"><b>클릭하여 결석생 제외/복귀:</b><div class="tk-chip-grid">${chipsHtml}</div></div>` : ''}
+      <div class="tk-pick-stage">
+        ${winnerObj
+          ? `<img id="pick_img_${w.id}" class="tk-pick-avatar" src="${escapeTkHtml(avatarUrl)}">
+             ${titleText ? `<div style="font-size:0.8em; color:#D97706; font-weight:bold;">${escapeTkHtml(titleText)}</div>` : ''}
+             <div id="pick_name_${w.id}" class="tk-pick-name">${escapeTkHtml(winnerObj.name)}</div>`
+          : `<div id="pick_name_${w.id}" class="tk-pick-name" style="color:#94A3B8; font-size:1.1em;">${tkStudents.length ? '뽑기 버튼을 눌러주세요' : '학생 데이터 불러오는 중...'}</div>`
+        }
+      </div>
+      <div style="padding:8px 10px; border-top:1px solid #E2E8F0;">
+        <button class="tk-mini-btn primary" style="width:100%; padding:9px; font-size:0.95em;" onclick="runRandomPick('${w.id}')">🎯 뽑기!</button>
+      </div>
+    </div>
+  `;
+}
+
+function toggleExcludedStudent(id, name) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.excluded = w.data.excluded || [];
+  const idx = w.data.excluded.indexOf(name);
+  if (idx > -1) w.data.excluded.splice(idx, 1);
+  else w.data.excluded.push(name);
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function toggleWidgetFilter(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.showFilter = !w.data.showFilter;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function togglePickNoDup(id, checked) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.noDup = checked;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function resetPickHistory(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.picked = [];
+  w.data.lastWinner = '';
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function runRandomPick(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w || w._picking || tkStudents.length === 0) return;
+
+  const excluded = w.data.excluded || [];
+  const noDup = w.data.noDup !== false;
+  let picked = w.data.picked || [];
+  const activeList = tkStudents.filter(s => !excluded.includes(s.name));
+  if (activeList.length === 0) return;
+
+  let pool = noDup ? activeList.filter(s => !picked.includes(s.name)) : activeList;
+  if (pool.length === 0) {
+    picked = [];
+    w.data.picked = [];
+    pool = activeList;
+  }
+
+  w._picking = true;
+  let ticks = 0;
+  const spin = setInterval(() => {
+    const temp = pool[Math.floor(Math.random() * pool.length)];
+    w.data.lastWinner = temp.name;
+    renderWidgetBody(w);
+    ticks++;
+    if (ticks >= 10) {
+      clearInterval(spin);
+      const finalWinner = pool[Math.floor(Math.random() * pool.length)];
+      w.data.lastWinner = finalWinner.name;
+      if (noDup && !w.data.picked.includes(finalWinner.name)) {
+        w.data.picked.push(finalWinner.name);
+      }
+      w._picking = false;
+      saveToolkitState();
+      renderWidgetBody(w);
+    }
+  }, 60);
+}
+
+// ==========================================
+// [10] 뽑기 레이스 (아바타 달리기 경주)
+// ==========================================
+function renderRaceBody(w, body) {
+  const excluded = w.data.excluded || [];
+  const runners = tkStudents.filter(s => !excluded.includes(s.name));
+
+  const chipsHtml = tkStudents.map(s => {
+    const isEx = excluded.includes(s.name);
+    return `<span class="tk-chip ${isEx ? 'excluded' : ''}" onclick="toggleExcludedStudent('${w.id}', '${escapeTkHtml(s.name)}')">${escapeTkHtml(s.name)}</span>`;
+  }).join('');
+
+  const lanesHtml = runners.map((s, idx) => `
+    <div class="tk-race-lane">
+      <div class="tk-race-finish"></div>
+      <div class="tk-race-runner" id="runner_${w.id}_${idx}" style="left:2%;">
+        <img src="${escapeTkHtml(getStudentAvatarUrl(s))}">
+        <span>${escapeTkHtml(s.name)}</span>
+      </div>
+    </div>
+  `).join('');
+
+  body.innerHTML = `
+    <div style="width:100%; height:100%; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px;">
+        <span style="font-size:0.8em; font-weight:bold; color:#334155;">참가: ${runners.length}명 ${w.data.winner ? `| 🏆 1등: <b style="color:#EF4444;">${escapeTkHtml(w.data.winner)}</b>` : ''}</span>
+        <div style="display:flex; gap:4px;">
+          <button class="tk-mini-btn" onclick="toggleWidgetFilter('${w.id}')">결석제외</button>
+          <button class="tk-mini-btn warn" onclick="startRace('${w.id}')">🏁 출발!</button>
+        </div>
+      </div>
+      ${w.data.showFilter ? `<div class="tk-sub-panel"><b>클릭하여 결석생 제외/복귀:</b><div class="tk-chip-grid">${chipsHtml}</div></div>` : ''}
+      <div class="tk-race-track">${lanesHtml || '<div style="text-align:center; color:#94A3B8; padding-top:30px;">참가자가 없습니다.</div>'}</div>
+    </div>
+  `;
+}
+
+function startRace(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w || w._racing) return;
+  const excluded = w.data.excluded || [];
+  const runners = tkStudents.filter(s => !excluded.includes(s.name));
+  if (runners.length === 0) return;
+
+  w._racing = true;
+  w.data.winner = '';
+  const pos = Array(runners.length).fill(2);
+
+  const raceInterval = setInterval(() => {
+    let winnerName = '';
+    for (let i = 0; i < runners.length; i++) {
+      // 랜덤 가속 + 가끔 부스터
+      const boost = Math.random() < 0.12 ? 2.4 : 0;
+      pos[i] += (Math.random() * 2.2) + 0.4 + boost;
+      const el = document.getElementById(`runner_${id}_${i}`);
+      if (el) {
+        el.style.left = Math.min(88, pos[i]) + '%';
+      }
+      if (pos[i] >= 88 && !winnerName) {
+        winnerName = runners[i].name;
+      }
+    }
+    if (winnerName) {
+      clearInterval(raceInterval);
+      w._racing = false;
+      w.data.winner = winnerName;
+      saveToolkitState();
+      // 순위 보존을 위해 상단 텍스트만 갱신 (레인 위치 유지)
+      const headerSpan = document.querySelector(`#body_${id} span`);
+      if (headerSpan) {
+        headerSpan.innerHTML = `참가: ${runners.length}명 | 🏆 1등: <b style="color:#EF4444;">${escapeTkHtml(winnerName)}</b>`;
+      }
+    }
+  }, 55);
+}
+
+// ==========================================
+// [11] 돌림판 (커스텀 + 학생 명단)
+// ==========================================
+const WHEEL_COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
+
+function renderWheelBody(w, body) {
+  const items = String(w.data.itemsText || '').split('\n').map(x => x.trim()).filter(Boolean);
+  const size = Math.max(150, Math.min(w.w - 40, w.h - (w.data.showEdit ? 220 : 120)));
+  const angle = Number(w.data.angle) || 0;
+
+  body.innerHTML = `
+    <div style="width:100%; height:100%; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px;">
+        <span style="font-size:0.8em; font-weight:bold; color:#334155;">${w.data.winner ? `🎉 결과: <b style="color:#EF4444;">${escapeTkHtml(w.data.winner)}</b>` : `항목 ${items.length}개`}</span>
+        <div style="display:flex; gap:4px;">
+          <button class="tk-mini-btn" onclick="loadStudentsToWheel('${w.id}')">명단불러오기</button>
+          <button class="tk-mini-btn" onclick="toggleWheelEdit('${w.id}')">항목편집</button>
+        </div>
+      </div>
+      ${w.data.showEdit ? `
+        <div class="tk-sub-panel">
+          <textarea id="whl_txt_${w.id}" rows="4" placeholder="줄바꿈으로 항목 구분"
+            style="width:100%; padding:6px; border:1px solid #CBD5E1; border-radius:6px; font-size:0.95em; resize:vertical;">${escapeTkHtml(w.data.itemsText || '')}</textarea>
+          <button class="tk-mini-btn primary" style="margin-top:4px; width:100%;" onclick="saveWheelItems('${w.id}')">적용</button>
+        </div>
+      ` : ''}
+      <div class="tk-wheel-stage">
+        <div class="tk-wheel-pointer">▼</div>
+        <canvas id="whl_cv_${w.id}" class="tk-wheel-canvas" width="${size}" height="${size}" style="transform:rotate(${angle}deg);"></canvas>
+      </div>
+      <div style="padding:8px 10px; border-top:1px solid #E2E8F0;">
+        <button class="tk-mini-btn warn" style="width:100%; padding:8px; font-size:0.95em;" onclick="spinWheel('${w.id}')">🎡 돌리기!</button>
+      </div>
+    </div>
+  `;
+
+  drawWheelCanvas(w.id, items, size);
+}
+
+function drawWheelCanvas(id, items, size) {
+  const cv = document.getElementById('whl_cv_' + id);
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = cx - 4;
+  ctx.clearRect(0, 0, size, size);
+
+  if (!items || items.length === 0) return;
+  const slice = (Math.PI * 2) / items.length;
+
+  items.forEach((label, i) => {
+    const start = i * slice;
+    const end = start + slice;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, end);
+    ctx.closePath();
+    ctx.fillStyle = WHEEL_COLORS[i % WHEEL_COLORS.length];
+    ctx.fill();
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(start + slice / 2);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = `bold ${Math.max(10, Math.min(16, Math.floor(r / (items.length > 14 ? 9 : 6))))}px NanumSquareNeo, sans-serif`;
+    ctx.fillText(label.slice(0, 10), r - 10, 5);
+    ctx.restore();
+  });
+}
+
+function toggleWheelEdit(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.showEdit = !w.data.showEdit;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function saveWheelItems(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  const ta = document.getElementById('whl_txt_' + id);
+  if (!w || !ta) return;
+  w.data.itemsText = ta.value;
+  w.data.winner = '';
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function loadStudentsToWheel(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w || tkStudents.length === 0) return;
+  w.data.itemsText = tkStudents.map(s => s.name).join('\n');
+  w.data.winner = '';
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function spinWheel(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w || w._spinning) return;
+  const items = String(w.data.itemsText || '').split('\n').map(x => x.trim()).filter(Boolean);
+  if (items.length === 0) return;
+
+  w._spinning = true;
+  const extraDeg = 1440 + Math.floor(Math.random() * 1440);
+  w.data.angle = (Number(w.data.angle) || 0) + extraDeg;
+
+  const cv = document.getElementById('whl_cv_' + id);
+  if (cv) cv.style.transform = `rotate(${w.data.angle}deg)`;
+
+  setTimeout(() => {
+    const sliceDeg = 360 / items.length;
+    const pointerAngle = (270 - (w.data.angle % 360) + 360) % 360;
+    const winIdx = Math.floor(pointerAngle / sliceDeg) % items.length;
+    w.data.winner = items[winIdx];
+    w._spinning = false;
+    saveToolkitState();
+    renderWidgetBody(w);
+  }, 4050);
+}
+
+// ==========================================
+// [12] 자리 바꾸기 (고정석 잠금 지원)
+// ==========================================
+function renderSeatBody(w, body) {
+  const cols = Math.min(8, Math.max(2, Number(w.data.cols) || 5));
+  const locked = w.data.lockedIdx || [];
+
+  // 최초 생성 또는 인원 변동 시 명단 동기화
+  const allNames = tkStudents.map(s => s.name);
+  if (!Array.isArray(w.data.order) || w.data.order.length !== allNames.length) {
+    w.data.order = allNames.slice();
+  }
+
+  let colOpts = '';
+  for (let c = 2; c <= 8; c++) {
+    colOpts += `<option value="${c}" ${cols === c ? 'selected' : ''}>${c}열</option>`;
+  }
+
+  const cardsHtml = w.data.order.map((name, idx) => {
+    const st = tkStudents.find(s => s.name === name);
+    const isLocked = locked.includes(idx);
+    const avatar = st ? getStudentAvatarUrl(st) : '';
+    return `
+      <div class="tk-seat-card ${isLocked ? 'locked' : ''}" onclick="toggleSeatLock('${w.id}', ${idx})" title="클릭 시 고정석 잠금/해제">
+        ${isLocked ? '<span style="position:absolute; top:2px; right:4px; font-size:0.7em;">🔒</span>' : ''}
+        ${avatar ? `<img src="${escapeTkHtml(avatar)}">` : ''}
+        <b>${escapeTkHtml(name)}</b>
+      </div>
+    `;
+  }).join('');
+
+  body.innerHTML = `
+    <div style="width:100%; height:100%; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <select class="tk-board-select" onchange="setSeatCols('${w.id}', Number(this.value))">${colOpts}</select>
+          <span style="font-size:0.75em; color:#64748B;">책상 클릭: 고정석 🔒</span>
+        </div>
+        <button class="tk-mini-btn primary" onclick="shuffleSeats('${w.id}')">🔀 자리 섞기</button>
+      </div>
+      <div class="tk-seat-board">
+        <div class="tk-seat-front">칠판 / 교탁 (앞)</div>
+        <div class="tk-seat-grid" style="grid-template-columns:repeat(${cols}, 1fr);">
+          ${cardsHtml || '<div style="grid-column:1/-1; text-align:center; color:#94A3B8; padding:20px;">학생 데이터 불러오는 중...</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function setSeatCols(id, cols) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.cols = cols;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function toggleSeatLock(id, idx) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.lockedIdx = w.data.lockedIdx || [];
+  const pos = w.data.lockedIdx.indexOf(idx);
+  if (pos > -1) w.data.lockedIdx.splice(pos, 1);
+  else w.data.lockedIdx.push(idx);
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function shuffleSeats(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w || !Array.isArray(w.data.order) || w.data.order.length === 0) return;
+
+  const locked = new Set(w.data.lockedIdx || []);
+  const unlockedIndices = [];
+  const unlockedNames = [];
+
+  w.data.order.forEach((name, idx) => {
+    if (!locked.has(idx)) {
+      unlockedIndices.push(idx);
+      unlockedNames.push(name);
+    }
+  });
+
+  // Fisher-Yates 셔플
+  for (let i = unlockedNames.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [unlockedNames[i], unlockedNames[j]] = [unlockedNames[j], unlockedNames[i]];
+  }
+
+  unlockedIndices.forEach((seatIdx, i) => {
+    w.data.order[seatIdx] = unlockedNames[i];
+  });
+
+  saveToolkitState();
+  renderWidgetBody(w);
 }
 
 function escapeTkHtml(value) {

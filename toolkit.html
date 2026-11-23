@@ -480,6 +480,191 @@
       font-family: 'Nanum Gothic Coding', 'D2Coding', monospace !important;
     }
 
+    /* 랜덤 뽑기 / 레이스 / 돌림판 / 자리바꾸기 위젯 */
+    .tk-sub-panel {
+      background: #F8FAFC;
+      border-bottom: 1px solid #E2E8F0;
+      padding: 8px 10px;
+      font-size: 0.78em;
+      max-height: 150px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    .tk-chip-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .tk-chip {
+      border: 1px solid #CBD5E1;
+      background: #FFFFFF;
+      color: #334155;
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 0.9em;
+      cursor: pointer;
+      user-select: none;
+    }
+    .tk-chip.excluded {
+      background: #E2E8F0;
+      color: #94A3B8;
+      text-decoration: line-through;
+    }
+    .tk-pick-stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      text-align: center;
+      background: radial-gradient(circle, #FFFBEB 0%, #FFFFFF 75%);
+    }
+    .tk-pick-avatar {
+      width: clamp(72px, 34cqh, 150px);
+      height: clamp(72px, 34cqh, 150px);
+      object-fit: contain;
+      margin-bottom: 8px;
+    }
+    .tk-pick-name {
+      font-size: clamp(20px, 10cqw, 44px);
+      font-weight: bold;
+      color: #1E293B;
+    }
+
+    /* 뽑기 레이스 */
+    .tk-race-track {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 10px;
+      background: #F8FAFC;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .tk-race-lane {
+      position: relative;
+      height: 36px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .tk-race-finish {
+      position: absolute;
+      right: 26px;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: repeating-linear-gradient(180deg, #0F172A 0 6px, #FFFFFF 6px 12px);
+      opacity: 0.5;
+    }
+    .tk-race-runner {
+      position: absolute;
+      left: 0%;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: left 0.06s linear;
+      z-index: 2;
+    }
+    .tk-race-runner img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+    }
+    .tk-race-runner span {
+      font-size: 0.72em;
+      font-weight: bold;
+      color: #0F172A;
+      background: rgba(255, 255, 255, 0.85);
+      padding: 1px 4px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    /* 돌림판 */
+    .tk-wheel-stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 8px;
+      overflow: hidden;
+    }
+    .tk-wheel-pointer {
+      font-size: 22px;
+      color: #EF4444;
+      line-height: 1;
+      margin-bottom: -6px;
+      z-index: 5;
+      filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.25));
+    }
+    .tk-wheel-canvas {
+      border-radius: 50%;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+      transition: transform 4s cubic-bezier(0.12, 0.86, 0.2, 1);
+    }
+
+    /* 자리 바꾸기 */
+    .tk-seat-board {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .tk-seat-front {
+      background: #143D2B;
+      color: #FFFFFF;
+      text-align: center;
+      padding: 5px;
+      border-radius: 6px;
+      font-size: 0.8em;
+      font-weight: bold;
+      border: 2px solid #78350F;
+    }
+    .tk-seat-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .tk-seat-card {
+      background: #F8FAFC;
+      border: 1.5px solid #CBD5E1;
+      border-radius: 8px;
+      padding: 8px 4px;
+      text-align: center;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      position: relative;
+    }
+    .tk-seat-card.locked {
+      background: #FEF3C7;
+      border-color: #F59E0B;
+    }
+    .tk-seat-card img {
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+    }
+    .tk-seat-card b {
+      font-size: 0.82em;
+      color: #1E293B;
+      word-break: keep-all;
+    }
+
     /* 설정 모달 */
     #tkSettingsModal {
       position: fixed;
@@ -548,6 +733,10 @@
       <button class="tk-tool-btn" data-type="dice" onclick="toggleWidget('dice')"><span>🎲</span><span>주사위</span></button>
       <button class="tk-tool-btn" data-type="qr" onclick="toggleWidget('qr')"><span>📱</span><span>QR코드</span></button>
       <button class="tk-tool-btn" data-type="board" onclick="createBoardWidget()"><span class="tk-plus">+</span><span>✏️</span><span>판서</span></button>
+      <button class="tk-tool-btn" data-type="pick" onclick="toggleWidget('pick')"><span>🎯</span><span>랜덤뽑기</span></button>
+      <button class="tk-tool-btn" data-type="race" onclick="toggleWidget('race')"><span>🏇</span><span>레이스</span></button>
+      <button class="tk-tool-btn" data-type="wheel" onclick="toggleWidget('wheel')"><span>🎡</span><span>돌림판</span></button>
+      <button class="tk-tool-btn" data-type="seat" onclick="toggleWidget('seat')"><span>🪑</span><span>자리배치</span></button>
     </div>
     <button class="tk-reset-btn" style="background:#DBEAFE; color:#1D4ED8;" onclick="openSettingsModal()">⚙️ 기본 설정</button>
     <button class="tk-reset-btn" onclick="resetToolkitLayout()">배치 초기화</button>
