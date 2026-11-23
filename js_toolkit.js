@@ -132,11 +132,23 @@ function getStudentAvatarUrl(student) {
 
 function applyToolkitSettings() {
   const settings = toolkitState.settings || { fontScale: 3, theme: 'indigo' };
-  const scale = FONT_SCALE_MAP[settings.fontScale] || 1.0;
+  const scale = FONT_SCALE_MAP[settings.fontScale] || 1.25;
   document.documentElement.style.setProperty('--tk-font-scale', scale);
 
   const theme = TOOLKIT_THEMES[settings.theme] || TOOLKIT_THEMES.indigo;
   document.body.style.background = theme.bg;
+
+  const dockWrap = document.getElementById('tkDockWrap');
+  const dockToggle = document.getElementById('tkDockToggle');
+  const hidden = Boolean(toolkitState.dockHidden);
+  if (dockWrap) dockWrap.classList.toggle('collapsed', hidden);
+  if (dockToggle) dockToggle.innerText = hidden ? '메뉴바 보이기' : '메뉴바 숨기기';
+}
+
+function toggleToolkitDock() {
+  toolkitState.dockHidden = !toolkitState.dockHidden;
+  applyToolkitSettings();
+  saveToolkitState();
 }
 
 // ==========================================
@@ -291,6 +303,9 @@ function closeWidget(id) {
 }
 
 function getEffectiveZ(w) {
+  if (w.maximized) {
+    return 9500;
+  }
   if (w.pinned) {
     return 8500 + (Number(w.z) % 400);
   }
@@ -1327,7 +1342,7 @@ function renderWheelBody(w, body) {
   const items = String(w.data.itemsText || '').split('\n').map(x => x.trim()).filter(Boolean);
   const curW = w.maximized ? window.innerWidth : w.w;
   const curH = w.maximized ? window.innerHeight : w.h;
-  const size = Math.max(150, Math.min(curW - 40, curH - (w.data.showEdit ? 250 : 155)));
+  const size = Math.max(140, Math.min(curW - 40, curH - (w.data.showEdit ? 320 : 215)));
   const angle = Number(w.data.angle) || 0;
   const curIdx = getWheelPointerIndex(angle, items.length);
   const curLabel = curIdx >= 0 ? items[curIdx] : '-';
