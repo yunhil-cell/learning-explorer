@@ -699,55 +699,150 @@
     }
 
     /* 자리 바꾸기 */
+    .tk-seat-wrap {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: #E2E8F0;
+    }
+    .tk-seat-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      background: #FFFFFF;
+      border-bottom: 1px solid #CBD5E1;
+      gap: 6px;
+      flex-shrink: 0;
+    }
     .tk-seat-board {
       flex: 1;
       overflow-y: auto;
-      padding: 10px;
+      padding: 12px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
+      background: #E2E8F0;
     }
     .tk-seat-front {
       background: #143D2B;
       color: #FFFFFF;
       text-align: center;
-      padding: 5px;
+      padding: 6px;
       border-radius: 6px;
-      font-size: 0.8em;
+      font-size: 0.82em;
       font-weight: bold;
       border: 2px solid #78350F;
+      width: 55%;
+      margin: 0 auto;
+      flex-shrink: 0;
     }
     .tk-seat-grid {
       display: grid;
-      gap: 8px;
+      row-gap: 8px;
+      column-gap: 6px;
+      align-items: stretch;
+    }
+    .tk-seat-aisle {
+      pointer-events: none;
     }
     .tk-seat-card {
-      background: #F8FAFC;
-      border: 1.5px solid #CBD5E1;
+      background: #FFFFFF;
+      border: 2px solid #94A3B8;
       border-radius: 8px;
-      padding: 8px 4px;
+      min-height: 50px;
+      padding: 10px 6px;
       text-align: center;
       cursor: pointer;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 3px;
       position: relative;
+      box-shadow: 0 2px 5px rgba(15, 23, 42, 0.08);
+      transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
     }
-    .tk-seat-card.locked {
-      background: #FEF3C7;
-      border-color: #F59E0B;
+    .tk-seat-card.selected {
+      border-color: #2563EB;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+      transform: translateY(-2px);
     }
-    .tk-seat-card img {
-      width: 34px;
-      height: 34px;
-      object-fit: contain;
+    .tk-seat-card.drag-over {
+      border-color: #10B981;
+      background: #ECFDF5;
+    }
+    .tk-seat-card.concealed {
+      background: #334155;
+      border-color: #1E293B;
+      color: #F8FAFC;
+    }
+    .tk-seat-card.concealed b {
+      color: #FBBF24;
+    }
+    .tk-seat-card.inactive {
+      background: transparent;
+      border: 2px dashed #94A3B8;
+      box-shadow: none;
+      color: #64748B;
+      font-size: 0.78em;
+    }
+    .tk-seat-card.inactive:hover {
+      background: rgba(255, 255, 255, 0.45);
+      border-color: #475569;
     }
     .tk-seat-card b {
-      font-size: 0.82em;
-      color: #1E293B;
+      font-size: 0.92em;
+      color: #0F172A;
       word-break: keep-all;
+      pointer-events: none;
+    }
+    .tk-seat-pin-dot {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid #94A3B8;
+      background: transparent;
+      padding: 0;
+      cursor: pointer;
+    }
+    .tk-seat-pin-dot.locked {
+      background: #EF4444;
+      border-color: #B91C1C;
+    }
+    .tk-seat-deact-btn {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      border: none;
+      background: transparent;
+      color: #94A3B8;
+      font-size: 0.75em;
+      font-weight: bold;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    .tk-seat-deact-btn:hover {
+      color: #EF4444;
+    }
+    .tk-seat-countdown {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(48px, 22cqw, 140px);
+      font-weight: bold;
+      color: #FBBF24;
+      text-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      z-index: 20;
+      pointer-events: none;
     }
 
     /* 설정 모달 */

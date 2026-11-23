@@ -227,7 +227,7 @@ function toggleWidget(type) {
     pick:      { title: '랜덤 뽑기', w: 340, h: 360, data: { noDup: true, excluded: [], picked: [], lastWinner: '', showFilter: false } },
     race:      { title: '뽑기 레이스', w: 500, h: 400, data: { excluded: [], winner: '', showFilter: false } },
     wheel:     { title: '돌림판', w: 380, h: 430, data: { itemsText: '발표 1\n발표 2\n보너스!\n한 번 더!', angle: 0, winner: '', showEdit: false } },
-    seat:      { title: '자리 바꾸기', w: 500, h: 420, data: { cols: 5, order: [], lockedIdx: [] } }
+    seat:      { title: '자리 바꾸기', w: 660, h: 480, data: { layoutMode: 'group', groupCount: 3, lineCount: 5, rowCount: 6, revealMode: 'instant', seats: [], activeSeats: [], lockedIdx: [] } }
   };
 
   const cfg = defaults[type];
@@ -1489,59 +1489,266 @@ function spinWheel(id) {
 }
 
 // ==========================================
-// [12] 자리 바꾸기 (고정석 잠금 지원)
+// [12] 자리 바꾸기 (분단/일자 · 8줄 · 고정원 · 클릭/드래그 스왑 · 순차공개 · PNG)
 // ==========================================
-function renderSeatBody(w, body) {
-  const cols = Math.min(8, Math.max(2, Number(w.data.cols) || 5));
-  const locked = w.data.lockedIdx || [];
+const seatRevealRuntime = {};
 
-  // 최초 생성 또는 인원 변동 시 명단 동기화
+function getSeatDimensions(data) {
+  const mode = data.layoutMode === 'line' ? 'line' : 'group';
+  const groups = Math.min(4, Math.max(1, Number(data.groupCount) || 3));
+  const lines = Math.min(8, Math.max(1, Number(data.lineCount) || 5));
+  const rows = Math.min(8, Math.max(1, Number(data.rowCount) || 6));
+  const cols = mode === 'group' ? groups * 2 : lines;
+  return { mode, groups, lines, rows, cols, total: cols * rows };
+}
+
+function syncSeatData(w) {
+  const d = w.data;
+  if (!d.layoutMode) d.layoutMode = 'group';
+  if (!d.groupCount) d.groupCount = 3;
+  if (!d.lineCount) d.lineCount = 5;
+  if (!d.rowCount) d.rowCount = Math.min(8, Math.max(4, Math.ceil((tkStudents.length || 24) / (d.layoutMode === 'group' ? d.groupCount * 2 : d.lineCount))));
+  if (!d.revealMode) d.revealMode = 'instant';
+
+  const dim = getSeatDimensions(d);
   const allNames = tkStudents.map(s => s.name);
-  if (!Array.isArray(w.data.order) || w.data.order.length !== allNames.length) {
-    w.data.order = allNames.slice();
+
+  if (!Array.isArray(d.seats) || !Array.isArray(d.activeSeats)) {
+    d.seats = Array(dim.total).fill('');
+    d.activeSeats = Array(dim.total).fill(false);
+    d.lockedIdx = [];
   }
 
-  let colOpts = '';
-  for (let c = 2; c <= 8; c++) {
-    colOpts += `<option value="${c}" ${cols === c ? 'selected' : ''}>${c}열</option>`;
-  }
+  // 격자 크기 변경 시 기존 자리 정보 길이에 맞게 재정렬
+  if (d.seats.length !== dim.total || d.activeSeats.length !== dim.total) {
+    const prevNames = d.seats.filter(Boolean);
+    const nextSeats = Array(dim.total).fill('');
+    const nextActive = Array(dim.total).fill(false);
+    const nextLocked = [];
 
-  const cardsHtml = w.data.order.map((name, idx) => {
-    const st = tkStudents.find(s => s.name === name);
-    const isLocked = locked.includes(idx);
-    const avatar = st ? getStudentAvatarUrl(st) : '';
-    return `
-      <div class="tk-seat-card ${isLocked ? 'locked' : ''}" onclick="toggleSeatLock('${w.id}', ${idx})" title="클릭 시 고정석 잠금/해제">
-        ${isLocked ? '<span style="position:absolute; top:2px; right:4px; font-size:0.65em; color:#B45309; font-weight:bold;">고정</span>' : ''}
-        ${avatar ? `<img src="${escapeTkHtml(avatar)}">` : ''}
-        <b>${escapeTkHtml(name)}</b>
-      </div>
-    `;
-  }).join('');
+    for (let i = 0; i < dim.total; i++) {
+      if (i < d.activeSeats.length) nextActive[i] = Boolean(d.activeSeats[i]);
+      if (i < d.seats.length && d.seats[i] && allNames.includes(d.seats[i])) {
+        nextSeats[i] = d.seats[i];
+        nextActive[i] = true;
+        if ((d.lockedIdx || []).includes(i)) nextLocked.push(i);
+      }
+    }
+
+    // 축소로 빠졌거나 새로 추가된 학생을 빈 활성 칸/점선 칸에 배치
+    const placedSet = new Set(nextSeats.filter(Boolean));
+    const missing = allNames.filter(n => !placedSet.has(n));
+    for (const mName of missing) {
+      let target = nextActive.findIndex((act, idx) => act && !nextSeats[idx]);
+      if (target === -1) target = nextSeats.findIndex(v => !v);
+      if (target > -1) {
+        nextSeats[target] = mName;
+        nextActive[target] = true;
+      }
+    }
+
+    d.seats = nextSeats;
+    d.activeSeats = nextActive;
+    d.lockedIdx = nextLocked;
+  } else if (allNames.length > 0 && d.seats.filter(Boolean).length === 0) {
+    for (let i = 0; i < Math.min(dim.total, allNames.length); i++) {
+      d.seats[i] = allNames[i];
+      d.activeSeats[i] = true;
+    }
+  } else {
+    // 명단 동기화 (제거된 학생 비우고 새 학생 추가)
+    const validSet = new Set(allNames);
+    for (let i = 0; i < d.seats.length; i++) {
+      if (d.seats[i] && !validSet.has(d.seats[i])) {
+        d.seats[i] = '';
+      }
+    }
+    const placed = new Set(d.seats.filter(Boolean));
+    allNames.filter(n => !placed.has(n)).forEach(n => {
+      let target = d.activeSeats.findIndex((act, idx) => act && !d.seats[idx]);
+      if (target === -1) target = d.seats.findIndex(v => !v);
+      if (target > -1) {
+        d.seats[target] = n;
+        d.activeSeats[target] = true;
+      }
+    });
+  }
+}
+
+function getSeatGridTemplate(dim) {
+  const parts = [];
+  if (dim.mode === 'group') {
+    for (let g = 0; g < dim.groups; g++) {
+      parts.push('1fr', '1fr');
+      if (g < dim.groups - 1) parts.push('18px');
+    }
+  } else {
+    for (let l = 0; l < dim.lines; l++) {
+      parts.push('1fr');
+      if (l < dim.lines - 1) parts.push('16px');
+    }
+  }
+  return parts.join(' ');
+}
+
+function renderSeatBody(w, body) {
+  syncSeatData(w);
+  const d = w.data;
+  const dim = getSeatDimensions(d);
+  const locked = d.lockedIdx || [];
+  const rt = seatRevealRuntime[w.id];
+  const isRevealing = Boolean(rt && rt.active);
+
+  const countOpts = d.layoutMode === 'group'
+    ? [1, 2, 3, 4].map(n => `<option value="${n}" ${dim.groups === n ? 'selected' : ''}>${n}분단</option>`).join('')
+    : [1, 2, 3, 4, 5, 6, 7, 8].map(n => `<option value="${n}" ${dim.lines === n ? 'selected' : ''}>${n}줄</option>`).join('');
+
+  const rowOpts = [1, 2, 3, 4, 5, 6, 7, 8].map(n =>
+    `<option value="${n}" ${dim.rows === n ? 'selected' : ''}>앞뒤 ${n}줄</option>`
+  ).join('');
+
+  const unplacedCount = Math.max(0, tkStudents.length - d.seats.filter(Boolean).length);
+  const templateCols = getSeatGridTemplate(dim);
+
+  let gridHtml = '';
+  for (let r = 0; r < dim.rows; r++) {
+    for (let c = 0; c < dim.cols; c++) {
+      const idx = r * dim.cols + c;
+      const isActive = Boolean(d.activeSeats[idx]);
+      const name = d.seats[idx] || '';
+      const isLocked = locked.includes(idx);
+      const isSelected = w._selectedSeatIdx === idx;
+      const isHidden = isRevealing && name && !isLocked && !rt.revealed.has(idx);
+
+      if (!isActive) {
+        gridHtml += `
+          <div class="tk-seat-card inactive"
+               onclick="activateSeatSlot('${w.id}', ${idx})"
+               ondragover="handleSeatDragOver(event, this)"
+               ondragleave="handleSeatDragLeave(this)"
+               ondrop="handleSeatDrop(event, '${w.id}', ${idx})"
+               title="클릭하거나 학생을 끌어와 책상 활성화">
+            + 빈 자리
+          </div>
+        `;
+      } else {
+        gridHtml += `
+          <div class="tk-seat-card ${isSelected ? 'selected' : ''} ${isHidden ? 'concealed' : ''}"
+               draggable="${name && !isRevealing ? 'true' : 'false'}"
+               ondragstart="handleSeatDragStart(event, '${w.id}', ${idx})"
+               ondragover="handleSeatDragOver(event, this)"
+               ondragleave="handleSeatDragLeave(this)"
+               ondrop="handleSeatDrop(event, '${w.id}', ${idx})"
+               onclick="handleSeatClick('${w.id}', ${idx})">
+            ${!name && !isRevealing ? `<button class="tk-seat-deact-btn" onclick="event.stopPropagation(); deactivateSeatSlot('${w.id}', ${idx})" title="점선 빈 자리로 변경">&times;</button>` : ''}
+            <button class="tk-seat-pin-dot ${isLocked ? 'locked' : ''}" onclick="event.stopPropagation(); toggleSeatLock('${w.id}', ${idx})" title="고정석 설정/해제"></button>
+            <b>${isHidden ? '?' : (name ? escapeTkHtml(name) : '<span style="color:#94A3B8; font-weight:normal; font-size:0.85em;">빈 책상</span>')}</b>
+          </div>
+        `;
+      }
+
+      // 복도 스페이서 삽입
+      if (dim.mode === 'group') {
+        if (c % 2 === 1 && c < dim.cols - 1) gridHtml += '<div class="tk-seat-aisle"></div>';
+      } else {
+        if (c < dim.cols - 1) gridHtml += '<div class="tk-seat-aisle"></div>';
+      }
+    }
+  }
 
   body.innerHTML = `
-    <div style="width:100%; height:100%; display:flex; flex-direction:column;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px;">
-        <div style="display:flex; align-items:center; gap:6px;">
-          <select class="tk-board-select" onchange="setSeatCols('${w.id}', Number(this.value))">${colOpts}</select>
-          <span style="font-size:0.75em; color:#64748B;">책상 클릭: 고정석</span>
+    <div class="tk-seat-wrap">
+      <div class="tk-seat-toolbar">
+        <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+          <select class="tk-board-select" onchange="setSeatLayoutMode('${w.id}', this.value)">
+            <option value="group" ${dim.mode === 'group' ? 'selected' : ''}>분단형</option>
+            <option value="line" ${dim.mode === 'line' ? 'selected' : ''}>일자형</option>
+          </select>
+          <select class="tk-board-select" onchange="setSeatLayoutCount('${w.id}', Number(this.value))">${countOpts}</select>
+          <select class="tk-board-select" onchange="setSeatRowCount('${w.id}', Number(this.value))">${rowOpts}</select>
+          <select class="tk-board-select" onchange="setSeatRevealMode('${w.id}', this.value)">
+            <option value="instant" ${d.revealMode === 'instant' ? 'selected' : ''}>즉시 공개</option>
+            <option value="all" ${d.revealMode === 'all' ? 'selected' : ''}>한 번에(3·2·1)</option>
+            <option value="seq" ${d.revealMode === 'seq' ? 'selected' : ''}>순차 공개(3·2·1)</option>
+          </select>
         </div>
-        <button class="tk-mini-btn primary" onclick="shuffleSeats('${w.id}')">자리 섞기</button>
+        <div style="display:flex; align-items:center; gap:5px;">
+          <button class="tk-mini-btn primary" onclick="shuffleSeats('${w.id}')">${isRevealing ? '공개 중...' : '자리 섞기'}</button>
+          <button class="tk-mini-btn" onclick="exportSeatsToPng('${w.id}')">PNG 저장</button>
+        </div>
       </div>
+      ${unplacedCount > 0 ? `<div style="background:#FEE2E2; color:#B91C1C; font-size:0.78em; font-weight:bold; padding:4px 10px; text-align:center;">좌석 수가 부족해 ${unplacedCount}명이 배치되지 않았습니다. 분단/줄 수를 늘려주세요.</div>` : ''}
       <div class="tk-seat-board">
         <div class="tk-seat-front">칠판 / 교탁 (앞)</div>
-        <div class="tk-seat-grid" style="grid-template-columns:repeat(${cols}, 1fr);">
-          ${cardsHtml || '<div style="grid-column:1/-1; text-align:center; color:#94A3B8; padding:20px;">학생 데이터 불러오는 중...</div>'}
+        <div class="tk-seat-grid" style="grid-template-columns:${templateCols};">
+          ${tkStudents.length ? gridHtml : '<div style="grid-column:1/-1; text-align:center; color:#64748B; padding:24px;">학생 데이터 불러오는 중...</div>'}
         </div>
       </div>
+      ${(rt && rt.countdown) ? `<div class="tk-seat-countdown">${rt.countdown}</div>` : ''}
     </div>
   `;
 }
 
-function setSeatCols(id, cols) {
+function clearSeatRevealTimer(id) {
+  const rt = seatRevealRuntime[id];
+  if (rt) {
+    (rt.timers || []).forEach(t => clearTimeout(t));
+    delete seatRevealRuntime[id];
+  }
+}
+
+function setSeatLayoutMode(id, mode) {
   const w = toolkitState.widgets.find(x => x.id === id);
   if (!w) return;
-  w.data.cols = cols;
+  clearSeatRevealTimer(id);
+  w._selectedSeatIdx = null;
+  w.data.layoutMode = mode;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function setSeatLayoutCount(id, val) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  clearSeatRevealTimer(id);
+  w._selectedSeatIdx = null;
+  if (w.data.layoutMode === 'line') w.data.lineCount = val;
+  else w.data.groupCount = val;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function setSeatRowCount(id, rows) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  clearSeatRevealTimer(id);
+  w._selectedSeatIdx = null;
+  w.data.rowCount = rows;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function setSeatRevealMode(id, mode) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.revealMode = mode;
+  saveToolkitState();
+}
+
+function activateSeatSlot(id, idx) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.activeSeats[idx] = true;
+  saveToolkitState();
+  renderWidgetBody(w);
+}
+
+function deactivateSeatSlot(id, idx) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w || w.data.seats[idx]) return;
+  w.data.activeSeats[idx] = false;
+  w.data.lockedIdx = (w.data.lockedIdx || []).filter(i => i !== idx);
+  if (w._selectedSeatIdx === idx) w._selectedSeatIdx = null;
   saveToolkitState();
   renderWidgetBody(w);
 }
@@ -1557,33 +1764,242 @@ function toggleSeatLock(id, idx) {
   renderWidgetBody(w);
 }
 
-function shuffleSeats(id) {
+function swapTwoSeats(w, idxA, idxB) {
+  if (idxA === idxB) return;
+  w.data.activeSeats[idxA] = true;
+  w.data.activeSeats[idxB] = true;
+  const tmp = w.data.seats[idxA];
+  w.data.seats[idxA] = w.data.seats[idxB];
+  w.data.seats[idxB] = tmp;
+  saveToolkitState();
+}
+
+function handleSeatClick(id, idx) {
   const w = toolkitState.widgets.find(x => x.id === id);
-  if (!w || !Array.isArray(w.data.order) || w.data.order.length === 0) return;
+  if (!w || (seatRevealRuntime[id] && seatRevealRuntime[id].active)) return;
 
-  const locked = new Set(w.data.lockedIdx || []);
-  const unlockedIndices = [];
-  const unlockedNames = [];
-
-  w.data.order.forEach((name, idx) => {
-    if (!locked.has(idx)) {
-      unlockedIndices.push(idx);
-      unlockedNames.push(name);
-    }
-  });
-
-  // Fisher-Yates 셔플
-  for (let i = unlockedNames.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [unlockedNames[i], unlockedNames[j]] = [unlockedNames[j], unlockedNames[i]];
+  if (w._selectedSeatIdx === undefined || w._selectedSeatIdx === null) {
+    if (!w.data.seats[idx]) return;
+    w._selectedSeatIdx = idx;
+    renderWidgetBody(w);
+    return;
   }
 
-  unlockedIndices.forEach((seatIdx, i) => {
-    w.data.order[seatIdx] = unlockedNames[i];
+  if (w._selectedSeatIdx === idx) {
+    w._selectedSeatIdx = null;
+    renderWidgetBody(w);
+    return;
+  }
+
+  swapTwoSeats(w, w._selectedSeatIdx, idx);
+  w._selectedSeatIdx = null;
+  renderWidgetBody(w);
+}
+
+function handleSeatDragStart(e, id, idx) {
+  e.dataTransfer.setData('text/plain', JSON.stringify({ id, idx }));
+}
+
+function handleSeatDragOver(e, el) {
+  e.preventDefault();
+  el.classList.add('drag-over');
+}
+
+function handleSeatDragLeave(el) {
+  el.classList.remove('drag-over');
+}
+
+function handleSeatDrop(e, targetWidgetId, targetIdx) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  try {
+    const payload = JSON.parse(e.dataTransfer.getData('text/plain') || '{}');
+    if (payload.id !== targetWidgetId) return;
+    const w = toolkitState.widgets.find(x => x.id === targetWidgetId);
+    if (!w || payload.idx === undefined) return;
+    swapTwoSeats(w, payload.idx, targetIdx);
+    w._selectedSeatIdx = null;
+    renderWidgetBody(w);
+  } catch (err) {
+    console.error('드래그 자리 이동 오류:', err);
+  }
+}
+
+function shuffleSeats(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w || tkStudents.length === 0) return;
+  if (seatRevealRuntime[id] && seatRevealRuntime[id].active) return;
+
+  syncSeatData(w);
+  const d = w.data;
+  const lockedSet = new Set(d.lockedIdx || []);
+
+  // 고정되지 않은 학생 명단 수집
+  const fixedNames = new Set();
+  lockedSet.forEach(idx => {
+    if (d.seats[idx]) fixedNames.add(d.seats[idx]);
+  });
+  const freeStudents = tkStudents.map(s => s.name).filter(n => !fixedNames.has(n));
+
+  // 고정되지 않은 활성 책상 수집 (부족하면 점선 빈 자리를 앞에서부터 활성화)
+  let freeSlots = [];
+  d.activeSeats.forEach((act, idx) => {
+    if (act && !lockedSet.has(idx)) freeSlots.push(idx);
+  });
+  if (freeSlots.length < freeStudents.length) {
+    for (let i = 0; i < d.activeSeats.length && freeSlots.length < freeStudents.length; i++) {
+      if (!d.activeSeats[i] && !lockedSet.has(i)) {
+        d.activeSeats[i] = true;
+        freeSlots.push(i);
+      }
+    }
+  }
+
+  // Fisher-Yates 셔플
+  for (let i = freeStudents.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [freeStudents[i], freeStudents[j]] = [freeStudents[j], freeStudents[i]];
+  }
+
+  freeSlots.forEach((slotIdx, i) => {
+    d.seats[slotIdx] = freeStudents[i] || '';
   });
 
+  w._selectedSeatIdx = null;
   saveToolkitState();
+
+  const revealMode = d.revealMode || 'instant';
+  if (revealMode === 'instant') {
+    renderWidgetBody(w);
+    return;
+  }
+
+  // 3, 2, 1 카운트다운 후 한 번에 또는 순차 공개
+  const revealTargets = freeSlots.filter(idx => Boolean(d.seats[idx]));
+  if (revealTargets.length === 0) {
+    renderWidgetBody(w);
+    return;
+  }
+
+  const rt = { active: true, countdown: 3, revealed: new Set(), timers: [] };
+  seatRevealRuntime[id] = rt;
   renderWidgetBody(w);
+
+  rt.timers.push(setTimeout(() => { rt.countdown = 2; renderWidgetBody(w); }, 750));
+  rt.timers.push(setTimeout(() => { rt.countdown = 1; renderWidgetBody(w); }, 1500));
+  rt.timers.push(setTimeout(() => {
+    rt.countdown = 0;
+    if (revealMode === 'all') {
+      rt.active = false;
+      delete seatRevealRuntime[id];
+      renderWidgetBody(w);
+    } else {
+      renderWidgetBody(w);
+      revealTargets.forEach((slotIdx, step) => {
+        rt.timers.push(setTimeout(() => {
+          rt.revealed.add(slotIdx);
+          if (step === revealTargets.length - 1) {
+            rt.active = false;
+            delete seatRevealRuntime[id];
+          }
+          renderWidgetBody(w);
+        }, (step + 1) * 320));
+      });
+    }
+  }, 2250));
+}
+
+function exportSeatsToPng(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  syncSeatData(w);
+  const d = w.data;
+  const dim = getSeatDimensions(d);
+
+  const canvas = document.createElement('canvas');
+  const padX = 50;
+  const padTop = 120;
+  const cardW = 140;
+  const cardH = 68;
+  const gapY = 14;
+  const gapPair = 10;
+  const gapAisle = 34;
+
+  // 열별 X좌표 계산
+  const colXs = [];
+  let curX = padX;
+  for (let c = 0; c < dim.cols; c++) {
+    colXs.push(curX);
+    curX += cardW;
+    if (c < dim.cols - 1) {
+      if (dim.mode === 'group') curX += (c % 2 === 1 ? gapAisle : gapPair);
+      else curX += gapAisle;
+    }
+  }
+
+  canvas.width = curX + padX;
+  canvas.height = padTop + dim.rows * cardH + (dim.rows - 1) * gapY + 50;
+
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#E2E8F0';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 상단 제목 및 교탁
+  ctx.fillStyle = '#0F172A';
+  ctx.font = 'bold 26px NanumSquareNeo, sans-serif';
+  ctx.textAlign = 'center';
+  const today = new Date().toISOString().slice(0, 10);
+  ctx.fillText(`학급 자리 배치표 (${today})`, canvas.width / 2, 42);
+
+  const deskW = Math.min(460, canvas.width * 0.45);
+  ctx.fillStyle = '#143D2B';
+  ctx.fillRect((canvas.width - deskW) / 2, 60, deskW, 38);
+  ctx.strokeStyle = '#78350F';
+  ctx.lineWidth = 3;
+  ctx.strokeRect((canvas.width - deskW) / 2, 60, deskW, 38);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 18px NanumSquareNeo, sans-serif';
+  ctx.fillText('칠판 / 교탁 (앞)', canvas.width / 2, 85);
+
+  // 책상 그리기
+  for (let r = 0; r < dim.rows; r++) {
+    const y = padTop + r * (cardH + gapY);
+    for (let c = 0; c < dim.cols; c++) {
+      const idx = r * dim.cols + c;
+      const x = colXs[c];
+      const isActive = Boolean(d.activeSeats[idx]);
+      const name = d.seats[idx] || '';
+
+      ctx.save();
+      if (isActive) {
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.strokeStyle = '#94A3B8';
+        ctx.lineWidth = 2;
+        ctx.fillRect(x, y, cardW, cardH);
+        ctx.strokeRect(x, y, cardW, cardH);
+
+        if (name) {
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 22px NanumSquareNeo, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(name, x + cardW / 2, y + cardH / 2);
+        }
+      } else {
+        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = '#94A3B8';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, cardW, cardH);
+      }
+      ctx.restore();
+    }
+  }
+
+  const link = document.createElement('a');
+  link.download = `학급_자리배치표_${today}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
 }
 
 function escapeTkHtml(value) {
