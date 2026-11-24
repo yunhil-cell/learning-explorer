@@ -195,6 +195,19 @@ function renderRaceBody(w, body) {
     </span>`;
   }).join('');
 
+  const results = Array.isArray(w.data.results) ? w.data.results : [];
+  const winRankIdx = targetRank === 'last'
+    ? results.length - 1
+    : Math.min(results.length - 1, Math.max(0, (Number(targetRank) || 1) - 1));
+
+  const resultItemsHtml = results.map((name, idx) => {
+    const isTarget = idx === winRankIdx;
+    return `<div class="tk-pinball-result-item ${isTarget ? 'target' : ''}">
+      <span style="font-size:0.82em; color:${isTarget ? '#FBBF24' : '#94A3B8'}; font-weight:bold;">${idx + 1}위</span>
+      <b>${escapeTkHtml(name)}</b>
+    </div>`;
+  }).join('');
+
   body.innerHTML = `
     <div style="width:100%; height:100%; display:flex; flex-direction:column;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px; flex-wrap:wrap;">
@@ -219,10 +232,13 @@ function renderRaceBody(w, body) {
       <div class="tk-pinball-stage" id="pb_stage_${w.id}">
         <canvas id="pb_cv_${w.id}" class="tk-pinball-canvas"></canvas>
         <div id="pb_hud_${w.id}" class="tk-pinball-hud">대기 중 (${participants.length}개)</div>
-        ${w.data.winner && !isRunning ? `
+        ${results.length > 0 && !isRunning ? `
           <div class="tk-pinball-winner">
-            <div style="font-size:0.85em; color:#FBBF24; font-weight:bold; margin-bottom:4px;">${targetRank === 'last' ? '마지막 당첨!' : `${targetRank}등 당첨!`}</div>
-            <div style="font-size:1.8em; color:#FFFFFF; font-weight:bold;">${escapeTkHtml(w.data.winner)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.9em; color:#FBBF24; font-weight:bold;">최종 순위 (${targetRank === 'last' ? '꼴찌' : `${targetRank}등`} 당첨: ${escapeTkHtml(w.data.winner)})</span>
+              <button class="tk-win-close" style="color:#CBD5E1;" onclick="closePinballResult('${w.id}')">&times;</button>
+            </div>
+            <div class="tk-pinball-result-grid">${resultItemsHtml}</div>
           </div>
         ` : ''}
       </div>
@@ -489,11 +505,11 @@ function startPinballRace(id) {
   if (participants.length === 0) return;
 
   w.data.winner = '';
+  w.data.results = [];
   stopPinballRace(id);
 
   const engine = Matter.Engine.create();
   const built = createZigzagPinballWorld(engine, participants);
-  // 게이트 제거하고 출발
   Matter.World.remove(engine.world, built.gate);
   built.gate.isRemoved = true;
 
@@ -513,7 +529,7 @@ function startPinballRace(id) {
   renderWidgetBody(w);
 
   const targetRank = w.data.targetRank || '1';
-  const needCount = targetRank === 'last' ? rt.marbles.length : Math.min(rt.marbles.length, Number(targetRank) || 1);
+  const totalCount = rt.marbles.length;
 
   const loop = () => {
     const curRt = pinballRuntime[id];
@@ -534,38 +550,43 @@ function startPinballRace(id) {
       });
     }
 
-    // 끼임 방지 안전장치 (미완주 구슬들이 4초간 거의 안 움직이면 자동 살짝 튕기기)
+    // 끼임 방지 안전장치 (미완주 구슬들이 2.5초간 거의 안 움직이면 자동 살짝 튕기기)
     const activeMarbles = curRt.marbles.filter(m => !m.finished);
     const anyMoving = activeMarbles.some(m => (Math.abs(m.velocity.x) + Math.abs(m.velocity.y)) > 0.45);
     if (anyMoving) {
       curRt.lastProgressTime = Date.now();
-    } else if (activeMarbles.length > 0 && Date.now() - curRt.lastProgressTime > 3800) {
+    } else if (activeMarbles.length > 0 && Date.now() - curRt.lastProgressTime > 2500) {
       shakePinballMarbles(id);
       curRt.lastProgressTime = Date.now();
     }
 
-    // 실시간 HUD 갱신
+    // 실시간 전체 순위 HUD (15명마다 세로줄 추가)
     const hud = document.getElementById('pb_hud_' + id);
     if (hud) {
-      const rankList = activeMarbles.slice().sort((a, b) => b.position.y - a.position.y);
-      const topNames = curRt.finished.slice(0, 3);
-      while (topNames.length < 3 && rankList[topNames.length - curRt.finished.length]) {
-        topNames.push(rankList[topNames.length - curRt.finished.length].studentName);
-      }
+      const activeSorted = activeMarbles.slice().sort((a, b) => b.position.y - a.position.y);
+      const allRankItems = [
+        ...curRt.finished.map(n => ({ name: n, done: true })),
+        ...activeSorted.map(m => ({ name: m.studentName, done: false }))
+      ];
+      const rowsHtml = allRankItems.map((item, idx) =>
+        `<div class="tk-pinball-hud-item ${item.done ? 'done' : ''}">${idx + 1}. <b>${escapeTkHtml(item.name)}</b></div>`
+      ).join('');
       hud.innerHTML =
-        `완주: ${curRt.finished.length}/${curRt.marbles.length}<br>` +
-        topNames.map((n, i) => `${i + 1}위: <b>${escapeTkHtml(n)}</b>`).join('<br>');
+        `<div><b>완주: ${curRt.finished.length} / ${totalCount}</b></div>` +
+        `<div class="tk-pinball-hud-grid">${rowsHtml}</div>`;
     }
 
     const cv = document.getElementById('pb_cv_' + id);
     drawPinballFrame(cv, curRt, curW);
 
-    if (curRt.finished.length >= needCount) {
-      const winName = targetRank === 'last'
-        ? curRt.finished[curRt.finished.length - 1]
-        : curRt.finished[needCount - 1];
+    // 처음부터 끝까지 모든 구슬이 통과할 때까지 대기
+    if (curRt.finished.length >= totalCount) {
+      const pickIdx = targetRank === 'last'
+        ? totalCount - 1
+        : Math.min(totalCount - 1, Math.max(0, (Number(targetRank) || 1) - 1));
       curRt.running = false;
-      curW.data.winner = winName;
+      curW.data.results = curRt.finished.slice();
+      curW.data.winner = curRt.finished[pickIdx] || '';
       saveToolkitState();
       renderWidgetBody(curW);
       return;
@@ -575,6 +596,15 @@ function startPinballRace(id) {
   };
 
   rt.rafId = requestAnimationFrame(loop);
+}
+
+function closePinballResult(id) {
+  const w = toolkitState.widgets.find(x => x.id === id);
+  if (!w) return;
+  w.data.results = [];
+  w.data.winner = '';
+  saveToolkitState();
+  renderWidgetBody(w);
 }
 
 function togglePinballSpeed(id) {

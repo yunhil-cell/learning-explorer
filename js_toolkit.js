@@ -247,7 +247,7 @@ function toggleWidget(type) {
     dice:      { title: '주사위', w: 240, h: 260, data: { count: 1, values: [1] } },
     qr:        { title: 'QR 코드', w: 270, h: 320, data: { url: getDefaultGameUrl() } },
     pick:      { title: '랜덤 뽑기', w: 340, h: 360, data: { noDup: true, excluded: [], picked: [], lastWinner: '', showFilter: false } },
-    race:      { title: '핀볼 레이스', w: 540, h: 520, data: { excluded: [], weights: {}, targetRank: '1', winner: '', showFilter: false } },
+    race:      { title: '핀볼 레이스', w: 540, h: 520, data: { excluded: [], weights: {}, targetRank: '1', winner: '', results: [], showFilter: false } },
     wheel:     { title: '돌림판', w: 380, h: 430, data: { itemsText: '발표 1\n발표 2\n보너스!\n한 번 더!', angle: 0, winner: '', showEdit: false } },
     seat:      { title: '자리 바꾸기', w: 660, h: 480, data: { layoutMode: 'group', groupCount: 3, lineCount: 5, rowCount: 6, revealMode: 'instant', seats: [], activeSeats: [], lockedIdx: [] } }
   };
