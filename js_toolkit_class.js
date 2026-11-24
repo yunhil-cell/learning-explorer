@@ -131,6 +131,7 @@ const PINBALL_COLORS = [
 const PINBALL_W = 720;
 const PINBALL_H = 2600;
 const PINBALL_FINISH_Y = 2470;
+const PINBALL_R = 11;
 
 function stopPinballRace(id) {
   const rt = pinballRuntime[id];
@@ -196,6 +197,7 @@ function renderRaceBody(w, body) {
   }).join('');
 
   const results = Array.isArray(w.data.results) ? w.data.results : [];
+  const resultRows = Math.max(1, Math.ceil(results.length / 5));
   const winRankIdx = targetRank === 'last'
     ? results.length - 1
     : Math.min(results.length - 1, Math.max(0, (Number(targetRank) || 1) - 1));
@@ -203,14 +205,18 @@ function renderRaceBody(w, body) {
   const resultItemsHtml = results.map((name, idx) => {
     const isTarget = idx === winRankIdx;
     return `<div class="tk-pinball-result-item ${isTarget ? 'target' : ''}">
-      <span style="font-size:0.82em; color:${isTarget ? '#FBBF24' : '#94A3B8'}; font-weight:bold;">${idx + 1}위</span>
+      <span style="font-size:0.78em; color:${isTarget ? '#FBBF24' : '#94A3B8'}; font-weight:bold;">${idx + 1}위</span>
       <b>${escapeTkHtml(name)}</b>
     </div>`;
   }).join('');
 
+  const initialHudRows = participants.map((p, idx) =>
+    `<div class="tk-pinball-hud-item">${idx + 1}. <b>${escapeTkHtml(p.name)}</b></div>`
+  ).join('');
+
   body.innerHTML = `
     <div style="width:100%; height:100%; display:flex; flex-direction:column;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px; flex-wrap:wrap;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #E2E8F0; gap:6px; flex-wrap:wrap; flex-shrink:0;">
         <div style="display:flex; align-items:center; gap:5px;">
           <select class="tk-board-select" onchange="setPinballTargetRank('${w.id}', this.value)" ${isRunning ? 'disabled' : ''}>
             <option value="1" ${targetRank === '1' ? 'selected' : ''}>1등 당첨</option>
@@ -229,16 +235,21 @@ function renderRaceBody(w, body) {
         </div>
       </div>
       ${w.data.showFilter ? `<div class="tk-sub-panel"><b>이름 클릭: 결석 제외 / 파란 숫자 클릭: 구슬 개수(x1~x5)</b><div class="tk-chip-grid">${chipsHtml}</div></div>` : ''}
-      <div class="tk-pinball-stage" id="pb_stage_${w.id}">
-        <canvas id="pb_cv_${w.id}" class="tk-pinball-canvas"></canvas>
-        <div id="pb_hud_${w.id}" class="tk-pinball-hud">대기 중 (${participants.length}개)</div>
+      <div class="tk-pinball-body">
+        <div id="pb_hud_${w.id}" class="tk-pinball-sidebar">
+          <div><b>대기: ${participants.length}개</b></div>
+          <div class="tk-pinball-hud-grid">${initialHudRows}</div>
+        </div>
+        <div class="tk-pinball-stage" id="pb_stage_${w.id}">
+          <canvas id="pb_cv_${w.id}" class="tk-pinball-canvas"></canvas>
+        </div>
         ${results.length > 0 && !isRunning ? `
           <div class="tk-pinball-winner">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-size:0.9em; color:#FBBF24; font-weight:bold;">최종 순위 (${targetRank === 'last' ? '꼴찌' : `${targetRank}등`} 당첨: ${escapeTkHtml(w.data.winner)})</span>
-              <button class="tk-win-close" style="color:#CBD5E1;" onclick="closePinballResult('${w.id}')">&times;</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+              <span style="font-size:1.05em; color:#FBBF24; font-weight:bold;">최종 순위 (${targetRank === 'last' ? '꼴찌' : `${targetRank}등`} 당첨: ${escapeTkHtml(w.data.winner)})</span>
+              <button class="tk-win-close" style="color:#CBD5E1; font-size:1.4em;" onclick="closePinballResult('${w.id}')">&times;</button>
             </div>
-            <div class="tk-pinball-result-grid">${resultItemsHtml}</div>
+            <div class="tk-pinball-result-grid" style="grid-template-rows:repeat(${resultRows}, minmax(0, 1fr));">${resultItemsHtml}</div>
           </div>
         ` : ''}
       </div>
@@ -260,70 +271,92 @@ function createZigzagPinballWorld(engine, participants) {
   engine.gravity.y = 1.05;
 
   const staticBodies = [];
-  const wallOpt = { isStatic: true, restitution: 0.4, friction: 0.05, renderColor: '#475569' };
+  const wallOpt = { isStatic: true, restitution: 0.45, friction: 0.005, renderColor: '#475569' };
 
-  // 외벽 및 바닥
+  // 외벽 및 바닥 (끼임 틈 없도록 겹쳐서 밀봉)
   staticBodies.push(Bodies.rectangle(6, PINBALL_H / 2, 12, PINBALL_H, wallOpt));
   staticBodies.push(Bodies.rectangle(PINBALL_W - 6, PINBALL_H / 2, 12, PINBALL_H, wallOpt));
   staticBodies.push(Bodies.rectangle(PINBALL_W / 2, 6, PINBALL_W, 12, wallOpt));
   staticBodies.push(Bodies.rectangle(PINBALL_W / 2, PINBALL_H - 12, PINBALL_W, 24, wallOpt));
 
-  // 상단 대기 호퍼 깔때기 & 개폐 게이트
-  staticBodies.push(Bodies.rectangle(165, 195, 290, 16, { ...wallOpt, angle: 0.42, renderColor: '#64748B' }));
-  staticBodies.push(Bodies.rectangle(PINBALL_W - 165, 195, 290, 16, { ...wallOpt, angle: -0.42, renderColor: '#64748B' }));
-  const gate = Bodies.rectangle(PINBALL_W / 2, 265, 160, 16, { isStatic: true, restitution: 0.2, renderColor: '#F59E0B', isGate: true });
+  // 상단 대기 호퍼 깔때기 (외벽 x=12, 708과 완전히 밀착) & 게이트
+  staticBodies.push(Bodies.rectangle(135, 190, 320, 16, { ...wallOpt, angle: 0.46, renderColor: '#64748B' }));
+  staticBodies.push(Bodies.rectangle(PINBALL_W - 135, 190, 320, 16, { ...wallOpt, angle: -0.46, renderColor: '#64748B' }));
+  const gate = Bodies.rectangle(PINBALL_W / 2, 268, 200, 16, { isStatic: true, restitution: 0.2, renderColor: '#F59E0B', isGate: true });
   staticBodies.push(gate);
 
-  // 지그재그 1단 (좌 -> 우 경사로 + 핀)
-  staticBodies.push(Bodies.rectangle(260, 440, 460, 16, { ...wallOpt, angle: 0.22, renderColor: '#38BDF8' }));
-  staticBodies.push(Bodies.rectangle(600, 560, 190, 16, { ...wallOpt, angle: -0.35, renderColor: '#38BDF8' }));
+  // 지그재그 1단 (좌측 벽 밀착 -> 우측 140px 이상 통로)
+  staticBodies.push(Bodies.rectangle(240, 445, 500, 16, { ...wallOpt, angle: 0.27, renderColor: '#38BDF8' }));
+  // 지그재그 2단 (우측 벽 밀착 -> 좌측 140px 이상 통로)
+  staticBodies.push(Bodies.rectangle(480, 690, 500, 16, { ...wallOpt, angle: -0.27, renderColor: '#38BDF8' }));
 
-  // 지그재그 2단 (우 -> 좌 경사로)
-  staticBodies.push(Bodies.rectangle(460, 740, 460, 16, { ...wallOpt, angle: -0.22, renderColor: '#38BDF8' }));
-  staticBodies.push(Bodies.rectangle(120, 860, 190, 16, { ...wallOpt, angle: 0.35, renderColor: '#38BDF8' }));
-
-  // 3단: Plinko 핀 격자 + 바운스 범퍼
+  // 3단: Plinko 핀 격자 (넉넉한 간격) + 고탄성 범퍼 2개
   for (let row = 0; row < 5; row++) {
-    const py = 1010 + row * 72;
+    const py = 920 + row * 72;
     const cols = row % 2 === 0 ? 7 : 6;
-    const startX = row % 2 === 0 ? 110 : 155;
+    const startX = row % 2 === 0 ? 96 : 144;
     for (let c = 0; c < cols; c++) {
-      staticBodies.push(Bodies.circle(startX + c * 82, py, 10, { isStatic: true, restitution: 0.85, friction: 0.01, renderColor: '#94A3B8' }));
+      staticBodies.push(Bodies.circle(startX + c * 88, py, 9, { isStatic: true, restitution: 0.9, friction: 0.005, renderColor: '#94A3B8' }));
     }
   }
-  staticBodies.push(Bodies.circle(210, 1190, 24, { isStatic: true, restitution: 1.35, renderColor: '#F43F5E', isBumper: true }));
-  staticBodies.push(Bodies.circle(510, 1190, 24, { isStatic: true, restitution: 1.35, renderColor: '#F43F5E', isBumper: true }));
+  staticBodies.push(Bodies.circle(200, 1100, 22, { isStatic: true, restitution: 1.55, renderColor: '#F43F5E', isBumper: true }));
+  staticBodies.push(Bodies.circle(520, 1100, 22, { isStatic: true, restitution: 1.55, renderColor: '#F43F5E', isBumper: true }));
 
-  // 4단: 지그재그 교차 경사로 (좌 -> 우, 우 -> 좌)
-  staticBodies.push(Bodies.rectangle(230, 1480, 400, 16, { ...wallOpt, angle: 0.24, renderColor: '#34D399' }));
-  staticBodies.push(Bodies.rectangle(490, 1700, 400, 16, { ...wallOpt, angle: -0.24, renderColor: '#34D399' }));
-  staticBodies.push(Bodies.rectangle(230, 1920, 380, 16, { ...wallOpt, angle: 0.24, renderColor: '#34D399' }));
+  // 4단: 지그재그 교차 경사로 (벽 밀착 + 넓은 통로)
+  staticBodies.push(Bodies.rectangle(235, 1410, 490, 16, { ...wallOpt, angle: 0.27, renderColor: '#34D399' }));
+  staticBodies.push(Bodies.rectangle(485, 1660, 490, 16, { ...wallOpt, angle: -0.27, renderColor: '#34D399' }));
+  staticBodies.push(Bodies.rectangle(235, 1910, 490, 16, { ...wallOpt, angle: 0.27, renderColor: '#34D399' }));
 
-  // 5단: 최후의 깔때기 + 중앙 갈림길 핀
-  staticBodies.push(Bodies.rectangle(150, 2220, 320, 16, { ...wallOpt, angle: 0.38, renderColor: '#A78BFA' }));
-  staticBodies.push(Bodies.rectangle(PINBALL_W - 150, 2220, 320, 16, { ...wallOpt, angle: -0.38, renderColor: '#A78BFA' }));
-  staticBodies.push(Bodies.circle(360, 2140, 16, { isStatic: true, restitution: 1.25, renderColor: '#F59E0B', isBumper: true }));
-  staticBodies.push(Bodies.circle(265, 2320, 12, { isStatic: true, restitution: 0.9, renderColor: '#94A3B8' }));
-  staticBodies.push(Bodies.circle(455, 2320, 12, { isStatic: true, restitution: 0.9, renderColor: '#94A3B8' }));
+  // 4단 하단 고탄성 범퍼 2개
+  staticBodies.push(Bodies.circle(580, 1480, 20, { isStatic: true, restitution: 1.55, renderColor: '#EC4899', isBumper: true }));
+  staticBodies.push(Bodies.circle(140, 1730, 20, { isStatic: true, restitution: 1.55, renderColor: '#EC4899', isBumper: true }));
 
-  // 회전 풍차 3개 (매 프레임 Body.rotate 적용)
+  // 5단: 최후의 깔때기 (외벽 밀착, 중앙 160px 넓은 통로) + 갈림길 핀
+  staticBodies.push(Bodies.rectangle(135, 2230, 320, 16, { ...wallOpt, angle: 0.42, renderColor: '#A78BFA' }));
+  staticBodies.push(Bodies.rectangle(PINBALL_W - 135, 2230, 320, 16, { ...wallOpt, angle: -0.42, renderColor: '#A78BFA' }));
+  staticBodies.push(Bodies.circle(360, 2140, 16, { isStatic: true, restitution: 1.45, renderColor: '#F59E0B', isBumper: true }));
+  staticBodies.push(Bodies.circle(275, 2320, 10, { isStatic: true, restitution: 0.95, renderColor: '#94A3B8' }));
+  staticBodies.push(Bodies.circle(445, 2320, 10, { isStatic: true, restitution: 0.95, renderColor: '#94A3B8' }));
+
+  // 회전 풍차 4개 (역전 변수)
   const windmills = [];
   const makeWindmill = (x, y, len, speed) => {
-    const bar1 = Bodies.rectangle(x, y, len, 14, { isStatic: true, restitution: 0.85, renderColor: '#FBBF24' });
-    const bar2 = Bodies.rectangle(x, y, 14, len, { isStatic: true, restitution: 0.85, renderColor: '#FBBF24' });
-    const cross = Body.create({ parts: [bar1, bar2], isStatic: true, restitution: 0.85 });
+    const bar1 = Bodies.rectangle(x, y, len, 12, { isStatic: true, restitution: 0.95, renderColor: '#FBBF24' });
+    const bar2 = Bodies.rectangle(x, y, 12, len, { isStatic: true, restitution: 0.95, renderColor: '#FBBF24' });
+    const cross = Body.create({ parts: [bar1, bar2], isStatic: true, restitution: 0.95 });
     cross.spinSpeed = speed;
     cross.renderColor = '#FBBF24';
     windmills.push(cross);
     staticBodies.push(cross);
   };
-  makeWindmill(360, 600, 130, 0.045);
-  makeWindmill(360, 1590, 140, -0.052);
-  makeWindmill(360, 2030, 120, 0.06);
+  makeWindmill(360, 560, 125, 0.055);
+  makeWindmill(360, 1270, 130, -0.065);
+  makeWindmill(360, 1780, 125, 0.06);
+  makeWindmill(360, 2030, 115, -0.07);
+
+  // 좌우 왕복 무빙 블록 2개 (진로 교란 변수)
+  const movers = [];
+  const makeMover = (baseX, y, bw, amp, freq, phase) => {
+    const mv = Bodies.rectangle(baseX, y, bw, 14, { isStatic: true, restitution: 1.1, renderColor: '#C084FC' });
+    mv.baseX = baseX;
+    mv.amp = amp;
+    mv.freq = freq;
+    mv.phase = phase;
+    movers.push(mv);
+    staticBodies.push(mv);
+  };
+  makeMover(360, 815, 110, 180, 0.038, 0);
+  makeMover(360, 1535, 100, 170, 0.045, Math.PI / 2);
+
+  // 상승 기류 존 2개 (들어온 구슬을 위로 튕겨 올리는 역전 영역)
+  const updrafts = [
+    { x: 185, y: 1230, w: 80, h: 120, forceY: -0.0042 },
+    { x: 535, y: 2040, w: 80, h: 120, forceY: -0.0045 }
+  ];
 
   Composite.add(world, staticBodies);
 
-  // 구슬 생성 (호퍼 내 무작위 정렬)
+  // 구슬 생성 (r = 11)
   const shuffled = participants.slice();
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -331,14 +364,14 @@ function createZigzagPinballWorld(engine, participants) {
   }
 
   const marbles = shuffled.map((p, i) => {
-    const col = i % 9;
-    const row = Math.floor(i / 9);
-    const mx = 185 + col * 42 + (Math.random() * 14 - 7);
-    const my = 55 + row * 34 + (Math.random() * 8 - 4);
-    const m = Bodies.circle(mx, my, 15, {
-      restitution: 0.58,
-      friction: 0.008,
-      frictionAir: 0.003,
+    const col = i % 11;
+    const row = Math.floor(i / 11);
+    const mx = 180 + col * 36 + (Math.random() * 10 - 5);
+    const my = 48 + row * 28 + (Math.random() * 6 - 3);
+    const m = Bodies.circle(mx, my, PINBALL_R, {
+      restitution: 0.65,
+      friction: 0.004,
+      frictionAir: 0.002,
       density: 0.002
     });
     m.studentName = p.name;
@@ -348,7 +381,7 @@ function createZigzagPinballWorld(engine, participants) {
   });
 
   Composite.add(world, marbles);
-  return { gate, windmills, staticBodies, marbles };
+  return { gate, windmills, movers, updrafts, staticBodies, marbles };
 }
 
 function drawPinballFrame(cv, rt, w) {
@@ -365,7 +398,6 @@ function drawPinballFrame(cv, rt, w) {
   const scale = cv.width / PINBALL_W;
   const viewWorldH = cv.height / scale;
 
-  // 카메라 목표 계산
   let targetCamY = 0;
   if (rt.running) {
     const activeMarbles = rt.marbles.filter(m => !m.finished);
@@ -392,6 +424,20 @@ function drawPinballFrame(cv, rt, w) {
   ctx.scale(scale, scale);
   ctx.translate(0, -rt.camY);
 
+  // 상승 기류 존 그리기
+  (rt.updrafts || []).forEach(u => {
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
+    ctx.fillRect(u.x - u.w / 2, u.y - u.h / 2, u.w, u.h);
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(u.x - u.w / 2, u.y - u.h / 2, u.w, u.h);
+    ctx.fillStyle = 'rgba(125, 211, 252, 0.85)';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('▲▲', u.x, u.y - 12);
+    ctx.fillText('▲▲', u.x, u.y + 18);
+  });
+
   // 결승선 그리기
   const tileW = 24;
   for (let x = 12; x < PINBALL_W - 12; x += tileW) {
@@ -401,7 +447,7 @@ function drawPinballFrame(cv, rt, w) {
     ctx.fillRect(x, PINBALL_FINISH_Y + 14, Math.min(tileW, PINBALL_W - 12 - x), 14);
   }
 
-  // 정적 장애물(경사로·핀·풍차·게이트) 그리기
+  // 정적 장애물(경사로·핀·풍차·무빙블록·게이트) 그리기
   rt.staticBodies.forEach(b => {
     if (b.isRemoved) return;
     const parts = b.parts.length > 1 ? b.parts.slice(1) : [b];
@@ -422,33 +468,31 @@ function drawPinballFrame(cv, rt, w) {
     });
   });
 
-  // 구슬 + 수평 이름표 그리기
+  // 구슬(r=11) + 수평 이름표 그리기
   rt.marbles.forEach(m => {
     const { x, y } = m.position;
-    const r = 15;
+    const r = PINBALL_R;
 
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fillStyle = m.marbleColor;
     ctx.fill();
     ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 2;
     ctx.stroke();
 
-    // 구슬 광택
     ctx.beginPath();
-    ctx.arc(x - 4, y - 4, 4, 0, Math.PI * 2);
+    ctx.arc(x - 3, y - 3, 3, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
     ctx.fill();
 
-    // 수평 이름표 배지
-    ctx.font = 'bold 13px NanumSquareNeo, sans-serif';
+    ctx.font = 'bold 12px NanumSquareNeo, sans-serif';
     const textW = ctx.measureText(m.studentName).width;
-    const pad = 6;
+    const pad = 5;
     const boxW = textW + pad * 2;
-    const boxH = 18;
+    const boxH = 16;
     const bx = x - boxW / 2;
-    const by = y - r - boxH - 3;
+    const by = y - r - boxH - 2;
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
     ctx.fillRect(bx, by, boxW, boxH);
@@ -467,7 +511,6 @@ function drawPinballFrame(cv, rt, w) {
 
 function initPinballPreviewOrSync(w) {
   if (pinballRuntime[w.id] && pinballRuntime[w.id].running) {
-    // 창 크기 변경 시 기존 엔진 그대로 이어서 그리기
     return;
   }
   stopPinballRace(w.id);
@@ -480,17 +523,19 @@ function initPinballPreviewOrSync(w) {
     engine: engine,
     gate: built.gate,
     windmills: built.windmills,
+    movers: built.movers,
+    updrafts: built.updrafts,
     staticBodies: built.staticBodies,
     marbles: built.marbles,
     finished: [],
     running: false,
+    tick: 0,
     camY: 0,
     lastProgressTime: Date.now(),
     rafId: null
   };
   pinballRuntime[w.id] = rt;
 
-  // 대기 상태에서 몇 틱 시뮬레이션해 깔때기 위에 자연스럽게 안착시키기
   for (let i = 0; i < 45; i++) Matter.Engine.update(engine, 16);
   const cv = document.getElementById('pb_cv_' + w.id);
   drawPinballFrame(cv, rt, w);
@@ -513,14 +558,22 @@ function startPinballRace(id) {
   Matter.World.remove(engine.world, built.gate);
   built.gate.isRemoved = true;
 
+  // 출발 시 구슬마다 미세 랜덤 수평 속도 부여 (변수 증가)
+  built.marbles.forEach(m => {
+    Matter.Body.setVelocity(m, { x: (Math.random() - 0.5) * 4, y: Math.random() * 1.5 });
+  });
+
   const rt = {
     engine: engine,
     gate: built.gate,
     windmills: built.windmills,
+    movers: built.movers,
+    updrafts: built.updrafts,
     staticBodies: built.staticBodies,
     marbles: built.marbles,
     finished: [],
     running: true,
+    tick: 0,
     camY: 0,
     lastProgressTime: Date.now(),
     rafId: null
@@ -538,7 +591,23 @@ function startPinballRace(id) {
 
     const steps = curW._fast ? 2 : 1;
     for (let s = 0; s < steps; s++) {
+      curRt.tick++;
       curRt.windmills.forEach(wm => Matter.Body.rotate(wm, wm.spinSpeed));
+      (curRt.movers || []).forEach(mv => {
+        const nextX = mv.baseX + Math.sin(curRt.tick * mv.freq + mv.phase) * mv.amp;
+        Matter.Body.setPosition(mv, { x: nextX, y: mv.position.y });
+      });
+
+      // 상승 기류 존 통과 구슬에 부양/교란 힘 적용
+      curRt.marbles.forEach(m => {
+        if (m.finished) return;
+        (curRt.updrafts || []).forEach(u => {
+          if (Math.abs(m.position.x - u.x) <= u.w / 2 && Math.abs(m.position.y - u.y) <= u.h / 2) {
+            Matter.Body.applyForce(m, m.position, { x: (Math.random() - 0.5) * 0.0018, y: u.forceY });
+          }
+        });
+      });
+
       Matter.Engine.update(curRt.engine, 1000 / 60);
 
       curRt.marbles.forEach(m => {
@@ -550,7 +619,6 @@ function startPinballRace(id) {
       });
     }
 
-    // 끼임 방지 안전장치 (미완주 구슬들이 2.5초간 거의 안 움직이면 자동 살짝 튕기기)
     const activeMarbles = curRt.marbles.filter(m => !m.finished);
     const anyMoving = activeMarbles.some(m => (Math.abs(m.velocity.x) + Math.abs(m.velocity.y)) > 0.45);
     if (anyMoving) {
@@ -560,7 +628,7 @@ function startPinballRace(id) {
       curRt.lastProgressTime = Date.now();
     }
 
-    // 실시간 전체 순위 HUD (15명마다 세로줄 추가)
+    // 좌측 분리 사이드바에 실시간 전체 순위 갱신
     const hud = document.getElementById('pb_hud_' + id);
     if (hud) {
       const activeSorted = activeMarbles.slice().sort((a, b) => b.position.y - a.position.y);
@@ -579,7 +647,6 @@ function startPinballRace(id) {
     const cv = document.getElementById('pb_cv_' + id);
     drawPinballFrame(cv, curRt, curW);
 
-    // 처음부터 끝까지 모든 구슬이 통과할 때까지 대기
     if (curRt.finished.length >= totalCount) {
       const pickIdx = targetRank === 'last'
         ? totalCount - 1

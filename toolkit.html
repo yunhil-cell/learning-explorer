@@ -593,41 +593,45 @@
       color: #1E293B;
     }
 
-    /* 핀볼 레이스 */
-    .tk-pinball-stage {
+    /* 핀볼 레이스 (좌측 순위 사이드바 + 우측 경기 구역 분리) */
+    .tk-pinball-body {
       flex: 1;
+      min-height: 0;
+      display: flex;
       position: relative;
       background: #0F172A;
       overflow: hidden;
+    }
+    .tk-pinball-sidebar {
+      flex-shrink: 0;
+      background: #0B1120;
+      color: #F8FAFC;
+      border-right: 1.5px solid #334155;
+      padding: 8px 10px;
+      font-size: 0.72em;
+      line-height: 1.35;
+      overflow-y: auto;
+      min-width: 110px;
+    }
+    .tk-pinball-stage {
+      flex: 1;
+      min-width: 0;
       min-height: 0;
+      position: relative;
+      background: #0F172A;
+      overflow: hidden;
     }
     .tk-pinball-canvas {
       display: block;
       width: 100%;
       height: 100%;
     }
-    .tk-pinball-hud {
-      position: absolute;
-      top: 8px;
-      left: 8px;
-      background: rgba(15, 23, 42, 0.8);
-      color: #F8FAFC;
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      border-radius: 8px;
-      padding: 6px 10px;
-      font-size: 0.72em;
-      line-height: 1.4;
-      pointer-events: none;
-      max-width: calc(100% - 16px);
-      max-height: calc(100% - 16px);
-      overflow: hidden;
-    }
     .tk-pinball-hud-grid {
       display: grid;
       grid-auto-flow: column;
       grid-template-rows: repeat(15, auto);
-      gap: 2px 12px;
-      margin-top: 4px;
+      gap: 3px 12px;
+      margin-top: 6px;
     }
     .tk-pinball-hud-item {
       white-space: nowrap;
@@ -637,43 +641,42 @@
     }
     .tk-pinball-winner {
       position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      width: 90%;
-      max-width: 560px;
-      max-height: 90%;
-      background: rgba(15, 23, 42, 0.95);
+      inset: 10px;
+      background: rgba(15, 23, 42, 0.96);
       border: 2.5px solid #F59E0B;
-      border-radius: 14px;
-      padding: 16px;
+      border-radius: 12px;
+      padding: 14px 16px;
       text-align: center;
-      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.65);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.75);
       z-index: 15;
       display: flex;
       flex-direction: column;
       gap: 10px;
+      container-type: size;
     }
     .tk-pinball-result-grid {
+      flex: 1;
+      min-height: 0;
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 6px;
-      overflow-y: auto;
-      max-height: 260px;
-      padding: 4px;
+      overflow: hidden;
     }
     .tk-pinball-result-item {
       background: #1E293B;
       border: 1.5px solid #334155;
       border-radius: 8px;
-      padding: 6px 4px;
+      padding: 4px;
       color: #F8FAFC;
-      font-size: 0.78em;
+      font-size: clamp(11px, 2.5cqh, 22px);
       display: flex;
       flex-direction: column;
       align-items: center;
+      justify-content: center;
       gap: 2px;
       word-break: keep-all;
+      min-height: 0;
+      overflow: hidden;
     }
     .tk-pinball-result-item.target {
       background: #451A03;
